@@ -1,0 +1,26 @@
+# 虛擬環境
+venv/
+env/
+.env
+
+# Python 快取檔案
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 日誌檔案
+logs/
+*.log
+
+# 暫存檔與輔助腳本
+answers.json
+update_readme_queries.py
+
+# IDE / 編輯器相關
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 其他
+.DS_Store
