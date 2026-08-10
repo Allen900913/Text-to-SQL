@@ -1,0 +1,21 @@
+# Semantic Layer (商業邏輯字典)
+# 這份檔案定義了常見的商業名詞與其對應的 SQL 邏輯，避免 LLM 產生幻覺或誤用聚合函數。
+
+metrics:
+  - name: "售出數量 / 賣出幾台 / 總銷量"
+    description: "計算商品賣出的總數量時，必須使用訂單明細的數量加總，而不是計算明細的筆數。"
+    sql_logic: "SUM(order_items.quantity)"
+    anti_pattern: "不要使用 COUNT(order_items.id)"
+    
+  - name: "總消費金額 / 營收 / 總花費"
+    description: "計算客戶的總花費或訂單總營收時，直接加總訂單的總金額。"
+    sql_logic: "SUM(orders.total_amount)"
+    anti_pattern: "不要使用 COUNT()"
+
+  - name: "客戶數量 / 幾位客戶"
+    description: "計算有多少位不同的客戶時，必須過濾重複的客戶 ID。"
+    sql_logic: "COUNT(DISTINCT customers.id) 或 COUNT(DISTINCT orders.customer_id)"
+
+  - name: "平均消費金額"
+    description: "計算訂單的平均金額。"
+    sql_logic: "AVG(orders.total_amount)"

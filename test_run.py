@@ -4,7 +4,7 @@ def run():
     print("Initializing agent...")
     agent = TextToSQLAgent()
     print("Agent initialized successfully.")
-    question = "目前資料庫裡面總共有幾位客戶？"
+    question = "總共賣出幾台「空氣清淨機」？"
     print(f"Asking question: {question}")
     answer = agent.run(question)
     print("=" * 60)
