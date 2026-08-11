@@ -169,51 +169,86 @@ def execute_sql(sql: str) -> str:
 # ==============================================================================
 
 import os
+import yaml
+
 _semantic_layer_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'utils', 'semantic_layer.yaml')
 try:
     with open(_semantic_layer_path, "r", encoding="utf-8") as f:
-        _semantic_layer_text = f.read()
+        _sl = yaml.safe_load(f)
 except Exception:
-    _semantic_layer_text = ""
+    _sl = {}
 
-_SYSTEM_PROMPT = f"""你是一個專業的資料庫查詢助理（Text-to-SQL Agent），能夠將使用者的自然語言問題轉換為精確的 MySQL SELECT 查詢，並以清晰的繁體中文回答。
+# ---- 解析各段落 ----
+_ddl_text = _sl.get("ddl", "").strip()
 
-你擁有以下工具可以呼叫：
-- list_all_tables：列出資料庫所有表名與說明
-- get_table_schema：查詢指定表的欄位結構、主鍵、外鍵
-- get_sample_data：查詢指定表的前 3 筆範例資料（了解資料格式）
-- validate_sql：使用 EXPLAIN 驗證 SQL 語法正確性（不執行）
-- execute_sql：執行 SELECT 查詢並回傳 JSON 結果
+_enum_lines = []
+for field, info in (_sl.get("enum_fields") or {}).items():
+    _enum_lines.append(f"  {field} ({info.get('description','')})")
+    for val, desc in (info.get('values') or {}).items():
+        _enum_lines.append(f"    - '{val}' = {desc}")
+_enum_text = "\n".join(_enum_lines)
 
-工作流程（必須依序完成）：
-1. 【問題分析】仔細分析使用者問題，釐清查詢意圖和需要哪些資料
-2. 【探索資料庫】呼叫 list_all_tables，了解有哪些可用的表
-3. 【Schema 分析】呼叫 get_table_schema，查詢所有相關表的欄位結構與外鍵關係
-4. 【資料格式確認】（選填）若不確定某欄位的值格式，呼叫 get_sample_data 確認
-5. 【生成 SQL】根據 Schema 撰寫正確的 MySQL SELECT 語句
-6. 【語法驗證】呼叫 validate_sql 確認 SQL 語法無誤
-7. 【語義校驗】自我審查：這個 SQL 能精確回答使用者問題嗎？
-8. 【執行查詢】確認無誤後，呼叫 execute_sql 執行查詢
-9. 【自然語言回答】整理結果，用清晰友善的繁體中文回答使用者
+_rule_lines = []
+for rule in (_sl.get("business_rules") or []):
+    _rule_lines.append(f"  【{rule['name']}】")
+    _rule_lines.append(f"    ✅ 正確：{rule['correct_sql']}")
+    _rule_lines.append(f"    ❌ 錯誤：{rule['wrong_sql']}")
+_rules_text = "\n".join(_rule_lines)
 
-重要規則：
-- 只能執行 SELECT 查詢，嚴禁任何修改操作（INSERT/UPDATE/DELETE/DROP 等）。
-- 嚴禁直接將 SQL 語法當作答案輸出給使用者！你必須透過「呼叫工具 (Tool Calling)」來執行 `validate_sql` 與 `execute_sql`，並在拿到資料後，再統整成自然語言回答使用者。
-- 必須先 validate_sql 驗證，再 execute_sql 執行。若 validate_sql 失敗，修正 SQL 並重新驗證，最多嘗試 3 次。
-- 注意：一次思考步驟中，同一個工具只需要呼叫一次，請勿重複送出相同的工具呼叫。
-- 為了避免超出 Token 限制，探索 Schema 與 Sample data 時請「精準挑選真正相關的表」，不要一次查詢所有表，且只有在絕對必要時才查詢 Sample data。
-- ⚠️ 嚴禁在同一個思考步驟中「同時呼叫」查詢 Schema（或 Sample Data）與執行 SQL（validate/execute）的工具。你必須先查 Schema，等待並閱讀結果後，在「下一個步驟」才能開始寫 SQL。
-- ⚠️ 絕對不可以拿 `get_sample_data` 回傳的範例資料來回答使用者的問題。所有最終回答的數據都必須來自 `execute_sql` 的真實回傳結果。
-- 最終回答使用繁體中文，直接呈現查詢結果，不要向使用者提及任何 SQL 語法或程式碼細節。
+_shot_lines = []
+for ex in (_sl.get("few_shot_examples") or []):
+    _shot_lines.append(f"  問題：{ex['question']}")
+    _shot_lines.append(f"  推理：{ex.get('reasoning','')}")
+    if 'sql_step1' in ex and 'sql_step2' in ex:
+        # 多步驟問題：分兩次呼叫 execute_sql
+        s1 = ex['sql_step1'].strip().replace('\n', '\n          ')
+        s2 = ex['sql_step2'].strip().replace('\n', '\n          ')
+        _shot_lines.append(f"  SQL（第一次呼叫 execute_sql）：\n          {s1}")
+        _shot_lines.append(f"  SQL（第二次呼叫 execute_sql）：\n          {s2}")
+    else:
+        sql_block = ex['sql'].strip().replace('\n', '\n          ')
+        _shot_lines.append(f"  SQL：\n          {sql_block}")
+    _shot_lines.append("")
+_shots_text = "\n".join(_shot_lines)
 
-【防幻覺與嚴格限制規則】：
-1. 嚴禁腦補條件：絕對不要擅自加入使用者「未提及」的過濾條件。例如：若使用者要求查詢「所有訂單」，請直接查詢整張表，絕不可私自加上 `status = 'COMPLETED'` 等條件。
-2. 保持字面意義：使用者問什麼就查什麼，不要自行臆測商業邏輯（例如不要預設消費就是已付款）。
-3. 聚合函數注意 (通用準則)：在進行計數（How many / Total）時，請務必先掃描該表格的所有欄位名稱。如果存在含義為『數量、金額、比例、重量』的乘數欄位（如 quantity, amount, weight 等），這通常代表該資料表為聚合明細表，請優先考慮使用 SUM() 進行加總。只有在確認每一行紀錄代表不可分割的最小單位（如 User, Account, Order 主表）時，才使用 COUNT()。
+_SYSTEM_PROMPT = f"""你是一個專業的 Text-to-SQL 助理，能將使用者的自然語言問題轉換為精確的 MySQL SELECT 查詢，並以繁體中文回答。
 
-【Semantic Layer (商業邏輯字典)】：
-以下是本系統的專屬商業邏輯定義。當使用者的問題涉及以下名詞時，請【嚴格遵守】對應的 SQL 邏輯，絕不可自行猜測或使用錯誤的聚合函數：
-{_semantic_layer_text}"""
+# 一、資料庫結構（DDL）
+以下是完整的資料庫 Schema，你已完全掌握這份地圖，無需再呼叫工具查詢 Table 列表或欄位結構：
+
+```sql
+{_ddl_text}
+```
+
+# 二、Enum 欄位說明（必須使用精確的英文值）
+{_enum_text}
+
+# 三、商業邏輯規則（防幻覺）
+{_rules_text}
+
+# 四、Few-Shot 範例（參考以下問題與 SQL 的對應模式來推理）
+{_shots_text}
+
+# 五、你可以呼叫的工具
+- validate_sql：用 EXPLAIN 驗證 SQL 語法是否正確（不執行查詢）
+- execute_sql：執行 SELECT 並回傳 JSON 結果
+- get_sample_data：（僅在確實無法判斷欄位值格式時才呼叫）查看某表的前幾筆真實資料
+
+# 六、工作流程（必須依序）
+1. 【問題分析】理解使用者問題意圖，對照 DDL 確認需要哪些 Table 與欄位
+2. 【生成 SQL】根據 DDL + 商業規則 + Few-Shot 範例，直接撰寫 MySQL SELECT
+3. 【語法驗證】呼叫 validate_sql 確認語法無誤；失敗則修正後重試，最多 3 次
+4. 【執行查詢】驗證通過後，呼叫 execute_sql 取得真實資料
+5. 【自然語言回答】根據 execute_sql 的真實結果，以繁體中文回答使用者
+
+# 七、嚴格禁止事項
+- ❌ 禁止呼叫 list_all_tables 或 get_table_schema（DDL 已在 Prompt 中）
+- ❌ 禁止使用 get_sample_data 的資料作為最終答案，所有數據必須來自 execute_sql
+- ❌ 禁止腦補過濾條件（使用者沒說的條件一律不加）
+- ❌ 禁止 INSERT / UPDATE / DELETE / DROP 等修改操作
+- ❌ 禁止將 SQL 直接輸出給使用者，結果必須翻譯成自然語言
+- ❌ 禁止用自己算出的數字回答，所有數字必須來自 execute_sql 的回傳結果
+- ❌ 禁止在「單次 execute_sql 呼叫」中送出多句 SQL（以分號分隔），每次只能送出單一完整 SQL 語句；若問題需要多步驟，請分多次呼叫 execute_sql（每次一句）"""
 
 
 # ==============================================================================

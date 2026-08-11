@@ -1,0 +1,502 @@
+[
+    {
+        "id": 1,
+        "type": "few_shot",
+        "question": "找出所有姓「王」的客戶名單"
+    },
+    {
+        "id": 2,
+        "type": "few_shot",
+        "question": "總共賣出幾台「iPad Pro」？"
+    },
+    {
+        "id": 3,
+        "type": "few_shot",
+        "question": "在高雄市的客戶，總共下了多少張訂單？"
+    },
+    {
+        "id": 4,
+        "type": "few_shot",
+        "question": "哪一個商品的總營收最高？總共賺了多少錢？"
+    },
+    {
+        "id": 5,
+        "type": "few_shot",
+        "question": "有多少張訂單的狀態是DELIVERED？"
+    },
+    {
+        "id": 6,
+        "type": "few_shot",
+        "question": "找出從未下過任何訂單的客戶姓名"
+    },
+    {
+        "id": 7,
+        "type": "few_shot",
+        "question": "單筆訂單總金額超過 20000 元的訂單，都是哪些客戶買的？"
+    },
+    {
+        "id": 8,
+        "type": "few_shot",
+        "question": "最晚註冊的客戶是誰？他註冊的日期是哪天？"
+    },
+    {
+        "id": 9,
+        "type": "few_shot",
+        "question": "商品庫存量低於 50 的商品有哪些？"
+    },
+    {
+        "id": 10,
+        "type": "few_shot",
+        "question": "平均每張訂單買了幾項不同的商品？"
+    },
+    {
+        "id": 11,
+        "type": "few_shot",
+        "question": "找出所有姓「劉」的客戶名單"
+    },
+    {
+        "id": 12,
+        "type": "few_shot",
+        "question": "總共賣出幾台「咖啡機」？"
+    },
+    {
+        "id": 13,
+        "type": "few_shot",
+        "question": "在高雄市的客戶，總共下了多少張訂單？"
+    },
+    {
+        "id": 14,
+        "type": "few_shot",
+        "question": "哪一個商品的總營收最高？總共賺了多少錢？"
+    },
+    {
+        "id": 15,
+        "type": "few_shot",
+        "question": "有多少張訂單的狀態是CANCELLED？"
+    },
+    {
+        "id": 16,
+        "type": "few_shot",
+        "question": "找出從未下過任何訂單的客戶姓名"
+    },
+    {
+        "id": 17,
+        "type": "few_shot",
+        "question": "單筆訂單總金額超過 10000 元的訂單，都是哪些客戶買的？"
+    },
+    {
+        "id": 18,
+        "type": "few_shot",
+        "question": "最晚註冊的客戶是誰？他註冊的日期是哪天？"
+    },
+    {
+        "id": 19,
+        "type": "few_shot",
+        "question": "商品庫存量低於 5 的商品有哪些？"
+    },
+    {
+        "id": 20,
+        "type": "few_shot",
+        "question": "平均每張訂單買了幾項不同的商品？"
+    },
+    {
+        "id": 21,
+        "type": "unseen",
+        "question": "列出 2024 年 12 月營收最高的前 3 名客戶。"
+    },
+    {
+        "id": 22,
+        "type": "unseen",
+        "question": "購買過「無線耳機」的客戶，平均每個人總共花了多少錢在我們店裡？"
+    },
+    {
+        "id": 23,
+        "type": "unseen",
+        "question": "哪一個城市賣出的「Accessories」數量最多？總共賣出多少？"
+    },
+    {
+        "id": 24,
+        "type": "unseen",
+        "question": "請列出所有單次購買過大於 10 件商品的客戶電子郵件。"
+    },
+    {
+        "id": 25,
+        "type": "unseen",
+        "question": "SHIPPED 狀態的訂單中，哪一天的訂單數量最多？"
+    },
+    {
+        "id": 26,
+        "type": "unseen",
+        "question": "請找出那些每一張訂單金額都超過 30000 元的 VIP 客戶名單。"
+    },
+    {
+        "id": 27,
+        "type": "unseen",
+        "question": "從來沒有買過「咖啡機」的客戶有誰？"
+    },
+    {
+        "id": 28,
+        "type": "unseen",
+        "question": "總庫存量價值（庫存數量乘上單價）最高的三種商品類別是什麼？"
+    },
+    {
+        "id": 29,
+        "type": "unseen",
+        "question": "單價超過 5000 元的商品中，哪一個最受歡迎（也就是賣出最多件）？"
+    },
+    {
+        "id": 30,
+        "type": "unseen",
+        "question": "平均每位客戶註冊後，下了幾張訂單？"
+    },
+    {
+        "id": 31,
+        "type": "unseen",
+        "question": "找出在 2026 年註冊，並且至少下過一筆 PENDING 訂單的客戶名字。"
+    },
+    {
+        "id": 32,
+        "type": "unseen",
+        "question": "幫我列出單價最貴的前 5 名商品名稱和價格。"
+    },
+    {
+        "id": 33,
+        "type": "unseen",
+        "question": "請問『Smartphone』這個類別底下，總共有幾種不同的商品？"
+    },
+    {
+        "id": 34,
+        "type": "unseen",
+        "question": "找出購買商品數量總和最多的那位客戶，並列出他的電子郵件。"
+    },
+    {
+        "id": 35,
+        "type": "unseen",
+        "question": "在 2025 年的所有訂單中，平均每筆訂單的總金額大約是多少？"
+    },
+    {
+        "id": 36,
+        "type": "unseen",
+        "question": "找出所有沒有填寫信箱的客戶。"
+    },
+    {
+        "id": 37,
+        "type": "unseen",
+        "question": "列出所有買過『Home Appliances』類別商品，且目前住在『台南市』的客戶。"
+    },
+    {
+        "id": 38,
+        "type": "unseen",
+        "question": "找出所有『Accessories』商品中，單筆訂單購買數量曾經超過 2 的紀錄。"
+    },
+    {
+        "id": 39,
+        "type": "unseen",
+        "question": "統計各個城市的客戶數量，並依照數量由大到小排序。"
+    },
+    {
+        "id": 40,
+        "type": "unseen",
+        "question": "請列出在 2024 年 3 月份，單日營業額最高的那一天。"
+    },
+    {
+        "id": 41,
+        "type": "unseen",
+        "question": "列出 2025 年 11 月營收最高的前 10 名客戶。"
+    },
+    {
+        "id": 42,
+        "type": "unseen",
+        "question": "購買過「iPhone 15」的客戶，平均每個人總共花了多少錢在我們店裡？"
+    },
+    {
+        "id": 43,
+        "type": "unseen",
+        "question": "哪一個城市賣出的「Accessories」數量最多？總共賣出多少？"
+    },
+    {
+        "id": 44,
+        "type": "unseen",
+        "question": "請列出所有單次購買過大於 10 件商品的客戶電子郵件。"
+    },
+    {
+        "id": 45,
+        "type": "unseen",
+        "question": "PENDING 狀態的訂單中，哪一天的訂單數量最多？"
+    },
+    {
+        "id": 46,
+        "type": "unseen",
+        "question": "請找出那些每一張訂單金額都超過 100000 元的 VIP 客戶名單。"
+    },
+    {
+        "id": 47,
+        "type": "unseen",
+        "question": "從來沒有買過「MacBook Air」的客戶有誰？"
+    },
+    {
+        "id": 48,
+        "type": "unseen",
+        "question": "總庫存量價值（庫存數量乘上單價）最高的三種商品類別是什麼？"
+    },
+    {
+        "id": 49,
+        "type": "unseen",
+        "question": "單價超過 10000 元的商品中，哪一個最受歡迎（也就是賣出最多件）？"
+    },
+    {
+        "id": 50,
+        "type": "unseen",
+        "question": "平均每位客戶註冊後，下了幾張訂單？"
+    },
+    {
+        "id": 51,
+        "type": "unseen",
+        "question": "找出在 2023 年註冊，並且至少下過一筆 PENDING 訂單的客戶名字。"
+    },
+    {
+        "id": 52,
+        "type": "unseen",
+        "question": "幫我列出單價最貴的前 10 名商品名稱和價格。"
+    },
+    {
+        "id": 53,
+        "type": "unseen",
+        "question": "請問『Smartphone』這個類別底下，總共有幾種不同的商品？"
+    },
+    {
+        "id": 54,
+        "type": "unseen",
+        "question": "找出購買商品數量總和最多的那位客戶，並列出他的電子郵件。"
+    },
+    {
+        "id": 55,
+        "type": "unseen",
+        "question": "在 2024 年的所有訂單中，平均每筆訂單的總金額大約是多少？"
+    },
+    {
+        "id": 56,
+        "type": "unseen",
+        "question": "找出所有沒有填寫信箱的客戶。"
+    },
+    {
+        "id": 57,
+        "type": "unseen",
+        "question": "列出所有買過『Home Appliances』類別商品，且目前住在『新竹市』的客戶。"
+    },
+    {
+        "id": 58,
+        "type": "unseen",
+        "question": "找出所有『Laptop』商品中，單筆訂單購買數量曾經超過 5 的紀錄。"
+    },
+    {
+        "id": 59,
+        "type": "unseen",
+        "question": "統計各個城市的客戶數量，並依照數量由大到小排序。"
+    },
+    {
+        "id": 60,
+        "type": "unseen",
+        "question": "請列出在 2025 年 10 月份，單日營業額最高的那一天。"
+    },
+    {
+        "id": 61,
+        "type": "unseen",
+        "question": "列出 2026 年 8 月營收最高的前 5 名客戶。"
+    },
+    {
+        "id": 62,
+        "type": "unseen",
+        "question": "購買過「MacBook Air」的客戶，平均每個人總共花了多少錢在我們店裡？"
+    },
+    {
+        "id": 63,
+        "type": "unseen",
+        "question": "哪一個城市賣出的「Laptop」數量最多？總共賣出多少？"
+    },
+    {
+        "id": 64,
+        "type": "unseen",
+        "question": "請列出所有單次購買過大於 3 件商品的客戶電子郵件。"
+    },
+    {
+        "id": 65,
+        "type": "unseen",
+        "question": "DELIVERED 狀態的訂單中，哪一天的訂單數量最多？"
+    },
+    {
+        "id": 66,
+        "type": "unseen",
+        "question": "請找出那些每一張訂單金額都超過 10000 元的 VIP 客戶名單。"
+    },
+    {
+        "id": 67,
+        "type": "unseen",
+        "question": "從來沒有買過「咖啡機」的客戶有誰？"
+    },
+    {
+        "id": 68,
+        "type": "unseen",
+        "question": "總庫存量價值（庫存數量乘上單價）最高的三種商品類別是什麼？"
+    },
+    {
+        "id": 69,
+        "type": "unseen",
+        "question": "單價超過 20000 元的商品中，哪一個最受歡迎（也就是賣出最多件）？"
+    },
+    {
+        "id": 70,
+        "type": "unseen",
+        "question": "平均每位客戶註冊後，下了幾張訂單？"
+    },
+    {
+        "id": 71,
+        "type": "unseen",
+        "question": "找出在 2025 年註冊，並且至少下過一筆 DELIVERED 訂單的客戶名字。"
+    },
+    {
+        "id": 72,
+        "type": "unseen",
+        "question": "幫我列出單價最貴的前 5 名商品名稱和價格。"
+    },
+    {
+        "id": 73,
+        "type": "unseen",
+        "question": "請問『Home Appliances』這個類別底下，總共有幾種不同的商品？"
+    },
+    {
+        "id": 74,
+        "type": "unseen",
+        "question": "找出購買商品數量總和最多的那位客戶，並列出他的電子郵件。"
+    },
+    {
+        "id": 75,
+        "type": "unseen",
+        "question": "在 2024 年的所有訂單中，平均每筆訂單的總金額大約是多少？"
+    },
+    {
+        "id": 76,
+        "type": "unseen",
+        "question": "找出所有沒有填寫信箱的客戶。"
+    },
+    {
+        "id": 77,
+        "type": "unseen",
+        "question": "列出所有買過『Smartphone』類別商品，且目前住在『新竹市』的客戶。"
+    },
+    {
+        "id": 78,
+        "type": "unseen",
+        "question": "找出所有『Laptop』商品中，單筆訂單購買數量曾經超過 5 的紀錄。"
+    },
+    {
+        "id": 79,
+        "type": "unseen",
+        "question": "統計各個城市的客戶數量，並依照數量由大到小排序。"
+    },
+    {
+        "id": 80,
+        "type": "unseen",
+        "question": "請列出在 2023 年 1 月份，單日營業額最高的那一天。"
+    },
+    {
+        "id": 81,
+        "type": "unseen",
+        "question": "列出 2023 年 5 月營收最高的前 3 名客戶。"
+    },
+    {
+        "id": 82,
+        "type": "unseen",
+        "question": "購買過「MacBook Air」的客戶，平均每個人總共花了多少錢在我們店裡？"
+    },
+    {
+        "id": 83,
+        "type": "unseen",
+        "question": "哪一個城市賣出的「Home Appliances」數量最多？總共賣出多少？"
+    },
+    {
+        "id": 84,
+        "type": "unseen",
+        "question": "請列出所有單次購買過大於 2 件商品的客戶電子郵件。"
+    },
+    {
+        "id": 85,
+        "type": "unseen",
+        "question": "PENDING 狀態的訂單中，哪一天的訂單數量最多？"
+    },
+    {
+        "id": 86,
+        "type": "unseen",
+        "question": "請找出那些每一張訂單金額都超過 80000 元的 VIP 客戶名單。"
+    },
+    {
+        "id": 87,
+        "type": "unseen",
+        "question": "從來沒有買過「iPhone 15」的客戶有誰？"
+    },
+    {
+        "id": 88,
+        "type": "unseen",
+        "question": "總庫存量價值（庫存數量乘上單價）最高的三種商品類別是什麼？"
+    },
+    {
+        "id": 89,
+        "type": "unseen",
+        "question": "單價超過 5000 元的商品中，哪一個最受歡迎（也就是賣出最多件）？"
+    },
+    {
+        "id": 90,
+        "type": "unseen",
+        "question": "平均每位客戶註冊後，下了幾張訂單？"
+    },
+    {
+        "id": 91,
+        "type": "unseen",
+        "question": "找出在 2024 年註冊，並且至少下過一筆 PENDING 訂單的客戶名字。"
+    },
+    {
+        "id": 92,
+        "type": "unseen",
+        "question": "幫我列出單價最貴的前 5 名商品名稱和價格。"
+    },
+    {
+        "id": 93,
+        "type": "unseen",
+        "question": "請問『Accessories』這個類別底下，總共有幾種不同的商品？"
+    },
+    {
+        "id": 94,
+        "type": "unseen",
+        "question": "找出購買商品數量總和最多的那位客戶，並列出他的電子郵件。"
+    },
+    {
+        "id": 95,
+        "type": "unseen",
+        "question": "在 2025 年的所有訂單中，平均每筆訂單的總金額大約是多少？"
+    },
+    {
+        "id": 96,
+        "type": "unseen",
+        "question": "找出所有沒有填寫信箱的客戶。"
+    },
+    {
+        "id": 97,
+        "type": "unseen",
+        "question": "列出所有買過『Tablet』類別商品，且目前住在『新竹市』的客戶。"
+    },
+    {
+        "id": 98,
+        "type": "unseen",
+        "question": "找出所有『Smartphone』商品中，單筆訂單購買數量曾經超過 10 的紀錄。"
+    },
+    {
+        "id": 99,
+        "type": "unseen",
+        "question": "統計各個城市的客戶數量，並依照數量由大到小排序。"
+    },
+    {
+        "id": 100,
+        "type": "unseen",
+        "question": "請列出在 2025 年 6 月份，單日營業額最高的那一天。"
+    }
+]

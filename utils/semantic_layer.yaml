@@ -1,21 +1,291 @@
-# Semantic Layer (商業邏輯字典)
-# 這份檔案定義了常見的商業名詞與其對應的 SQL 邏輯，避免 LLM 產生幻覺或誤用聚合函數。
+# =============================================================================
+# Semantic Layer — Text-to-SQL 知識庫
+# 包含：① 完整 DDL  ② Enum 欄位可能值  ③ Few-Shot 問題→SQL 對照範例
+# =============================================================================
 
-metrics:
+
+# =============================================================================
+# 一、核心資料庫 DDL（含主鍵、外鍵）
+# =============================================================================
+ddl: |
+  CREATE TABLE customers (
+    id          INT          PRIMARY KEY COMMENT '客戶唯一ID',
+    name        VARCHAR(100) COMMENT '客戶姓名',
+    email       VARCHAR(100) COMMENT '客戶信箱',
+    phone       VARCHAR(20)  COMMENT '客戶電話',
+    city        VARCHAR(50)  COMMENT '居住城市',
+    created_at  DATETIME     COMMENT '註冊時間'
+  );
+
+  CREATE TABLE products (
+    id          INT           PRIMARY KEY COMMENT '商品唯一ID',
+    name        VARCHAR(100)  COMMENT '商品名稱',
+    category    VARCHAR(50)   COMMENT '商品分類',
+    price       DECIMAL(10,2) COMMENT '商品售價',
+    stock       INT           COMMENT '庫存數量',
+    description TEXT          COMMENT '商品描述'
+  );
+
+  CREATE TABLE orders (
+    id            INT           PRIMARY KEY COMMENT '訂單唯一ID',
+    customer_id   INT           COMMENT '購買客戶ID (FK → customers.id)',
+    order_date    DATETIME      COMMENT '訂單建立時間',
+    total_amount  DECIMAL(10,2) COMMENT '訂單總金額',
+    status        VARCHAR(20)   COMMENT '訂單狀態，可能的值：PENDING / PAID / SHIPPED / COMPLETED / CANCELLED',
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  );
+
+  CREATE TABLE order_items (
+    id          INT           PRIMARY KEY COMMENT '明細唯一ID',
+    order_id    INT           COMMENT '所屬訂單ID (FK → orders.id)',
+    product_id  INT           COMMENT '購買商品ID (FK → products.id)',
+    quantity    INT           COMMENT '購買數量',
+    unit_price  DECIMAL(10,2) COMMENT '購買當下的商品單價',
+    FOREIGN KEY (order_id)   REFERENCES orders(id),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  );
+
+
+# =============================================================================
+# 二、Enum 欄位說明（狀態型欄位的所有可能值）
+# =============================================================================
+enum_fields:
+  orders.status:
+    description: "訂單處理狀態"
+    values:
+      PENDING:   "待付款（尚未處理）"
+      PAID:      "已付款"
+      SHIPPED:   "已出貨"
+      COMPLETED: "已完成（收貨確認）"
+      CANCELLED: "已取消"
+
+
+# =============================================================================
+# 三、商業邏輯規則（Anti-Pattern 防範）
+# =============================================================================
+business_rules:
   - name: "售出數量 / 賣出幾台 / 總銷量"
-    description: "計算商品賣出的總數量時，必須使用訂單明細的數量加總，而不是計算明細的筆數。"
-    sql_logic: "SUM(order_items.quantity)"
-    anti_pattern: "不要使用 COUNT(order_items.id)"
-    
-  - name: "總消費金額 / 營收 / 總花費"
-    description: "計算客戶的總花費或訂單總營收時，直接加總訂單的總金額。"
-    sql_logic: "SUM(orders.total_amount)"
-    anti_pattern: "不要使用 COUNT()"
+    description: "計算商品賣出的總數量，必須使用 order_items.quantity 加總，代表每筆明細的購買件數。"
+    correct_sql: "SUM(oi.quantity)"
+    wrong_sql:   "COUNT(oi.id)  -- ❌ 錯誤：COUNT 算的是明細筆數，不是購買件數"
 
-  - name: "客戶數量 / 幾位客戶"
-    description: "計算有多少位不同的客戶時，必須過濾重複的客戶 ID。"
-    sql_logic: "COUNT(DISTINCT customers.id) 或 COUNT(DISTINCT orders.customer_id)"
+  - name: "訂單總金額 / 總營收 / 總消費"
+    description: "計算金額時使用 orders.total_amount，這已是每張訂單的最終合計金額。"
+    correct_sql: "SUM(o.total_amount)"
+    wrong_sql:   "SUM(oi.quantity * oi.unit_price)  -- ⚠️ 可用於驗算，但非首選"
 
-  - name: "平均消費金額"
-    description: "計算訂單的平均金額。"
-    sql_logic: "AVG(orders.total_amount)"
+  - name: "客戶人數"
+    description: "計算不重複的客戶數，避免因多筆訂單而重複計算同一位客戶。"
+    correct_sql: "COUNT(DISTINCT customer_id)"
+    wrong_sql:   "COUNT(customer_id)  -- ❌ 錯誤：同一客戶的多筆訂單會被重複計算"
+
+  - name: "從未下訂的客戶"
+    description: "找出在 customers 中存在、但在 orders 中沒有對應紀錄的客戶。"
+    correct_sql: "LEFT JOIN orders o ON c.id = o.customer_id WHERE o.id IS NULL"
+    wrong_sql:   "NOT IN (subquery)  -- ⚠️ 若 subquery 含 NULL 值會出錯，LEFT JOIN 更安全"
+
+  - name: "MySQL only_full_group_by 限制"
+    description: "本資料庫啟用了 only_full_group_by 模式。在 SELECT 清單中，所有非聚合欄位都必須出現在 GROUP BY 子句中，否則 MySQL 會報錯。"
+    correct_sql: |
+      -- ✅ 正確：SELECT 中只包含 GROUP BY 的欄位 + 聚合函數
+      SELECT c.name, o.total_amount
+      FROM orders o JOIN customers c ON o.customer_id = c.id
+      WHERE o.total_amount > (SELECT AVG(total_amount) FROM orders)
+      ORDER BY o.total_amount DESC LIMIT 1;
+    wrong_sql: |
+      -- ❌ 錯誤：SELECT 中出現了 o.total_amount，但 GROUP BY 只有 c.id
+      -- 這在 only_full_group_by 模式下會直接報錯
+      SELECT AVG(total_amount), c.name, o.total_amount
+      FROM orders o JOIN customers c ON o.customer_id = c.id
+      GROUP BY c.id HAVING o.total_amount > (SELECT AVG(total_amount) FROM orders)
+
+  - name: "相對時間區間（過去 N 天/月以內 / 超過 N 天/月前）"
+    description: |
+      當問題使用「過去 N 天以內」、「最近 N 個月」、「不到 N 天」等相對時間，
+      必須用 DATE_SUB 計算基準日，並確認比較方向正確：
+      「以內 / 不到 / 最近」→ created_at >= DATE_SUB(NOW(), INTERVAL N DAY)
+      「超過 / 早於 / N 天前以前」→ created_at < DATE_SUB(NOW(), INTERVAL N DAY)
+      ⚠️ 最常見錯誤：把 >= 寫成 <=，或把 INTERVAL 的加減方向顛倒。
+    correct_sql: |
+      -- 「過去 30 天以內」：距今越近 created_at 越大，所以用 >=
+      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      -- 「超過 3 個月前」：距今越遠 created_at 越小，所以用 <
+      WHERE order_date < DATE_SUB(NOW(), INTERVAL 3 MONTH)
+    wrong_sql: |
+      -- ❌ 方向顛倒：下面條件會撈出「30 天以前」的舊資料，正好相反
+      WHERE created_at <= DATE_SUB(NOW(), INTERVAL 30 DAY)
+
+  - name: "全稱量詞（每一張都 / 全部 / 所有）"
+    description: |
+      當問題含「每一張都…」、「全部訂單都…」等全稱量詞，
+      不可只用 WHERE，因為 WHERE 只保證「至少一筆符合」。
+      正確做法：GROUP BY 客戶後，用 HAVING MIN(col) 或 HAVING COUNT(CASE WHEN...) 確保全部符合。
+    correct_sql: |
+      -- 「每一張訂單金額都超過 1000 元」的客戶
+      SELECT c.name
+      FROM customers c JOIN orders o ON c.id = o.customer_id
+      GROUP BY c.id, c.name
+      HAVING MIN(o.total_amount) > 1000;
+    wrong_sql: |
+      -- ❌ 只篩出「至少一張 > 1000」，不是「每一張都 > 1000」
+      SELECT DISTINCT c.name
+      FROM customers c JOIN orders o ON c.id = o.customer_id
+      WHERE o.total_amount > 1000;
+
+  - name: "存在量詞（至少有一筆 / 曾經 / 有過）"
+    description: |
+      當問題含「至少有一筆」、「曾經購買過」等存在量詞，
+      只需 JOIN + WHERE 或 EXISTS，不需 MIN/MAX 全稱結構。
+    correct_sql: |
+      -- 「曾經購買過空氣清淨機」的客戶
+      SELECT DISTINCT c.name
+      FROM customers c
+      JOIN orders o ON c.id = o.customer_id
+      JOIN order_items oi ON o.id = oi.order_id
+      JOIN products p ON oi.product_id = p.id
+      WHERE p.name = '空氣清淨機';
+    wrong_sql: |
+      -- ❌ 不必要地用 HAVING 全稱驗證
+      HAVING COUNT(DISTINCT p.name) = (SELECT COUNT(*) FROM products WHERE name='空氣清淨機')
+
+  - name: "跨說明細表關聯客戶 (JOIN 路徑)"
+    description: |
+      當需要計算「某個客戶買了多少商品數量」時，請注意 order_items (明細表) 裡面『沒有』 customer_id 欄位。
+      必須遵守這條 JOIN 路徑：customers -> orders -> order_items。
+      絕不能試圖將 customers 直接 JOIN order_items 或在 order_items 裡找 customer_id。
+    correct_sql: |
+      -- ✅ 必須透過 orders 作為橋樑
+      FROM customers c 
+      JOIN orders o ON c.id = o.customer_id
+      JOIN order_items oi ON o.id = oi.order_id
+    wrong_sql: |
+      -- ❌ 錯誤：order_items 根本沒有 customer_id
+      FROM customers c JOIN order_items oi ON c.id = oi.customer_id
+
+
+# =============================================================================
+# 四、Few-Shot 問答範例（問題 → SQL 對照，示範正確的推理路徑）
+# =============================================================================
+few_shot_examples:
+
+  - question: "找出所有姓「陳」的客戶名單"
+    reasoning: "直接從 customers 表用 LIKE 篩選姓氏"
+    sql: |
+      SELECT name, email, city
+      FROM customers
+      WHERE name LIKE '陳%'
+      ORDER BY name;
+
+  - question: "總共賣出幾台「空氣清淨機」？"
+    reasoning: "賣出數量 = SUM(quantity)，需要 JOIN order_items 與 products 篩選商品名稱"
+    sql: |
+      SELECT SUM(oi.quantity) AS total_sold
+      FROM order_items oi
+      JOIN products p ON oi.product_id = p.id
+      WHERE p.name = '空氣清淨機';
+
+  - question: "在台北市的客戶，總共下了多少張訂單？"
+    reasoning: "先從 customers 篩選 city='台北市'，再 JOIN orders 計算訂單數量"
+    sql: |
+      SELECT COUNT(o.id) AS total_orders
+      FROM orders o
+      JOIN customers c ON o.customer_id = c.id
+      WHERE c.city = '台北市';
+
+  - question: "哪一個商品的總營收最高？總共賺了多少錢？"
+    reasoning: "從 order_items JOIN products，用 SUM(quantity*unit_price) 計算各商品營收，取最高"
+    sql: |
+      SELECT p.name, SUM(oi.quantity * oi.unit_price) AS total_revenue
+      FROM order_items oi
+      JOIN products p ON oi.product_id = p.id
+      GROUP BY p.id, p.name
+      ORDER BY total_revenue DESC
+      LIMIT 1;
+
+  - question: "有多少張訂單的狀態是待處理 (PENDING)？"
+    reasoning: "orders.status 欄位的 Enum 值為全大寫英文，直接篩選 'PENDING'"
+    sql: |
+      SELECT COUNT(*) AS pending_count
+      FROM orders
+      WHERE status = 'PENDING';
+
+  - question: "找出從未下過任何訂單的客戶姓名"
+    reasoning: "使用 LEFT JOIN 找出 orders 中沒有對應紀錄的 customers"
+    sql: |
+      SELECT c.name
+      FROM customers c
+      LEFT JOIN orders o ON c.id = o.customer_id
+      WHERE o.id IS NULL
+      ORDER BY c.name;
+
+  - question: "單筆訂單總金額超過 5 萬元的訂單，都是哪些客戶買的？"
+    reasoning: "從 orders 篩選 total_amount > 50000，JOIN customers 取得姓名"
+    sql: |
+      SELECT c.name, o.id AS order_id, o.total_amount, o.order_date
+      FROM orders o
+      JOIN customers c ON o.customer_id = c.id
+      WHERE o.total_amount > 50000
+      ORDER BY o.total_amount DESC;
+
+  - question: "最晚註冊的客戶是誰？他註冊的日期是哪天？"
+    reasoning: "從 customers 取 MAX(created_at) 找到最新的註冊紀錄"
+    sql: |
+      SELECT name, created_at
+      FROM customers
+      ORDER BY created_at DESC
+      LIMIT 1;
+
+  - question: "商品庫存量低於 10 的商品有哪些？"
+    reasoning: "直接從 products 篩選 stock < 10"
+    sql: |
+      SELECT name, category, stock
+      FROM products
+      WHERE stock < 10
+      ORDER BY stock ASC;
+
+  - question: "平均每張訂單買了幾項不同的商品？"
+    reasoning: "每張訂單的商品種數 = COUNT(DISTINCT product_id)，再對所有訂單取平均"
+    sql: |
+      SELECT AVG(item_count) AS avg_items_per_order
+      FROM (
+        SELECT order_id, COUNT(DISTINCT product_id) AS item_count
+        FROM order_items
+        GROUP BY order_id
+      ) AS order_summary;
+
+  - question: "請先幫我計算出所有訂單的『平均消費金額』大約是多少？接著，在所有『高於平均值』的訂單中，金額最高的那一筆是哪位客戶買的？花了多少錢？"
+    reasoning: |
+      這是一個 2 步驟問題，需要分兩次呼叫 execute_sql：
+      第一次 execute_sql：查出平均金額
+      第二次 execute_sql：用 WHERE 子查詢找出高於平均值且金額最高的訂單
+      ⚠️ 禁止用 GROUP BY + HAVING 混用 AVG 與非聚合欄位（會觸發 only_full_group_by 錯誤）
+    sql_step1: |
+      SELECT AVG(total_amount) AS avg_amount FROM orders;
+    sql_step2: |
+      SELECT c.name, o.total_amount, o.order_date
+      FROM orders o
+      JOIN customers c ON o.customer_id = c.id
+      WHERE o.total_amount > (SELECT AVG(total_amount) FROM orders)
+      ORDER BY o.total_amount DESC
+      LIMIT 1;
+
+  - question: "最近 30 天以內，總共有幾張訂單？"
+    reasoning: |
+      「最近 30 天以內」→ 距今越近 order_date 越大，條件是 >= DATE_SUB(NOW(), INTERVAL 30 DAY)。
+      注意：不可用 <=，那會撈出 30 天前以前的舊訂單，方向完全相反。
+    sql: |
+      SELECT COUNT(*) AS recent_order_count
+      FROM orders
+      WHERE order_date >= DATE_SUB(NOW(), INTERVAL 30 DAY);
+
+  - question: "每一張訂單金額都超過 1000 元的客戶有哪些？"
+    reasoning: |
+      「每一張都超過」是全稱量詞，不能只用 WHERE（WHERE 只保證至少一張符合）。
+      正確做法：GROUP BY 客戶後，用 HAVING MIN(total_amount) > 1000 確保每筆訂單都滿足。
+    sql: |
+      SELECT c.name
+      FROM customers c
+      JOIN orders o ON c.id = o.customer_id
+      GROUP BY c.id, c.name
+      HAVING MIN(o.total_amount) > 1000
+      ORDER BY c.name;

@@ -1,0 +1,37 @@
+問題: 1. 請問『筆記型電腦』(Laptop)這個類別底下，總共有幾種不同的商品？
+回答: 沒有符合條件的資料。
+SQL: SELECT COUNT(DISTINCT p.id) FROM products AS p WHERE p.category = 'Laptop'
+Critic 通過: True | 重試次數: 1
+--------------------------------------------------
+問題: 2. 幫我列出單價最貴的前三名商品名稱和價格。
+回答: 根據查詢結果，單價最貴的前三名商品名稱和價格如下：
+
+1. MacBook Air：35,000 元
+2. iPhone 15：30,000 元
+3. iPad Pro：25,000 元
+SQL: SELECT p.name, p.price FROM products AS p ORDER BY p.price DESC LIMIT 3
+Critic 通過: True | 重試次數: 0
+--------------------------------------------------
+問題: 3. 在 2026 年 5 月份的所有訂單中，總共創造了多少營業額？
+回答: 根據查詢結果顯示，2026 年 5 月份的所有訂單總共創造了 465,670 元的營業額。
+SQL: SELECT SUM(oi.quantity * oi.unit_price) AS total_revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.id JOIN orders AS o ON oi.order_id = o.id WHERE YEAR(o.order_date) = 2026 AND MONTH(o.order_date) = 5
+Critic 通過: True | 重試次數: 0
+--------------------------------------------------
+問題: 4. 找出購買商品數量總和最多的那位客戶，並列出他的電子郵件。
+回答: 抱歉，系統經過多次嘗試仍無法為您的問題生成有效的查詢。
+原因：所有 SQL 執行皆失敗。代表性錯誤: SQL #1: Execution failed on sql 'SELECT c.name, c.email FROM customers AS c JOIN orders AS o ON c.id = o.customer_id WHERE c.id = (SELECT customer_id FROM orders GROUP BY customer_id ORDER BY SUM(quantity) DESC LIMIT 1)': (pymysql.err.OperationalError) (1054, "Unknown column 'quantity' in 'order clause'")
+[SQL: SELECT c.name, c.email FROM customers AS c JOIN orders AS o ON c.id = o.customer_id WHERE c.id = (SELECT customer_id FROM orders GROUP BY customer_id ORDER BY SUM(quantity) DESC LIMIT 1)]
+(Background on this error at: https://sqlalche.me/e/20/e3q8); SQL #2: Execution failed on sql 'SELECT c.name, c.email FROM customers AS c JOIN orders AS o ON c.id = o.customer_id JOIN (SELECT customer_id, SUM(quantity) AS total_quantity FROM order_items GROUP BY customer_id) AS oi ON o.customer_id = oi.customer_id ORDER BY oi.total_quantity DESC LIMIT 1': (pymysql.err.OperationalError) (1054, "Unknown column 'customer_id' in 'field list'")
+[SQL: SELECT c.name, c.email FROM customers AS c JOIN orders AS o ON c.id = o.customer_id JOIN (SELECT customer_id, SUM(quantity) AS total_quantity FROM order_items GROUP BY customer_id) AS oi ON o.customer_id = oi.customer_id ORDER BY oi.total_quantity DESC LIMIT 1]
+(Background on this error at: https://sqlalche.me/e/20/e3q8); SQL #3: Execution failed on sql 'SELECT c.name, c.email FROM customers AS c JOIN orders AS o ON c.id = o.customer_id JOIN (SELECT customer_id, SUM(quantity) AS total_quantity FROM order_items GROUP BY customer_id) AS oi ON o.customer_id = oi.customer_id WHERE oi.total_quantity = (SELECT MAX(total_quantity) FROM (SELECT customer_id, SUM(quantity) AS total_quantity FROM order_items GROUP BY customer_id) AS quantity_summary)': (pymysql.err.OperationalError) (1054, "Unknown column 'customer_id' in 'field list'")
+[SQL: SELECT c.name, c.email FROM customers AS c JOIN orders AS o ON c.id = o.customer_id JOIN (SELECT customer_id, SUM(quantity) AS total_quantity FROM order_items GROUP BY customer_id) AS oi ON o.customer_id = oi.customer_id WHERE oi.total_quantity = (SELECT MAX(total_quantity) FROM (SELECT customer_id, SUM(quantity) AS total_quantity FROM order_items GROUP BY customer_id) AS quantity_summary)]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+建議：請嘗試用更明確的方式描述您的問題。
+SQL: 
+Critic 通過: None | 重試次數: 0
+--------------------------------------------------
+問題: 5. 請找出狀態是『已出貨』(SHIPPED) 的訂單中，平均每筆訂單的總金額大約是多少？
+回答: 根據查詢結果顯示，狀態是『已出貨』(SHIPPED) 的訂單中，平均每筆訂單的總金額約為 **12,407.83** 元。
+SQL: SELECT AVG(o.total_amount) AS avg_amount FROM orders AS o WHERE o.status = 'SHIPPED'
+Critic 通過: True | 重試次數: 0
+--------------------------------------------------

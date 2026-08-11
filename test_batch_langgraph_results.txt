@@ -1,0 +1,102 @@
+問題: 1. 找出所有姓「陳」的客戶名單。
+回答: 根據您的要求，我們找到了所有姓「陳」的客戶名單。以下是結果：
+
+1. 陳佳穎
+ - 電子郵件：user49@example.com
+ - 所在地：台中市
+
+2. 陳家豪
+ - 電子郵件：user8@example.com
+ - 所在地：台中市
+
+3. 陳小明
+ - 電子郵件：user36@example.com
+ - 所在地：桃園市
+
+4. 陳志強
+ - 電子郵件：user14@example.com
+ - 所在地：高雄市
+
+5. 陳柏翰
+ - 電子郵件：user33@example.com
+ - 所在地：台北市
+
+6. 陳美玲
+ - 電子郵件：user4@example.com
+ - 所在地：桃園市
+
+7. 陳雅婷
+ - 電子郵件：user24@example.com
+ - 所在地：新竹市
+
+總共有 7 筆資料。
+SQL: SELECT name, email, city FROM customers WHERE name LIKE '陳%' ORDER BY name
+Critic 通過: True | 重試次數: 0
+--------------------------------------------------
+問題: 2. 總共賣出幾台「空氣清淨機」？
+回答: 根據查詢結果顯示，總共賣出了 34 台「空氣清淨機」。
+SQL: SELECT SUM(oi.quantity) AS total_sold FROM order_items AS oi JOIN products AS p ON oi.product_id = p.id WHERE p.name = '空氣清淨機'
+Critic 通過: True | 重試次數: 0
+--------------------------------------------------
+問題: 3. 在台北市的客戶，總共下了多少張訂單？
+回答: 根據查詢結果顯示，台北市的客戶總共下了 **15** 張訂單。
+SQL: SELECT COUNT(o.id) AS total_orders FROM orders AS o JOIN customers AS c ON o.customer_id = c.id WHERE c.city = '台北市'
+Critic 通過: True | 重試次數: 0
+--------------------------------------------------
+問題: 4. 哪一個商品的總營收最高？總共賺了多少錢？
+回答: 根據查詢結果顯示，最高總營收的商品是「MacBook Air」，總共賺了 1,432,959 元。
+SQL: SELECT p.name, SUM(o.total_amount) AS total_revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.id JOIN orders AS o ON oi.order_id = o.id GROUP BY p.id, p.name ORDER BY total_revenue DESC LIMIT 1
+Critic 通過: True | 重試次數: 1
+--------------------------------------------------
+問題: 5. 有多少張訂單的狀態是待處理 (PENDING)？
+回答: 根據查詢結果顯示，有 **25** 張訂單的狀態是待處理 (PENDING)。
+SQL: SELECT COUNT(*) AS pending_count FROM orders WHERE status = 'PENDING'
+Critic 通過: True | 重試次數: 1
+--------------------------------------------------
+問題: 6. 找出從未下過任何訂單的客戶姓名。
+回答: 沒有符合條件的資料。
+SQL: SELECT c.name FROM customers AS c LEFT JOIN orders AS o ON c.id = o.customer_id WHERE o.id IS NULL ORDER BY c.name
+Critic 通過: True | 重試次數: 0
+--------------------------------------------------
+問題: 7. 單筆訂單總金額超過 5 萬元的訂單，都是哪些客戶買的？
+回答: 根據查詢結果顯示，單筆訂單總金額超過 5 萬元的訂單，都是由以下客戶買的：
+
+1. 王俊傑
+2. 蔡阿華
+3. 楊志強
+4. 林俊傑
+5. 楊小明
+6. 洪美玲
+7. 黃阿華
+8. 吳柏翰
+9. 吳心怡
+10. 劉佳穎
+11. 陳小明
+12. 洪柏翰
+13. 林柏翰
+14. 李佳穎
+15. 蔡美玲
+16. 謝婉君
+17. 王家豪
+18. 張佳穎
+19. 陳雅婷
+
+總共有 19 位客戶買了單筆訂單總金額超過 5 萬元的商品。
+SQL: SELECT c.name, o.id AS order_id, o.total_amount, o.order_date FROM orders AS o JOIN customers AS c ON o.customer_id = c.id WHERE o.total_amount > 50000 ORDER BY o.total_amount DESC
+Critic 通過: True | 重試次數: 0
+--------------------------------------------------
+問題: 8. 最晚註冊的客戶是誰？他註冊的日期是哪天？
+回答: 根據查詢結果顯示，最晚註冊的客戶是劉佳穎，他的註冊日期是2026年7月22日。
+SQL: SELECT name, created_at FROM customers ORDER BY created_at DESC LIMIT 1
+Critic 通過: True | 重試次數: 0
+--------------------------------------------------
+問題: 9. 商品庫存量低於 10 的商品有哪些？
+回答: 沒有符合條件的資料。
+SQL: SELECT name, category, stock FROM products WHERE stock < 10 ORDER BY stock ASC
+Critic 通過: True | 重試次數: 0
+--------------------------------------------------
+問題: 10. 平均每張訂單買了幾項不同的商品？
+回答: 根據資料庫查詢結果顯示，平均每張訂單買了約 2.95 項不同的商品。
+SQL: SELECT AVG(item_count) AS avg_items_per_order FROM (SELECT order_id, COUNT(DISTINCT product_id) AS item_count FROM order_items GROUP BY order_id) AS order_summary
+Critic 通過: True | 重試次數: 0
+--------------------------------------------------
