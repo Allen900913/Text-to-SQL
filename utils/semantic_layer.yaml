@@ -148,6 +148,31 @@ business_rules:
       -- ❌ 不必要地用 HAVING 全稱驗證
       HAVING COUNT(DISTINCT p.name) = (SELECT COUNT(*) FROM products WHERE name='空氣清淨機')
 
+  - name: "否定存在量詞（從未買過 / 不曾 / 沒有買過）"
+    description: |
+      當問題含「從未買過 X」、「沒有買過 X」等否定存在量詞時，
+      絕對不可使用 `LEFT JOIN ... WHERE name != 'X'` 或 `IS NULL`，這會導致買過其他商品的人也被算進來。
+      正確做法：必須使用 `NOT IN` 或 `NOT EXISTS` 子查詢來排除「曾經買過 X 的人」。
+    correct_sql: |
+      -- 「從未買過 iPhone 15」的客戶
+      SELECT c.name
+      FROM customers c
+      WHERE c.id NOT IN (
+          SELECT o.customer_id
+          FROM orders o
+          JOIN order_items oi ON o.id = oi.order_id
+          JOIN products p ON oi.product_id = p.id
+          WHERE p.name = 'iPhone 15'
+      );
+    wrong_sql: |
+      -- ❌ 錯誤：這會挑出「買過其他東西」的訂單，導致有買 iPhone 15 的人依然出現
+      SELECT c.name
+      FROM customers c
+      LEFT JOIN orders o ON c.id = o.customer_id
+      LEFT JOIN order_items oi ON o.id = oi.order_id
+      LEFT JOIN products p ON oi.product_id = p.id
+      WHERE p.name != 'iPhone 15' OR p.name IS NULL;
+
   - name: "跨說明細表關聯客戶 (JOIN 路徑)"
     description: |
       當需要計算「某個客戶買了多少商品數量」時，請注意 order_items (明細表) 裡面『沒有』 customer_id 欄位。
