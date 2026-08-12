@@ -187,6 +187,28 @@ business_rules:
       -- ❌ 錯誤：order_items 根本沒有 customer_id
       FROM customers c JOIN order_items oi ON c.id = oi.customer_id
 
+  - name: "訂單狀態：已送達 (DELIVERED)"
+    description: "當使用者詢問「已送達」或「DELIVERED」的訂單時，必須使用 status = 'COMPLETED'。資料庫沒有 DELIVERED 狀態，絕對不可猜測為 SHIPPED。"
+    correct_sql: "WHERE status = 'COMPLETED'"
+    wrong_sql:   "WHERE status = 'SHIPPED'  -- ❌ 錯誤：這是已出貨，尚未送達"
+
+  - name: "單次購買 / 單筆訂單大於 N 件"
+    description: "計算「單次/單筆」購買超過 N 件時，必須以「訂單 (orders.id)」為單位進行 GROUP BY。不可只對客戶 (customers.id) 進行 GROUP BY，那會變成計算該客戶的歷史總購買量。"
+    correct_sql: "GROUP BY o.id HAVING SUM(oi.quantity) > N"
+    wrong_sql:   "GROUP BY c.id HAVING SUM(oi.quantity) > N  -- ❌ 錯誤：這會算出客戶一輩子買的總量"
+
+  - name: "聚合函數在 ORDER BY 中的限制 (隱藏的 only_full_group_by 限制)"
+    description: "在 MySQL 嚴格模式下，若在 ORDER BY 中使用聚合函數 (如 SUM(oi.quantity)) 進行排序，該聚合函數必須同時出現在 SELECT 欄位清單中，否則會報錯導致查無資料。"
+    correct_sql: |
+      -- ✅ 聚合函數出現在 SELECT 中
+      SELECT c.name, c.email, SUM(oi.quantity) AS total_qty
+      FROM customers c JOIN orders o ON c.id=o.customer_id JOIN order_items oi ON o.id=oi.order_id
+      GROUP BY c.id, c.name, c.email ORDER BY total_qty DESC LIMIT 1
+    wrong_sql: |
+      -- ❌ 錯誤：ORDER BY 用了 SUM(oi.quantity)，但 SELECT 中沒有
+      SELECT c.name, c.email
+      FROM customers c JOIN orders o ON c.id=o.customer_id JOIN order_items oi ON o.id=oi.order_id
+      GROUP BY c.id, c.name, c.email ORDER BY SUM(oi.quantity) DESC LIMIT 1
 
 # =============================================================================
 # 四、Few-Shot 問答範例（問題 → SQL 對照，示範正確的推理路徑）
