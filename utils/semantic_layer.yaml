@@ -91,7 +91,7 @@ business_rules:
       SELECT c.name, o.total_amount
       FROM orders o JOIN customers c ON o.customer_id = c.id
       WHERE o.total_amount > (SELECT AVG(total_amount) FROM orders)
-      ORDER BY o.total_amount DESC LIMIT 1;
+      ORDER BY o.total_amount DESC;
     wrong_sql: |
       -- ❌ 錯誤：SELECT 中出現了 o.total_amount，但 GROUP BY 只有 c.id
       -- 這在 only_full_group_by 模式下會直接報錯
@@ -218,15 +218,43 @@ business_rules:
   - name: "聚合函數在 ORDER BY 中的限制 (隱藏的 only_full_group_by 限制)"
     description: "在 MySQL 嚴格模式下，若在 ORDER BY 中使用聚合函數 (如 SUM(oi.quantity)) 進行排序，該聚合函數必須同時出現在 SELECT 欄位清單中，否則會報錯導致查無資料。"
     correct_sql: |
-      -- ✅ 聚合函數出現在 SELECT 中
+      -- ✅ 聚合函數出現在 SELECT 中（取極值請另見「處理並列第一」規則，勿用 LIMIT 1）
       SELECT c.name, c.email, SUM(oi.quantity) AS total_qty
       FROM customers c JOIN orders o ON c.id=o.customer_id JOIN order_items oi ON o.id=oi.order_id
-      GROUP BY c.id, c.name, c.email ORDER BY total_qty DESC LIMIT 1
+      GROUP BY c.id, c.name, c.email ORDER BY total_qty DESC
     wrong_sql: |
       -- ❌ 錯誤：ORDER BY 用了 SUM(oi.quantity)，但 SELECT 中沒有
       SELECT c.name, c.email
       FROM customers c JOIN orders o ON c.id=o.customer_id JOIN order_items oi ON o.id=oi.order_id
-      GROUP BY c.id, c.name, c.email ORDER BY SUM(oi.quantity) DESC LIMIT 1
+      GROUP BY c.id, c.name, c.email ORDER BY SUM(oi.quantity) DESC
+
+  - name: "處理並列第一 (Top-N with Ties)"
+    description: |
+      當問題出現「最多」、「最高」、「最大」、「第一名」、「哪一天/哪個人最…」等極值語意時，
+      資料中經常存在數值並列 (Ties)。「絕對禁止」用 ORDER BY ... LIMIT 1 取極值，
+      因為 LIMIT 1 會在並列時任意截斷，漏掉同樣是第一名的資料。
+      正確做法：用 DENSE_RANK() OVER (ORDER BY <聚合值> DESC) 算出名次，
+      外層再過濾 rnk = 1，即可完整列出所有並列第一者。
+      （若使用者明確說「隨便給我一個」或「任選一位」才可用 LIMIT 1。）
+    correct_sql: |
+      -- ✅ 用 DENSE_RANK 取出所有並列第一（此例真實資料有 2 位客戶同為 66 件）
+      WITH ranked AS (
+        SELECT c.name, c.email, SUM(oi.quantity) AS total_qty,
+               DENSE_RANK() OVER (ORDER BY SUM(oi.quantity) DESC) AS rnk
+        FROM customers c
+        JOIN orders o ON c.id = o.customer_id
+        JOIN order_items oi ON o.id = oi.order_id
+        GROUP BY c.id, c.name, c.email
+      )
+      SELECT name, email, total_qty FROM ranked WHERE rnk = 1
+    wrong_sql: |
+      -- ❌ 錯誤：LIMIT 1 在並列時只會回傳其中一筆，其餘同分者全被截斷
+      SELECT c.name, c.email, SUM(oi.quantity) AS total_qty
+      FROM customers c JOIN orders o ON c.id=o.customer_id JOIN order_items oi ON o.id=oi.order_id
+      GROUP BY c.id, c.name, c.email ORDER BY total_qty DESC LIMIT 1
+      -- ❌ 同樣錯誤：問「哪一天訂單最多」時並列的日期會被漏掉
+      SELECT DATE(order_date) AS d, COUNT(*) AS n FROM orders
+      GROUP BY d ORDER BY n DESC LIMIT 1
 
 # =============================================================================
 # 四、Few-Shot 問答範例（問題 → SQL 對照，示範正確的推理路徑）
@@ -258,14 +286,33 @@ few_shot_examples:
       WHERE c.city = '台北市';
 
   - question: "哪一個商品的總營收最高？總共賺了多少錢？"
-    reasoning: "從 order_items JOIN products，用 SUM(quantity*unit_price) 計算各商品營收，取最高"
+    reasoning: |
+      從 order_items JOIN products，用 SUM(quantity*unit_price) 計算各商品營收。
+      「最高」是極值問題，可能有並列，不可用 LIMIT 1，
+      必須用 DENSE_RANK() 取出所有第 1 名。
     sql: |
-      SELECT p.name, SUM(oi.quantity * oi.unit_price) AS total_revenue
-      FROM order_items oi
-      JOIN products p ON oi.product_id = p.id
-      GROUP BY p.id, p.name
-      ORDER BY total_revenue DESC
-      LIMIT 1;
+      WITH ranked AS (
+        SELECT p.name, SUM(oi.quantity * oi.unit_price) AS total_revenue,
+               DENSE_RANK() OVER (ORDER BY SUM(oi.quantity * oi.unit_price) DESC) AS rnk
+        FROM order_items oi
+        JOIN products p ON oi.product_id = p.id
+        GROUP BY p.id, p.name
+      )
+      SELECT name, total_revenue FROM ranked WHERE rnk = 1;
+
+  - question: "哪一天的訂單數量最多？"
+    reasoning: |
+      按日期分組計數後取極值。同樣的訂單數可能發生在好幾天（並列），
+      不可用 LIMIT 1，必須用 DENSE_RANK() 列出所有筆數最多的日期。
+      「單日營業額最高是哪一天」也是同一個形狀，把 COUNT(*) 換成 SUM(o.total_amount) 即可。
+    sql: |
+      WITH ranked AS (
+        SELECT DATE(order_date) AS order_day, COUNT(*) AS order_count,
+               DENSE_RANK() OVER (ORDER BY COUNT(*) DESC) AS rnk
+        FROM orders
+        GROUP BY DATE(order_date)
+      )
+      SELECT order_day, order_count FROM ranked WHERE rnk = 1;
 
   - question: "有多少張訂單的狀態是待處理 (PENDING)？"
     reasoning: "orders.status 欄位的 Enum 值為全大寫英文，直接篩選 'PENDING'"
@@ -293,12 +340,16 @@ few_shot_examples:
       ORDER BY o.total_amount DESC;
 
   - question: "最晚註冊的客戶是誰？他註冊的日期是哪天？"
-    reasoning: "從 customers 取 MAX(created_at) 找到最新的註冊紀錄"
+    reasoning: |
+      「最晚」是極值問題，同一時間可能有多人註冊，不可用 LIMIT 1；
+      用 DENSE_RANK() 取出所有並列最晚者。
     sql: |
-      SELECT name, created_at
-      FROM customers
-      ORDER BY created_at DESC
-      LIMIT 1;
+      WITH ranked AS (
+        SELECT name, created_at,
+               DENSE_RANK() OVER (ORDER BY created_at DESC) AS rnk
+        FROM customers
+      )
+      SELECT name, created_at FROM ranked WHERE rnk = 1;
 
   - question: "商品庫存量低於 10 的商品有哪些？"
     reasoning: "直接從 products 篩選 stock < 10"
@@ -331,8 +382,7 @@ few_shot_examples:
       FROM orders o
       JOIN customers c ON o.customer_id = c.id
       WHERE o.total_amount > (SELECT AVG(total_amount) FROM orders)
-      ORDER BY o.total_amount DESC
-      LIMIT 1;
+      ORDER BY o.total_amount DESC;
 
   - question: "最近 30 天以內，總共有幾張訂單？"
     reasoning: |

@@ -96,6 +96,42 @@ def _detect_negation_antipatterns(ast) -> list[str]:
     ]
 
 
+def _detect_limit1_truncation(ast) -> list[str]:
+    """
+    偵測「極值截斷」反模式：最外層 ORDER BY 搭配 LIMIT 1。
+
+    問「最多 / 最高 / 哪一天最…」時若用 ORDER BY ... LIMIT 1，遇到並列 (Ties)
+    會任意保留一筆、丟掉其餘同分者，答案看起來合理但其實不完整。
+    正確做法是 DENSE_RANK() OVER (ORDER BY ... DESC) 後過濾 rnk = 1。
+
+    判斷條件刻意只看「最外層」查詢：
+      - 純 LIMIT 1 但沒有 ORDER BY（例如「隨便給我一筆」）不攔。
+      - 子查詢中的 ORDER BY ... LIMIT 1 不攔：像
+        `WHERE amount = (SELECT amount FROM orders ORDER BY amount DESC LIMIT 1)`
+        取的是「那個數值」，外層仍會比對出所有並列的列，沒有截斷問題。
+      - LIMIT N (N > 1) 不攔，那是使用者明確要的 Top-N。
+    """
+    limit_node = ast.args.get("limit")
+    order_node = ast.args.get("order")
+    if limit_node is None or order_node is None:
+        return []
+
+    expr = limit_node.expression
+    if not (isinstance(expr, exp.Literal) and expr.is_int and int(expr.this) == 1):
+        return []
+
+    return [
+        "偵測到極值截斷的反模式：最外層使用 ORDER BY ... LIMIT 1。"
+        "若有多筆並列第一（同樣的最大值），LIMIT 1 只會任意留下一筆，"
+        "其餘同分者會被無聲丟棄，導致答案不完整。"
+        "請改用 DENSE_RANK() 取出所有並列第一，例如："
+        "WITH ranked AS (SELECT <欄位>, <聚合值> AS metric, "
+        "DENSE_RANK() OVER (ORDER BY <聚合值> DESC) AS rnk "
+        "FROM ... GROUP BY ...) "
+        "SELECT <欄位>, metric FROM ranked WHERE rnk = 1;"
+    ]
+
+
 def _inject_limit(ast, limit: int = 500) -> str:
     """
     對最外層 SELECT / UNION 加上 LIMIT，並把過大的常數 LIMIT 收斂到上限。
@@ -224,6 +260,7 @@ def ast_validator(state: AgentState) -> dict:
 
             # --- 3c. 業務反模式黑名單（確定性攔截，不依賴模型自覺） ---
             issues.extend(_detect_negation_antipatterns(ast))
+            issues.extend(_detect_limit1_truncation(ast))
 
             # --- 結算：一次列出所有問題 ---
             if issues:

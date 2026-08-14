@@ -60,6 +60,14 @@ class SchemaParser:
         lines: list[str] = []
         for rule in self._data.get("business_rules") or []:
             lines.append(f"  【{rule['name']}】")
+            # description 說明「為什麼」，是模型判斷規則適用與否的依據；
+            # 過去只送 correct/wrong SQL，等於要模型從兩段程式碼反推語意。
+            desc = (rule.get("description") or "").strip()
+            if desc:
+                indented = "\n".join(
+                    f"    {line}" for line in desc.splitlines() if line.strip()
+                )
+                lines.append(indented)
             lines.append(f"    ✅ 正確：{rule['correct_sql']}")
             lines.append(f"    ❌ 錯誤：{rule['wrong_sql']}")
         return "\n".join(lines)
