@@ -8,7 +8,7 @@ Node 3: AST Validator
   2. 安全過濾 — Root 必須是 SELECT / UNION
   3. 幻覺過濾 — 檢查 Table 與 Column 是否存在於 Schema（含 Alias 解析，fail-open）
 
-通過後強制注入 LIMIT 501 防止笛卡兒積。
+通過後對最外層查詢強制注入或收斂為 LIMIT 500，避免結果集過大。
 """
 import sqlglot
 from sqlglot import exp
@@ -50,15 +50,19 @@ def _collect_cte_names(ast) -> set[str]:
     return cte_names
 
 
-def _inject_limit(ast, limit: int = 501) -> str:
+def _inject_limit(ast, limit: int = 500) -> str:
     """
-    若最外層 SELECT 沒有 LIMIT，強制注入 LIMIT 防止笛卡兒積。
-    UNION 查詢不注入（行為複雜，交由 Node 4 的 MAX_RESULT_ROWS 防禦）。
+    對最外層 SELECT / UNION 加上 LIMIT，並把過大的常數 LIMIT 收斂到上限。
+    不影響原本較小的 LIMIT。
     """
-    if isinstance(ast, exp.Select):
-        # 只檢查最外層 SELECT 的 LIMIT（不受子查詢影響）
-        if not ast.args.get("limit"):
-            ast = ast.limit(limit)
+    outer_limit = ast.args.get("limit")
+    if outer_limit is None:
+        ast = ast.limit(limit)
+    else:
+        limit_expression = outer_limit.expression
+        if isinstance(limit_expression, exp.Literal) and limit_expression.is_int:
+            if int(limit_expression.this) > limit:
+                outer_limit.set("expression", exp.Literal.number(limit))
 
     return ast.sql(dialect="mysql")
 
@@ -159,9 +163,9 @@ def ast_validator(state: AgentState) -> dict:
                 continue
 
             # ============================================================
-            # 全部通過 → 轉回 SQL 字串（移除原先的 LIMIT 注入）
+            # 全部通過 → 注入最外層 LIMIT 500 後再轉回 SQL 字串
             # ============================================================
-            final_sql = ast.sql(dialect="mysql")
+            final_sql = _inject_limit(ast, limit=500)
             valid_sqls.append(final_sql)
             log.debug(f"  {tag} ✅ 通過 → {final_sql[:120]}...")
 

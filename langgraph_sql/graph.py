@@ -1,17 +1,15 @@
 """
 LangGraph 圖定義與編排
 ========================
-將 6 個 Node 組裝為 StateGraph，定義條件邊（Conditional Edges）實現：
+將 SQL 生成、靜態安全快篩、MySQL EXPLAIN 與實際執行組裝為 StateGraph：
   - AST 失敗重試 → 回到 SQL Generator
-  - Critic 不通過 → 回到 SQL Generator（帶 feedback）
-  - 重試次數耗盡 → 錯誤終止或強制輸出
+  - EXPLAIN / 執行失敗 → 回到 SQL Generator（帶資料庫錯誤）
+  - 重試次數耗盡 → 錯誤終止
 
 Graph 流程：
-  context_retriever → sql_generator → ast_validator
-      ↓ (valid)                         ↑ (retry)
-  executor_voter → semantic_critic ───────┘
-      ↓ (pass)
-  final_summarizer → END
+  context_retriever → sql_generator → ast_validator → db_validator
+      ↑ (retry)                                      ↓ (valid)
+      └────────────────────────────────── executor → final_summarizer → END
 """
 from loguru import logger as log
 from langgraph.graph import StateGraph, END
@@ -22,8 +20,8 @@ from langgraph_sql.config import MAX_RETRIES
 from langgraph_sql.nodes.context_retriever import context_retriever
 from langgraph_sql.nodes.sql_generator import sql_generator
 from langgraph_sql.nodes.ast_validator import ast_validator
+from langgraph_sql.nodes.db_validator import db_validator
 from langgraph_sql.nodes.executor_voter import executor_voter
-from langgraph_sql.nodes.semantic_critic import semantic_critic
 from langgraph_sql.nodes.final_summarizer import final_summarizer
 
 
@@ -34,15 +32,15 @@ from langgraph_sql.nodes.final_summarizer import final_summarizer
 def route_after_ast(state: AgentState) -> str:
     """
     AST Validator 之後的路由邏輯：
-      - valid_sqls 非空 → 進入 Executor & Voter
+      - valid_sqls 非空 → 進入 DB Validator
       - valid_sqls 為空 且 retry 預算未耗盡 → 重回 SQL Generator
       - valid_sqls 為空 且 retry 預算耗盡 → 錯誤終止
     """
     if state.get("valid_sqls"):
-        return "executor_voter"
+        return "db_validator"
 
     retry = state.get("retry_count", 0)
-    if retry <= MAX_RETRIES:
+    if retry < MAX_RETRIES:
         log.info(f"[Router] AST 全部失敗 → 重回 SQL Generator (retry={retry})")
         return "sql_generator"
 
@@ -50,38 +48,42 @@ def route_after_ast(state: AgentState) -> str:
     return "error_end"
 
 
-def route_after_executor(state: AgentState) -> str:
+def route_after_db_validator(state: AgentState) -> str:
     """
-    Executor & Voter 之後的路由邏輯：
-      - 有 champion_sql → 進入 Semantic Critic
-      - 全部失敗 → 錯誤終止
+    DB Validator 之後的路由邏輯：
+      - EXPLAIN 通過 → 執行 SQL
+      - EXPLAIN 失敗且重試預算未耗盡 → 回 SQL Generator
+      - 預算耗盡 → 錯誤終止
     """
-    if state.get("champion_sql"):
-        return "semantic_critic"
+    if state.get("sql_validated") and state.get("valid_sqls"):
+        return "executor_voter"
 
-    log.warning("[Router] 所有 SQL 執行失敗 → 錯誤終止")
+    retry = state.get("retry_count", 0)
+    if retry < MAX_RETRIES:
+        log.info(f"[Router] EXPLAIN 失敗 → 重回 SQL Generator (retry={retry})")
+        return "sql_generator"
+
+    log.warning("[Router] EXPLAIN 失敗且重試次數耗盡 → 錯誤終止")
     return "error_end"
 
 
-def route_after_critic(state: AgentState) -> str:
+def route_after_executor(state: AgentState) -> str:
     """
-    Semantic Critic 之後的路由邏輯：
-      - Critic 通過 → 進入 Final Summarizer
-      - Critic 不通過 且 retry 預算未耗盡 → 重回 SQL Generator
-      - Critic 不通過 且 retry 預算耗盡 → 強制進入 Final Summarizer（帶警告）
+    Executor 之後的路由邏輯：
+      - 有查詢結果（包含空集合）→ 生成最終回答
+      - 執行失敗且重試預算未耗盡 → 回 SQL Generator
+      - 預算耗盡 → 錯誤終止
     """
-    if state.get("critic_passed"):
+    if state.get("champion_sql"):
         return "final_summarizer"
 
     retry = state.get("retry_count", 0)
-    if retry <= MAX_RETRIES:
-        log.info(
-            f"[Router] Critic 不通過 → 重回 SQL Generator (retry={retry})"
-        )
+    if retry < MAX_RETRIES:
+        log.info(f"[Router] SQL 執行失敗 → 重回 SQL Generator (retry={retry})")
         return "sql_generator"
 
-    log.warning("[Router] Critic 不通過且重試次數耗盡 → 強制輸出（帶警告）")
-    return "final_summarizer"
+    log.warning("[Router] SQL 執行失敗且重試次數耗盡 → 錯誤終止")
+    return "error_end"
 
 
 # ===========================================================================
@@ -115,8 +117,8 @@ def build_graph():
     graph.add_node("context_retriever", context_retriever)
     graph.add_node("sql_generator", sql_generator)
     graph.add_node("ast_validator", ast_validator)
+    graph.add_node("db_validator", db_validator)
     graph.add_node("executor_voter", executor_voter)
-    graph.add_node("semantic_critic", semantic_critic)
     graph.add_node("final_summarizer", final_summarizer)
     graph.add_node("error_end", error_end_node)
 
@@ -132,6 +134,16 @@ def build_graph():
         "ast_validator",
         route_after_ast,
         {
+            "db_validator": "db_validator",
+            "sql_generator": "sql_generator",
+            "error_end": "error_end",
+        },
+    )
+
+    graph.add_conditional_edges(
+        "db_validator",
+        route_after_db_validator,
+        {
             "executor_voter": "executor_voter",
             "sql_generator": "sql_generator",
             "error_end": "error_end",
@@ -142,17 +154,9 @@ def build_graph():
         "executor_voter",
         route_after_executor,
         {
-            "semantic_critic": "semantic_critic",
-            "error_end": "error_end",
-        },
-    )
-
-    graph.add_conditional_edges(
-        "semantic_critic",
-        route_after_critic,
-        {
             "final_summarizer": "final_summarizer",
             "sql_generator": "sql_generator",
+            "error_end": "error_end",
         },
     )
 

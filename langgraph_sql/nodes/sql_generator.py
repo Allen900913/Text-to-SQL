@@ -7,8 +7,8 @@ Node 2: SQL Generator (精兵政策版)
 精兵政策的好處：
   1. 不再受 API 併發限制，速度大幅提升
   2. 70B 模型本身能力遠優於 8B，不需要投票來「糾正」低能力問題
-  3. 配合升級後的 Semantic Critic，一條高品質 SQL 的準確率 > 5 條亂猜的 SQL
-若有 critic_feedback（來自 Node 5 退回），會將反饋注入 Prompt 進行自我修正。
+  3. 透過 MySQL EXPLAIN 的原生錯誤進行 SQL 自我修復
+若有 db_error（來自 AST、EXPLAIN 或實際執行），會將錯誤注入 Prompt 進行修正。
 """
 import re
 from loguru import logger as log
@@ -34,6 +34,12 @@ Strictly follow these rules:
 5. If the question asks for multiple pieces of information, combine them into a SINGLE SQL query using subqueries or JOINs. Do NOT split into multiple SQL statements.
 6. Always respect the MySQL only_full_group_by mode: all non-aggregated columns in SELECT must appear in GROUP BY.
 
+【嚴格業務邏輯邊界 (Strict Schema Constraints)】
+1. 絕不可發明欄位：你只能使用 schema_ddl 中確實存在的欄位。
+2. 絕不可發明公式：如果使用者的問題涉及未知的業務概念（如：運費、利潤率），且該概念沒有定義在 rules_text 中，你「絕對不可」自行推導或猜測計算公式（例如不可自行用 總金額-成本 當作運費）。
+3. 觸發防禦機制：如果發現使用者的問題無法用現有 schema 與 rules_text 誠實回答，請不要試圖拼湊 SQL，請「強制」輸出以下這句標準 SQL 作為唯一回傳值：
+   SELECT 'SCHEMA_UNSUPPORTED' AS system_error_flag;
+
 # Database Schema (DDL):
 {state.get("schema_ddl", "")}
 
@@ -45,7 +51,7 @@ Strictly follow these rules:
 
 
 def _build_user_prompt(state: AgentState) -> str:
-    """建構 User Prompt：包含 Few-Shot 範例、使用者問題、Critic Feedback。"""
+    """建構 User Prompt：包含 Few-Shot 範例、問題與資料庫驗證錯誤。"""
     parts: list[str] = []
 
     # Few-Shot 範例
@@ -57,13 +63,17 @@ def _build_user_prompt(state: AgentState) -> str:
     # 使用者問題
     parts.append(f"# Target Question: {state.get('user_query', '')}")
 
-    # Critic Feedback（若為重試）
-    feedback = state.get("critic_feedback", "")
-    if feedback:
+    # DB/AST 驗證錯誤（若為重試）
+    db_error = state.get("db_error", "")
+    previous_sqls = state.get("candidate_sqls", [])
+    previous_sql = previous_sqls[0] if previous_sqls else ""
+    if db_error:
         parts.append(
-            f"\n# ⚠️ IMPORTANT — Previous attempt was REJECTED by the reviewer."
-            f"\n# Rejection reason: {feedback}"
-            f"\n# You MUST fix the SQL logic based on this feedback."
+            "\n# IMPORTANT — The previous SQL failed deterministic validation."
+            f"\n# Previous SQL:\n{previous_sql}"
+            f"\n# Database validation error:\n{db_error}"
+            "\n# Rewrite the SQL to resolve this error. Preserve the user's request; "
+            "output only one valid MySQL SELECT/WITH statement."
         )
 
     parts.append("\nSQL:")

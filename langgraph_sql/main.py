@@ -28,7 +28,7 @@ def main():
     print(sep)
     print("  🧠 LangGraph Funnel Pipeline — Text-to-SQL 智慧助理")
     print(sep)
-    print("  架構：SQL 多候選生成 → AST 快篩 → 沙盒共識決 → 語意決審")
+    print("  架構：SQL 生成 → AST 安全快篩 → MySQL EXPLAIN → 查詢執行")
     print("  輸入自然語言問題，系統會自動完成整條 Pipeline 並回答。")
     print("  輸入 'exit' 或 'quit' 退出。")
     print("  請確認已執行 python init_db.py 完成資料庫初始化！")

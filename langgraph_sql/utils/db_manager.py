@@ -42,7 +42,17 @@ class DatabaseManager:
                     raise ValueError(f"安全限制：禁止執行包含 '{kw}' 的操作")
 
     # ------------------------------------------------------------------
-    # 核心方法：回傳 DataFrame（供 Node 4 使用）
+    # SQL 驗證：使用 MySQL EXPLAIN（供 DB Validator 使用）
+    # ------------------------------------------------------------------
+    def explain_query(self, sql: str) -> None:
+        """以 MySQL EXPLAIN 驗證唯讀 SQL，失敗時保留原生資料庫例外。"""
+        self._check_readonly(sql)
+
+        with self.engine.connect() as conn:
+            conn.execute(text(f"EXPLAIN {sql}"))
+
+    # ------------------------------------------------------------------
+    # 核心方法：回傳 DataFrame（供 Executor 使用）
     # ------------------------------------------------------------------
     def execute_to_dataframe(
         self, sql: str, timeout_ms: int = 5000

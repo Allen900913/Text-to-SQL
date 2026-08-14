@@ -7,7 +7,7 @@ Node 4: Executor & Voter
   - ✅ 空集合保留（不丟棄），參與投票
   - ✅ Hash 前排序 + reset_index，消除行順序差異
   - ✅ MySQL max_execution_time 超時防護
-  - ✅ 只丟棄 DB Error 和 len(df) > MAX_RESULT_ROWS
+  - ✅ AST 層已注入 LIMIT 500，正常情況下不會因結果集過大而丟棄
 """
 import hashlib
 import json
@@ -99,11 +99,14 @@ def executor_voter(state: AgentState) -> dict:
             # 執行 SQL（含超時防護）
             df = db.execute_to_dataframe(sql, timeout_ms=SQL_TIMEOUT_MS)
 
-            # 邊界防禦：僅丟棄異常大量資料（空集合保留！）
+            # 防禦性檢查：正常由 AST 的 LIMIT 500 保證不會進入此分支。
             if len(df) > MAX_RESULT_ROWS:
-                log.debug(
-                    f"  {tag} 丟棄 — 結果集過大 ({len(df)} rows > {MAX_RESULT_ROWS})"
+                error = (
+                    f"結果集超過上限 ({len(df)} rows > {MAX_RESULT_ROWS})；"
+                    "請在 SQL 最外層加入較小的 LIMIT。"
                 )
+                execution_errors.append(f"{tag}: {error}")
+                log.warning(f"  {tag} ❌ {error}")
                 continue
 
             # 排序後 Hash
@@ -134,9 +137,12 @@ def executor_voter(state: AgentState) -> dict:
     if not vote_counts:
         error_detail = "; ".join(execution_errors[:3])
         log.warning(f"[Node 4] 所有 SQL 執行皆失敗: {error_detail}")
+        retry = state.get("retry_count", 0) + 1
         return {
             "champion_sql": "",
             "champion_result": "",
+            "db_error": error_detail or "SQL 執行未產生可用結果。",
+            "retry_count": retry,
             "error_message": f"所有 SQL 執行皆失敗。代表性錯誤: {error_detail}",
         }
 
@@ -160,5 +166,6 @@ def executor_voter(state: AgentState) -> dict:
     return {
         "champion_sql": champion_sql,
         "champion_result": champion_result,
+        "db_error": "",
         "error_message": "",
     }

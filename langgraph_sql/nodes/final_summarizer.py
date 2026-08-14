@@ -15,6 +15,13 @@ from langgraph_sql.config import llm_summarizer
 # Summarizer System Prompt
 # ===========================================================================
 
+_SCHEMA_UNSUPPORTED_MARKER = "SCHEMA_UNSUPPORTED"
+
+_SCHEMA_UNSUPPORTED_ANSWER = (
+    "抱歉，這個問題涉及的欄位或業務概念目前不在資料庫的 schema 與規則定義中，"
+    "我無法在不臆測的情況下回答。請確認欄位名稱，或改用資料庫中實際存在的指標重新提問。"
+)
+
 _SUMMARIZER_SYSTEM_PROMPT = """你是一個專業的繁體中文資料分析師。
 你的任務是根據資料庫查詢結果，以友善且專業的繁體中文回答使用者的問題。
 
@@ -36,9 +43,16 @@ def final_summarizer(state: AgentState) -> dict:
     """將查詢結果轉為繁體中文自然語言回答。"""
     log.info("[Node 6] Final Summarizer — 生成最終回答")
 
+    champion_sql = state.get("champion_sql", "")
     champion_result = state.get("champion_result", "")
     user_query = state.get("user_query", "")
     error_message = state.get("error_message", "")
+
+    # SQL Generator 觸發了防禦機制（問題涉及 schema 未定義的概念），
+    # 直接回覆固定訊息，不把哨兵值交給 LLM 詮釋。
+    if _SCHEMA_UNSUPPORTED_MARKER in champion_sql or _SCHEMA_UNSUPPORTED_MARKER in champion_result:
+        log.info("[Node 6] 偵測到 SCHEMA_UNSUPPORTED 暗號，略過 LLM 直接回覆")
+        return {"final_answer": _SCHEMA_UNSUPPORTED_ANSWER}
 
     # 如果有錯誤訊息且無查詢結果，直接回報錯誤
     if error_message and not champion_result:
@@ -71,15 +85,6 @@ def final_summarizer(state: AgentState) -> dict:
         answer = (
             f"查詢結果已取得，但自然語言轉換失敗。\n"
             f"原始結果：\n{champion_result}"
-        )
-
-    # 如果 Critic 重試次數已耗盡但仍強制輸出，加上警告
-    critic_passed = state.get("critic_passed", True)
-    retry_count = state.get("retry_count", 0)
-    if not critic_passed and retry_count > 0:
-        answer += (
-            "\n\n⚠️ 注意：此查詢結果可能不完全符合您的問題意圖，"
-            "建議您確認後再使用。"
         )
 
     log.info("[Node 6] 最終回答生成完成")

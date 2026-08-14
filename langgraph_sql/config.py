@@ -10,14 +10,14 @@ from langchain_openai import ChatOpenAI
 from loguru import logger as log
 
 # ===========================================================================
-# Windows console UTF-8 修正
+# Windows console UTF-8 修正 (已移除，避免背景執行時 crash)
 # ===========================================================================
-for _stream in (sys.stdout, sys.stderr):
-    if _stream is not None and getattr(_stream, "encoding", None) != "utf-8":
-        try:
-            _stream.reconfigure(encoding="utf-8", errors="backslashreplace")
-        except (AttributeError, ValueError):
-            pass
+# for _stream in (sys.stdout, sys.stderr):
+#     if _stream is not None and getattr(_stream, "encoding", None) != "utf-8":
+#         try:
+#             _stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+#         except (AttributeError, ValueError):
+#             pass
 
 # ===========================================================================
 # Logger 設定
@@ -62,14 +62,14 @@ MYSQL_URI = os.getenv(
 # ===========================================================================
 # NVIDIA API Key
 # ===========================================================================
-NVIDIA_API_KEY = os.getenv("NVIDA_API_KEY")
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 if not NVIDIA_API_KEY:
-    raise ValueError("未在環境變數中找到 NVIDA_API_KEY，請確認 .env 檔案配置正確。")
+    raise ValueError("未在環境變數中找到 NVIDIA_API_KEY，請確認 .env 檔案配置正確。")
 
 # ===========================================================================
 # LLM 模型初始化
 # ===========================================================================
-# Generator 模型 (70B) — 精兵政策：單次生成 1 條高品質 SQL（取代舊的 8B batch(5) 投票）
+# Generator 模型 (70B) — 單次生成 1 條高品質 SQL
 llm_fast = ChatOpenAI(
     model="meta/llama-3.3-70b-instruct",
     api_key=NVIDIA_API_KEY,
@@ -78,8 +78,8 @@ llm_fast = ChatOpenAI(
     request_timeout=300.0,
 )
 
-# 強力模型 (70B) — 用於語意決審 (Node 5)，Temperature=0 確保精確判斷
-llm_strong = ChatOpenAI(
+# 摘要模型 (70B) — 用於最終回覆，Temperature=0 確保一致性
+llm_summarizer = ChatOpenAI(
     model="meta/llama-3.1-70b-instruct",
     api_key=NVIDIA_API_KEY,
     base_url="https://integrate.api.nvidia.com/v1",
@@ -87,19 +87,9 @@ llm_strong = ChatOpenAI(
     request_timeout=300.0,
 )
 
-# 摘要模型 (8B) — 用於最終回覆 (Node 6)，Temperature=0 確保一致性
-llm_summarizer = ChatOpenAI(
-    model="meta/llama-3.1-8b-instruct",
-    api_key=NVIDIA_API_KEY,
-    base_url="https://integrate.api.nvidia.com/v1",
-    temperature=0,
-    request_timeout=60.0,
-)
-
 # ===========================================================================
 # 全域常數
 # ===========================================================================
-MAX_CANDIDATES = 5        # 每次生成的候選 SQL 數量
 MAX_RETRIES = 2           # 最大重試次數（重回 Node 2 重新生成的總預算）
 SQL_TIMEOUT_MS = 5000     # SQL 執行超時（毫秒）
 MAX_RESULT_ROWS = 500     # 結果集上限，超過視為異常丟棄
