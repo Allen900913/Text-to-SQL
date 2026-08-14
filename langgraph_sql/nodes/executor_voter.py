@@ -91,6 +91,7 @@ def executor_voter(state: AgentState) -> dict:
     vote_counts: dict[str, int] = {}          # hash → 票數
     hash_to_sql: dict[str, str] = {}          # hash → 第一條對應 SQL
     hash_to_result: dict[str, str] = {}       # hash → JSON 結果字串
+    hash_to_rowcount: dict[str, int] = {}     # hash → 結果筆數（權威值，供 Summarizer 引用）
     execution_errors: list[str] = []          # 執行失敗的錯誤訊息
 
     for i, sql in enumerate(valid_sqls):
@@ -119,6 +120,7 @@ def executor_voter(state: AgentState) -> dict:
             if result_hash not in hash_to_sql:
                 hash_to_sql[result_hash] = sql
                 hash_to_result[result_hash] = _dataframe_to_json(df)
+                hash_to_rowcount[result_hash] = len(df)
 
             log.debug(
                 f"  {tag} ✅ 執行成功 "
@@ -152,12 +154,14 @@ def executor_voter(state: AgentState) -> dict:
     total_success = sum(vote_counts.values())
     champion_sql = hash_to_sql[champion_hash]
     champion_result = hash_to_result[champion_hash]
+    champion_row_count = hash_to_rowcount[champion_hash]
 
     # 投票統計 Log
     log.info(
         f"[Node 4] 投票結果: "
         f"{len(vote_counts)} 組不同結果, "
         f"冠軍票數 = {vote}/{total_success}, "
+        f"{champion_row_count} rows, "
         f"hash = {champion_hash[:8]}..."
     )
     log.debug(f"[Node 4] 冠軍 SQL: {champion_sql}")
@@ -166,6 +170,7 @@ def executor_voter(state: AgentState) -> dict:
     return {
         "champion_sql": champion_sql,
         "champion_result": champion_result,
+        "champion_row_count": champion_row_count,
         "db_error": "",
         "error_message": "",
     }

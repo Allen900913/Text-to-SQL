@@ -50,6 +50,52 @@ def _collect_cte_names(ast) -> set[str]:
     return cte_names
 
 
+def _detect_negation_antipatterns(ast) -> list[str]:
+    """
+    偵測「否定存在量詞」反模式：LEFT JOIN 搭配 WHERE 中的 <> / !=。
+
+    「從未買過 X」這類問題若寫成
+        LEFT JOIN products p ... WHERE p.name <> 'X'
+    會把「買過其他商品」的訂單也撈進來，導致真正買過 X 的人依然出現在結果中。
+    正確做法是 NOT IN / NOT EXISTS 子查詢。
+
+    判斷條件刻意收斂到「同一層 SELECT 內同時具備 LEFT JOIN 與 WHERE 的不等式」：
+      - INNER JOIN + <>（例如排除 CANCELLED 訂單）是合法過濾，不攔。
+      - <> 寫在 JOIN ON 內（例如自連接排除自己）是合法用法，不攔。
+      - LEFT JOIN + IS NULL（「從未下過任何訂單」）是正確寫法，不攔。
+
+    回傳所有命中的淘汰理由；若無此反模式則回傳空列表。
+    """
+    offenders: list[str] = []
+
+    for select in ast.find_all(exp.Select):
+        joins = select.args.get("joins") or []
+        if not any((j.side or "").upper() == "LEFT" for j in joins):
+            continue
+
+        where = select.args.get("where")
+        if where is None:
+            continue
+
+        for neq in where.find_all(exp.NEQ):
+            expr = neq.sql(dialect="mysql")
+            if expr not in offenders:
+                offenders.append(expr)
+
+    if not offenders:
+        return []
+
+    return [
+        f"偵測到否定存在量詞的反模式：LEFT JOIN 搭配 WHERE 中的不等式 "
+        f"{'、'.join(f'`{o}`' for o in offenders)}。這種寫法會讓「買過其他商品」的"
+        f"紀錄通過篩選，導致實際買過該商品的對象仍出現在結果中。"
+        f"請改用 NOT IN 或 NOT EXISTS 子查詢排除「曾經符合條件」的對象，"
+        f"例如：WHERE c.id NOT IN (SELECT o.customer_id FROM orders o "
+        f"JOIN order_items oi ON o.id = oi.order_id "
+        f"JOIN products p ON oi.product_id = p.id WHERE p.name = '商品名')。"
+    ]
+
+
 def _inject_limit(ast, limit: int = 500) -> str:
     """
     對最外層 SELECT / UNION 加上 LIMIT，並把過大的常數 LIMIT 收斂到上限。
@@ -82,6 +128,7 @@ def ast_validator(state: AgentState) -> dict:
         return {
             "valid_sqls": [],
             "retry_count": retry,
+            "db_error": "上一輪未產生任何候選 SQL，請重新生成一條有效的 MySQL SELECT 查詢。",
             "error_message": "所有候選 SQL 均解析失敗，無法進行驗證。",
         }
 
@@ -94,6 +141,8 @@ def ast_validator(state: AgentState) -> dict:
     }
 
     valid_sqls: list[str] = []
+    # 收集每條 SQL 的淘汰理由，供全部淘汰時回填 db_error 給 Generator 自我修復。
+    rejection_reasons: list[str] = []
 
     for i, sql in enumerate(candidates):
         tag = f"SQL #{i+1}"
@@ -107,8 +156,10 @@ def ast_validator(state: AgentState) -> dict:
             # 第二層：安全過濾（Root 必須是 SELECT / UNION）
             # ============================================================
             if not isinstance(ast, (exp.Select, exp.Union)):
-                log.debug(f"  {tag} 淘汰 — Root 非 SELECT/UNION "
-                          f"(type={type(ast).__name__})")
+                reason = (f"Root 非 SELECT/UNION (type={type(ast).__name__})；"
+                          "只允許 SELECT 或 WITH (CTE) 查詢。")
+                log.debug(f"  {tag} 淘汰 — {reason}")
+                rejection_reasons.append(f"{tag}: {reason}")
                 continue
 
             # ============================================================
@@ -117,24 +168,32 @@ def ast_validator(state: AgentState) -> dict:
             alias_map = _build_alias_map(ast)
             cte_names = _collect_cte_names(ast)
 
+            # 第三層採「一次性體檢」：3a/3b/3c 全部掃完再結算，讓 Generator
+            # 一輪就看到所有毛病。逐項 break 會讓每次重試只修掉一個錯，
+            # 在 MAX_RETRIES 很小的情況下必定燒光預算。
+            issues: list[str] = []
+
             # --- 3a. 檢查 Table 是否存在於 Schema ---
-            tables_ok = True
+            bad_tables: list[str] = []
             for table_node in ast.find_all(exp.Table):
                 tname = table_node.name.lower()
                 if tname in cte_names:
                     continue  # CTE 定義的名稱，不需要在 Schema 中
-                if tname not in allowed_tables:
-                    log.debug(f"  {tag} 淘汰 — 不存在的表: {tname}")
-                    tables_ok = False
-                    break
-            if not tables_ok:
-                continue
+                if tname not in allowed_tables and tname not in bad_tables:
+                    bad_tables.append(tname)
+
+            if bad_tables:
+                issues.append(
+                    f"不存在的表: {', '.join(bad_tables)}"
+                    f"（合法的表: {', '.join(sorted(allowed_tables))}）"
+                )
 
             # --- 3b. 檢查 Column 是否存在（fail-open 策略） ---
             #   - 有明確 table 引用的 Column → 解析 Alias 後比對
             #   - 無 table 引用的 Column（如 SELECT name）→ 放行
             #   - 無法解析歸屬的 Column（如聚合函數內）→ 放行
-            columns_ok = True
+            #   同一張表的幻覺欄位會合併成一則訊息，避免合法欄位清單重複列印。
+            bad_columns: dict[str, list[str]] = {}
             for col_node in ast.find_all(exp.Column):
                 col_name = col_node.name.lower()
                 table_ref = (col_node.table or "").lower()
@@ -152,14 +211,27 @@ def ast_validator(state: AgentState) -> dict:
                     continue  # 表不在 Schema 映射中 → 放行
 
                 if col_name not in known_cols:
-                    log.debug(
-                        f"  {tag} 淘汰 — 幻覺欄位: {real_table}.{col_name} "
-                        f"(合法欄位: {known_cols})"
-                    )
-                    columns_ok = False
-                    break
+                    seen = bad_columns.setdefault(real_table, [])
+                    if col_name not in seen:
+                        seen.append(col_name)
 
-            if not columns_ok:
+            for real_table, cols in bad_columns.items():
+                issues.append(
+                    f"{real_table} 不存在的欄位: {', '.join(cols)}"
+                    f"（{real_table} 的合法欄位: "
+                    f"{', '.join(table_columns[real_table])}）"
+                )
+
+            # --- 3c. 業務反模式黑名單（確定性攔截，不依賴模型自覺） ---
+            issues.extend(_detect_negation_antipatterns(ast))
+
+            # --- 結算：一次列出所有問題 ---
+            if issues:
+                detail = "；".join(
+                    f"({n}) {issue}" for n, issue in enumerate(issues, 1)
+                )
+                log.debug(f"  {tag} 淘汰 — 共 {len(issues)} 項問題: {detail}")
+                rejection_reasons.append(f"{tag} 共 {len(issues)} 項問題：{detail}")
                 continue
 
             # ============================================================
@@ -170,22 +242,34 @@ def ast_validator(state: AgentState) -> dict:
             log.debug(f"  {tag} ✅ 通過 → {final_sql[:120]}...")
 
         except ParseError as e:
-            log.debug(f"  {tag} 淘汰 — 語法錯誤: {e}")
+            reason = f"語法錯誤: {e}"
+            log.debug(f"  {tag} 淘汰 — {reason}")
+            rejection_reasons.append(f"{tag}: {reason}")
             continue
         except Exception as e:
-            log.debug(f"  {tag} 淘汰 — 未預期錯誤: {type(e).__name__}: {e}")
+            reason = f"未預期錯誤: {type(e).__name__}: {e}"
+            log.debug(f"  {tag} 淘汰 — {reason}")
+            rejection_reasons.append(f"{tag}: {reason}")
             continue
 
     log.info(f"[Node 3] 通過快篩: {len(valid_sqls)}/{len(candidates)}")
 
     result: dict = {"valid_sqls": valid_sqls}
 
-    # 若全部淘汰，遞增 retry_count
+    # 若全部淘汰，遞增 retry_count，並把淘汰理由回填 db_error。
+    # db_error 是 sql_generator 唯一會讀進修復 Prompt 的欄位；只設 error_message
+    # 會讓模型在沒有任何提示的情況下重生成，temperature=0 幾乎必然產出同一條 SQL。
     if not valid_sqls:
         result["retry_count"] = state.get("retry_count", 0) + 1
-        result["error_message"] = "所有候選 SQL 均未通過 AST 驗證。"
+        detail = "\n".join(rejection_reasons)
+        result["db_error"] = detail or "所有候選 SQL 均未通過 AST 驗證。"
+        result["error_message"] = f"所有候選 SQL 均未通過 AST 驗證。{detail}"
         log.warning(
-            f"[Node 3] 全部淘汰，retry_count={result['retry_count']}"
+            f"[Node 3] 全部淘汰，retry_count={result['retry_count']}；"
+            f"理由: {detail[:200]}"
         )
+    else:
+        # 有 SQL 通過時清掉上一輪的錯誤，避免舊訊息殘留到下個節點。
+        result["db_error"] = ""
 
     return result

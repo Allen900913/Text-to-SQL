@@ -193,9 +193,27 @@ business_rules:
     wrong_sql:   "WHERE status = 'SHIPPED'  -- ❌ 錯誤：這是已出貨，尚未送達"
 
   - name: "單次購買 / 單筆訂單大於 N 件"
-    description: "計算「單次/單筆」購買超過 N 件時，必須以「訂單 (orders.id)」為單位進行 GROUP BY。不可只對客戶 (customers.id) 進行 GROUP BY，那會變成計算該客戶的歷史總購買量。"
-    correct_sql: "GROUP BY o.id HAVING SUM(oi.quantity) > N"
-    wrong_sql:   "GROUP BY c.id HAVING SUM(oi.quantity) > N  -- ❌ 錯誤：這會算出客戶一輩子買的總量"
+    description: |
+      計算「單次/單筆」購買超過 N 件時，「件數」指的是那張訂單裡所有商品的數量總和，
+      必須以「訂單 (orders.id)」為單位 GROUP BY 後用 HAVING SUM(oi.quantity) 判斷。
+      ⚠️ 兩種常見錯誤都必須避免：
+        (a) 對客戶 (customers.id) GROUP BY → 變成該客戶的歷史總購買量。
+        (b) 直接用 WHERE oi.quantity > N → 這是「單一明細列」的數量，
+            不是整張訂單的總件數。一張訂單可以由多列明細組成
+            （例如 3 列各買 4 件 = 該次購買 12 件），用 WHERE 會整批漏掉。
+    correct_sql: |
+      -- ✅ 以訂單為單位加總件數
+      SELECT DISTINCT c.email
+      FROM customers c
+      JOIN orders o ON c.id = o.customer_id
+      JOIN order_items oi ON o.id = oi.order_id
+      GROUP BY o.id, c.email
+      HAVING SUM(oi.quantity) > N;
+    wrong_sql: |
+      -- ❌ 錯誤 (a)：這會算出客戶一輩子買的總量
+      GROUP BY c.id HAVING SUM(oi.quantity) > N
+      -- ❌ 錯誤 (b)：這是單一明細列的數量，不是整張訂單的總件數
+      WHERE oi.quantity > N
 
   - name: "聚合函數在 ORDER BY 中的限制 (隱藏的 only_full_group_by 限制)"
     description: "在 MySQL 嚴格模式下，若在 ORDER BY 中使用聚合函數 (如 SUM(oi.quantity)) 進行排序，該聚合函數必須同時出現在 SELECT 欄位清單中，否則會報錯導致查無資料。"

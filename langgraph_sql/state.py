@@ -28,6 +28,7 @@ class AgentState(TypedDict, total=False):
     execution_results: dict        # 執行結果暫存
     champion_sql: str              # 投票勝出的 SQL
     champion_result: str           # 勝出 SQL 的執行結果 (JSON)
+    champion_row_count: int        # 結果筆數（權威值，避免 Summarizer 自行清點 JSON 出錯）
 
     # --- SQL 驗證 / 修復迴圈 ---
     db_error: str                  # AST、EXPLAIN 或執行階段的錯誤訊息

@@ -32,7 +32,9 @@ _SUMMARIZER_SYSTEM_PROMPT = """你是一個專業的繁體中文資料分析師�
 4. 如果查詢結果為空 ([])，請明確回答「沒有符合條件的資料」或「查無結果」。
 5. 回答要簡潔、直接、有條理。
 6. 若結果超過 10 筆，請摘要列出前幾筆並告知總筆數。
-7. 使用項目符號或編號列表來呈現多筆資料。"""
+7. 使用項目符號或編號列表來呈現多筆資料。
+8. 提及總筆數時，「必須」直接引用 Prompt 中提供的「結果總筆數」，絕對禁止自行清點 JSON 陣列的長度。
+   你列出的項目數量通常少於總筆數（因為只摘要前幾筆），不可把「列出的數量」當成「總筆數」。"""
 
 
 # ===========================================================================
@@ -66,7 +68,17 @@ def final_summarizer(state: AgentState) -> dict:
         }
 
     # 建構 Prompt
+    # 筆數由 Executor 以 len(df) 算好傳入，不讓 8B 模型自行清點長 JSON（會數錯）。
+    row_count = state.get("champion_row_count")
+    row_count_line = (
+        f"結果總筆數：{row_count} 筆（這是權威數字，回答中提到總數時必須使用它）"
+        if row_count is not None
+        else ""
+    )
+
     user_prompt = f"""使用者的問題：{user_query}
+
+{row_count_line}
 
 資料庫查詢結果（JSON 格式）：
 {champion_result}
