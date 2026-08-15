@@ -63,12 +63,13 @@ enum_fields:
 # =============================================================================
 # 三、商業邏輯規則（Anti-Pattern 防範）
 # =============================================================================
+# 收錄原則：只留「沒有 few-shot 範例示範」的規則。
+# 實測結論是規則文字的效果遠不如一個同形狀的 few-shot 範例，兩者並存時
+# 規則文字只是稀釋 Prompt。已由 few-shot 涵蓋而移除的規則：
+#   售出數量、從未下訂的客戶、only_full_group_by、相對時間區間、
+#   全稱量詞、聚合函數在 ORDER BY、處理並列第一。
+# 其中「處理並列第一」另有 ast_validator 的確定性攔截器把關，不靠模型自覺。
 business_rules:
-  - name: "售出數量 / 賣出幾台 / 總銷量"
-    description: "計算商品賣出的總數量，必須使用 order_items.quantity 加總，代表每筆明細的購買件數。"
-    correct_sql: "SUM(oi.quantity)"
-    wrong_sql:   "COUNT(oi.id)  -- ❌ 錯誤：COUNT 算的是明細筆數，不是購買件數"
-
   - name: "訂單總金額 / 總營收 / 總消費"
     description: "計算金額時使用 orders.total_amount，這已是每張訂單的最終合計金額。"
     correct_sql: "SUM(o.total_amount)"
@@ -78,59 +79,6 @@ business_rules:
     description: "計算不重複的客戶數，避免因多筆訂單而重複計算同一位客戶。"
     correct_sql: "COUNT(DISTINCT customer_id)"
     wrong_sql:   "COUNT(customer_id)  -- ❌ 錯誤：同一客戶的多筆訂單會被重複計算"
-
-  - name: "從未下訂的客戶"
-    description: "找出在 customers 中存在、但在 orders 中沒有對應紀錄的客戶。"
-    correct_sql: "LEFT JOIN orders o ON c.id = o.customer_id WHERE o.id IS NULL"
-    wrong_sql:   "NOT IN (subquery)  -- ⚠️ 若 subquery 含 NULL 值會出錯，LEFT JOIN 更安全"
-
-  - name: "MySQL only_full_group_by 限制"
-    description: "本資料庫啟用了 only_full_group_by 模式。在 SELECT 清單中，所有非聚合欄位都必須出現在 GROUP BY 子句中，否則 MySQL 會報錯。"
-    correct_sql: |
-      -- ✅ 正確：SELECT 中只包含 GROUP BY 的欄位 + 聚合函數
-      SELECT c.name, o.total_amount
-      FROM orders o JOIN customers c ON o.customer_id = c.id
-      WHERE o.total_amount > (SELECT AVG(total_amount) FROM orders)
-      ORDER BY o.total_amount DESC;
-    wrong_sql: |
-      -- ❌ 錯誤：SELECT 中出現了 o.total_amount，但 GROUP BY 只有 c.id
-      -- 這在 only_full_group_by 模式下會直接報錯
-      SELECT AVG(total_amount), c.name, o.total_amount
-      FROM orders o JOIN customers c ON o.customer_id = c.id
-      GROUP BY c.id HAVING o.total_amount > (SELECT AVG(total_amount) FROM orders)
-
-  - name: "相對時間區間（過去 N 天/月以內 / 超過 N 天/月前）"
-    description: |
-      當問題使用「過去 N 天以內」、「最近 N 個月」、「不到 N 天」等相對時間，
-      必須用 DATE_SUB 計算基準日，並確認比較方向正確：
-      「以內 / 不到 / 最近」→ created_at >= DATE_SUB(NOW(), INTERVAL N DAY)
-      「超過 / 早於 / N 天前以前」→ created_at < DATE_SUB(NOW(), INTERVAL N DAY)
-      ⚠️ 最常見錯誤：把 >= 寫成 <=，或把 INTERVAL 的加減方向顛倒。
-    correct_sql: |
-      -- 「過去 30 天以內」：距今越近 created_at 越大，所以用 >=
-      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-      -- 「超過 3 個月前」：距今越遠 created_at 越小，所以用 <
-      WHERE order_date < DATE_SUB(NOW(), INTERVAL 3 MONTH)
-    wrong_sql: |
-      -- ❌ 方向顛倒：下面條件會撈出「30 天以前」的舊資料，正好相反
-      WHERE created_at <= DATE_SUB(NOW(), INTERVAL 30 DAY)
-
-  - name: "全稱量詞（每一張都 / 全部 / 所有）"
-    description: |
-      當問題含「每一張都…」、「全部訂單都…」等全稱量詞，
-      不可只用 WHERE，因為 WHERE 只保證「至少一筆符合」。
-      正確做法：GROUP BY 客戶後，用 HAVING MIN(col) 或 HAVING COUNT(CASE WHEN...) 確保全部符合。
-    correct_sql: |
-      -- 「每一張訂單金額都超過 1000 元」的客戶
-      SELECT c.name
-      FROM customers c JOIN orders o ON c.id = o.customer_id
-      GROUP BY c.id, c.name
-      HAVING MIN(o.total_amount) > 1000;
-    wrong_sql: |
-      -- ❌ 只篩出「至少一張 > 1000」，不是「每一張都 > 1000」
-      SELECT DISTINCT c.name
-      FROM customers c JOIN orders o ON c.id = o.customer_id
-      WHERE o.total_amount > 1000;
 
   - name: "存在量詞（至少有一筆 / 曾經 / 有過）"
     description: |
@@ -214,47 +162,6 @@ business_rules:
       GROUP BY c.id HAVING SUM(oi.quantity) > N
       -- ❌ 錯誤 (b)：這是單一明細列的數量，不是整張訂單的總件數
       WHERE oi.quantity > N
-
-  - name: "聚合函數在 ORDER BY 中的限制 (隱藏的 only_full_group_by 限制)"
-    description: "在 MySQL 嚴格模式下，若在 ORDER BY 中使用聚合函數 (如 SUM(oi.quantity)) 進行排序，該聚合函數必須同時出現在 SELECT 欄位清單中，否則會報錯導致查無資料。"
-    correct_sql: |
-      -- ✅ 聚合函數出現在 SELECT 中（取極值請另見「處理並列第一」規則，勿用 LIMIT 1）
-      SELECT c.name, c.email, SUM(oi.quantity) AS total_qty
-      FROM customers c JOIN orders o ON c.id=o.customer_id JOIN order_items oi ON o.id=oi.order_id
-      GROUP BY c.id, c.name, c.email ORDER BY total_qty DESC
-    wrong_sql: |
-      -- ❌ 錯誤：ORDER BY 用了 SUM(oi.quantity)，但 SELECT 中沒有
-      SELECT c.name, c.email
-      FROM customers c JOIN orders o ON c.id=o.customer_id JOIN order_items oi ON o.id=oi.order_id
-      GROUP BY c.id, c.name, c.email ORDER BY SUM(oi.quantity) DESC
-
-  - name: "處理並列第一 (Top-N with Ties)"
-    description: |
-      當問題出現「最多」、「最高」、「最大」、「第一名」、「哪一天/哪個人最…」等極值語意時，
-      資料中經常存在數值並列 (Ties)。「絕對禁止」用 ORDER BY ... LIMIT 1 取極值，
-      因為 LIMIT 1 會在並列時任意截斷，漏掉同樣是第一名的資料。
-      正確做法：用 DENSE_RANK() OVER (ORDER BY <聚合值> DESC) 算出名次，
-      外層再過濾 rnk = 1，即可完整列出所有並列第一者。
-      （若使用者明確說「隨便給我一個」或「任選一位」才可用 LIMIT 1。）
-    correct_sql: |
-      -- ✅ 用 DENSE_RANK 取出所有並列第一（此例真實資料有 2 位客戶同為 66 件）
-      WITH ranked AS (
-        SELECT c.name, c.email, SUM(oi.quantity) AS total_qty,
-               DENSE_RANK() OVER (ORDER BY SUM(oi.quantity) DESC) AS rnk
-        FROM customers c
-        JOIN orders o ON c.id = o.customer_id
-        JOIN order_items oi ON o.id = oi.order_id
-        GROUP BY c.id, c.name, c.email
-      )
-      SELECT name, email, total_qty FROM ranked WHERE rnk = 1
-    wrong_sql: |
-      -- ❌ 錯誤：LIMIT 1 在並列時只會回傳其中一筆，其餘同分者全被截斷
-      SELECT c.name, c.email, SUM(oi.quantity) AS total_qty
-      FROM customers c JOIN orders o ON c.id=o.customer_id JOIN order_items oi ON o.id=oi.order_id
-      GROUP BY c.id, c.name, c.email ORDER BY total_qty DESC LIMIT 1
-      -- ❌ 同樣錯誤：問「哪一天訂單最多」時並列的日期會被漏掉
-      SELECT DATE(order_date) AS d, COUNT(*) AS n FROM orders
-      GROUP BY d ORDER BY n DESC LIMIT 1
 
 # =============================================================================
 # 四、Few-Shot 問答範例（問題 → SQL 對照，示範正確的推理路徑）

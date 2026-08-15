@@ -69,18 +69,26 @@ if not NVIDIA_API_KEY:
 # ===========================================================================
 # LLM 模型初始化
 # ===========================================================================
-# Generator 模型 (70B) — 單次生成 1 條高品質 SQL
+# 2026-08-16 起 Llama 3.3 70B 停止服務，原本的 meta/llama-3.3-70b-instruct
+# (Generator) 與 meta/llama-3.1-70b-instruct (Summarizer) 全數退場。
+# 官方建議的替代是 GPT OSS 120B 或 Qwen3.6 27B；本專案掛的 NVIDIA NIM endpoint
+# 沒有提供任何 Qwen 模型（已對 /v1/models 清單確認），因此改用 GPT OSS。
+# 實測 gpt-oss 雖是 reasoning 模型，但在此 Prompt 下不會外洩思考過程，
+# 輸出即為純 SQL，_parse_sql 無需調整；延遲約 2 秒，遠優於原本的 Llama。
+
+# Generator 模型 (120B) — 單次生成 1 條高品質 SQL
 llm_fast = ChatOpenAI(
-    model="meta/llama-3.3-70b-instruct",
+    model="openai/gpt-oss-120b",
     api_key=NVIDIA_API_KEY,
     base_url="https://integrate.api.nvidia.com/v1",
     temperature=0,
     request_timeout=300.0,
 )
 
-# 摘要模型 (70B) — 用於最終回覆，Temperature=0 確保一致性
+# 摘要模型 (20B) — 純格式轉換任務，好鋼用在刀刃上。
+# 已驗證能正確引用權威筆數而不自行清點 JSON。
 llm_summarizer = ChatOpenAI(
-    model="meta/llama-3.1-70b-instruct",
+    model="openai/gpt-oss-20b",
     api_key=NVIDIA_API_KEY,
     base_url="https://integrate.api.nvidia.com/v1",
     temperature=0,

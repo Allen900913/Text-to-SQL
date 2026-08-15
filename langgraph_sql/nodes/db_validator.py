@@ -6,11 +6,38 @@ Node 4: DB Validator
 MySQL 是 SQL 是否可執行的唯一裁判：EXPLAIN 成功才進入真正查詢；
 失敗時保留資料庫原生錯誤，交由 SQL Generator 修復。
 """
+import re
+
 from loguru import logger as log
 
 from langgraph_sql.config import MYSQL_URI
 from langgraph_sql.state import AgentState
 from langgraph_sql.utils.db_manager import get_db_manager
+from langgraph_sql.utils.schema_registry import format_whitelist
+
+
+# MySQL 的 schema 類錯誤只說「這個東西不存在」，不說「那有什麼」：
+#   1054 Unknown column 'age' in 'field list'
+#   1146 Table 'ecommerce_demo.shipments' doesn't exist
+# 這是走 EXPLAIN 這條路徑的盲點 —— AST 那條路徑攔到幻覺欄位時會附上合法欄位清單，
+# 但沒有表限定詞的欄位（SELECT age）在 AST 是 fail-open 放行的，只會死在這裡。
+# 模型收到沒有清單的錯誤就只能再猜一次，等於白燒一輪重試預算。
+_SCHEMA_ERROR_PATTERN = re.compile(
+    r"Unknown column|doesn't exist|Unknown table", re.IGNORECASE
+)
+
+
+def _augment_schema_error(error: str) -> str:
+    """若錯誤屬於「找不到欄位/表」，補上完整白名單讓模型有依據可改。"""
+    if not _SCHEMA_ERROR_PATTERN.search(error):
+        return error
+    return (
+        f"{error}\n"
+        f"資料庫實際存在的表與欄位如下，請只使用這些欄位：\n"
+        f"{format_whitelist()}\n"
+        f"若使用者要的概念在上面找不到對應欄位，不要拼湊替代公式，"
+        f"請改輸出：SELECT 'SCHEMA_UNSUPPORTED' AS system_error_flag;"
+    )
 
 
 def db_validator(state: AgentState) -> dict:
@@ -36,7 +63,7 @@ def db_validator(state: AgentState) -> dict:
             log.debug(f"  SQL #{index} ✅ EXPLAIN 通過")
         except Exception as exc:
             # str(exc) 含 MySQL error code/message，可直接供 Generator 修復。
-            error = f"MySQL EXPLAIN failed for SQL #{index}: {exc}"
+            error = _augment_schema_error(f"MySQL EXPLAIN failed for SQL #{index}: {exc}")
             errors.append(error)
             log.debug(f"  SQL #{index} ❌ {error[:300]}")
 

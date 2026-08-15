@@ -16,7 +16,7 @@ from sqlglot.errors import ParseError
 from loguru import logger as log
 
 from langgraph_sql.state import AgentState
-from langgraph_sql.utils.schema_parser import get_schema_parser
+from langgraph_sql.utils.schema_registry import get_allowed_tables, get_table_columns
 
 
 # ===========================================================================
@@ -168,13 +168,10 @@ def ast_validator(state: AgentState) -> dict:
             "error_message": "所有候選 SQL 均解析失敗，無法進行驗證。",
         }
 
-    # 從 Schema 取得白名單
-    parser = get_schema_parser()
-    allowed_tables: set[str] = {t.lower() for t in parser.get_allowed_tables()}
-    table_columns: dict[str, list[str]] = {
-        k.lower(): [c.lower() for c in v]
-        for k, v in parser.get_table_columns().items()
-    }
+    # 白名單來自 MySQL 的 INFORMATION_SCHEMA（見 schema_registry 的說明），
+    # 不再依賴 regex 剖析 YAML DDL —— 那條路徑失效時是靜默的。
+    allowed_tables: set[str] = get_allowed_tables()
+    table_columns: dict[str, list[str]] = get_table_columns()
 
     valid_sqls: list[str] = []
     # 收集每條 SQL 的淘汰理由，供全部淘汰時回填 db_error 給 Generator 自我修復。
