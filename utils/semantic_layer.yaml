@@ -63,12 +63,19 @@ enum_fields:
 # =============================================================================
 # 三、商業邏輯規則（Anti-Pattern 防範）
 # =============================================================================
-# 收錄原則：只留「沒有 few-shot 範例示範」的規則。
-# 實測結論是規則文字的效果遠不如一個同形狀的 few-shot 範例，兩者並存時
+# 收錄原則：只留「沒有 few-shot 範例示範『同一個形狀』」的規則。
+# 實測結論是規則文字的效果遠不如同形狀的 few-shot 範例，兩者並存時
 # 規則文字只是稀釋 Prompt。已由 few-shot 涵蓋而移除的規則：
 #   售出數量、從未下訂的客戶、only_full_group_by、相對時間區間、
-#   全稱量詞、聚合函數在 ORDER BY、處理並列第一。
+#   聚合函數在 ORDER BY、處理並列第一。
 # 其中「處理並列第一」另有 ast_validator 的確定性攔截器把關，不靠模型自覺。
+#
+# ⚠️ 「形狀」要看結構，不是看用詞。「全稱量詞」一度因為看到
+#    few-shot 有「每一張訂單金額都超過 1000 元」就被移除，但那題是
+#    HAVING MIN() 的客戶分組形狀，與「群組全體皆不符合 → NOT IN 整組排除」
+#    完全不同，涵蓋不到。移除後 #25（哪些城市的客戶全都沒買過家電）
+#    正確率由 7/8 掉到 3/8，且錯誤是語法合法的靜默錯答，AST 與 EXPLAIN 都攔不到。
+#    因此以群組量詞的正確形狀重新寫回。
 business_rules:
   - name: "訂單總金額 / 總營收 / 總消費"
     description: "計算金額時使用 orders.total_amount，這已是每張訂單的最終合計金額。"
@@ -79,6 +86,28 @@ business_rules:
     description: "計算不重複的客戶數，避免因多筆訂單而重複計算同一位客戶。"
     correct_sql: "COUNT(DISTINCT customer_id)"
     wrong_sql:   "COUNT(customer_id)  -- ❌ 錯誤：同一客戶的多筆訂單會被重複計算"
+
+  - name: "全稱量詞（每一個都 / 全部 / 所有 / 從來沒有）"
+    description: |
+      當問題的主體是「群組」（城市、類別、客戶）而條件要求該群組「全部成員」都符合時，
+      不可只對「單一成員」下 NOT EXISTS 後再 DISTINCT 群組名 ——
+      那只找出「至少有一位成員符合」的群組，語意完全相反。
+      正確做法：先算出「有任一成員違反條件」的群組，再用 NOT IN 把它們整組排除。
+    correct_sql: |
+      -- 「哪些城市的客戶『全都』沒買過家電」
+      SELECT DISTINCT city FROM customers
+      WHERE city NOT IN (
+        SELECT c.city FROM customers c
+        JOIN orders o ON c.id = o.customer_id
+        JOIN order_items oi ON o.id = oi.order_id
+        JOIN products p ON oi.product_id = p.id
+        WHERE p.category = '家電');
+    wrong_sql: |
+      -- ❌ 這是「該市有某位客戶沒買過家電」，不是「全都沒買過」
+      SELECT DISTINCT c.city FROM customers c
+      WHERE NOT EXISTS (SELECT 1 FROM orders o JOIN order_items oi ON o.id=oi.order_id
+        JOIN products p ON oi.product_id=p.id
+        WHERE o.customer_id = c.id AND p.category='家電');
 
   - name: "存在量詞（至少有一筆 / 曾經 / 有過）"
     description: |
