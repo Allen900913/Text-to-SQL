@@ -16,6 +16,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from langgraph_sql.state import AgentState
 from langgraph_sql.config import llm_fast as llm_generator
+from langgraph_sql.data_anchor import DATA_ANCHOR_DATE
 from langgraph_sql.utils.llm_retry import invoke_with_retry
 
 
@@ -34,6 +35,11 @@ Strictly follow these rules:
 4. Only generate SELECT or WITH (CTE) queries. Never generate INSERT, UPDATE, DELETE, DROP.
 5. If the question asks for multiple pieces of information, combine them into a SINGLE SQL query using subqueries or JOINs. Do NOT split into multiple SQL statements.
 6. Always respect the MySQL only_full_group_by mode: all non-aggregated columns in SELECT must appear in GROUP BY.
+
+【時間基準 (Reference Date)】
+今天的日期是 {DATA_ANCHOR_DATE}。所有相對時間（最近 N 天、過去 N 個月、今年、上個月…）
+一律以這個日期為基準，直接把它寫成字面值，例如 DATE_SUB('{DATA_ANCHOR_DATE}', INTERVAL 30 DAY)。
+不可使用 NOW() / CURDATE() / CURRENT_DATE —— 那會讓同一句 SQL 在不同日期回傳不同結果。
 
 【嚴格業務邏輯邊界 (Strict Schema Constraints)】
 1. 絕不可發明欄位：你只能使用 schema_ddl 中確實存在的欄位。

@@ -1,7 +1,15 @@
 import random
-from datetime import datetime, timedelta
+from datetime import timedelta
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
+
+# 固定種子與固定時間錨點：重跑這支程式必須產生位元等價的資料庫，
+# 否則預期答案（ground truth）沒辦法進版控。理由詳見 data_anchor 模組。
+from langgraph_sql.data_anchor import (
+    DATA_ANCHOR_DATE,
+    DATA_ANCHOR_DATETIME,
+    DATA_RANDOM_SEED,
+)
 
 # 使用 root 權限連線到本地 MySQL，建立 ecommerce_demo 資料庫
 # 根據圖片 Port 為 3306，主機為 127.0.0.1
@@ -80,8 +88,12 @@ def init_database():
             conn.execute(text("SET FOREIGN_KEY_CHECKS = 1;"))
             
             # --- 產生假資料 ---
-            print("正在產生假資料...")
-            
+            # 種子必須在產生任何資料「之前」設定，且整段過程不得再呼叫
+            # datetime.now() —— 只要有一個非決定性來源，整份資料就不可重現。
+            random.seed(DATA_RANDOM_SEED)
+            print(f"正在產生假資料...（種子={DATA_RANDOM_SEED}，"
+                  f"時間錨點={DATA_ANCHOR_DATE}）")
+
             cities = ['台北市', '新北市', '桃園市', '台中市', '台南市', '高雄市', '新竹市', '嘉義市']
             first_names = ['小明', '阿華', '美玲', '志強', '淑芬', '俊傑', '雅婷', '家豪', '婉君', '宗憲', '心怡', '建國', '佳穎', '柏翰', '宜蓁']
             last_names = ['陳', '林', '黃', '張', '李', '王', '吳', '劉', '蔡', '楊', '許', '鄭', '謝', '郭', '洪']
@@ -93,7 +105,7 @@ def init_database():
                 email = f"user{i}@example.com"
                 phone = f"09{random.randint(10000000, 99999999)}"
                 city = random.choice(cities)
-                created_at = datetime.now() - timedelta(days=random.randint(10, 365))
+                created_at = DATA_ANCHOR_DATETIME - timedelta(days=random.randint(10, 365))
                 customer_data.append({"name": name, "email": email, "phone": phone, "city": city, "created_at": created_at})
             
             conn.execute(text("""
@@ -134,13 +146,17 @@ def init_database():
             
             statuses = ['PENDING', 'PAID', 'SHIPPED', 'COMPLETED', 'CANCELLED']
             
-            # 取回產品以獲取ID和價格
-            products_db = conn.execute(text("SELECT id, price FROM products")).fetchall()
+            # 取回產品以獲取ID和價格。
+            # ORDER BY 不可省：random.sample 取的是「這個 list 的位置」，
+            # MySQL 不保證沒有 ORDER BY 時的回傳順序，順序一變挑中的商品就變了。
+            products_db = conn.execute(
+                text("SELECT id, price FROM products ORDER BY id")
+            ).fetchall()
             
             order_id_counter = 1
             for _ in range(200):
                 customer_id = random.randint(1, 50)
-                order_date = datetime.now() - timedelta(days=random.randint(1, 180), hours=random.randint(1, 24))
+                order_date = DATA_ANCHOR_DATETIME - timedelta(days=random.randint(1, 180), hours=random.randint(1, 24))
                 status = random.choices(statuses, weights=[10, 10, 20, 50, 10])[0]
                 
                 # 訂單明細

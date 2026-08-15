@@ -322,12 +322,15 @@ few_shot_examples:
 
   - question: "最近 30 天以內，總共有幾張訂單？"
     reasoning: |
-      「最近 30 天以內」→ 距今越近 order_date 越大，條件是 >= DATE_SUB(NOW(), INTERVAL 30 DAY)。
-      注意：不可用 <=，那會撈出 30 天前以前的舊訂單，方向完全相反。
+      「最近 30 天以內」→ 距今越近 order_date 越大，條件是 >= 基準日往前 30 天。
+      注意一：不可用 <=，那會撈出 30 天前以前的舊訂單，方向完全相反。
+      注意二：基準日一律取 Prompt 給的「今天」，不可用 NOW() / CURDATE()。
+      查詢的答案不該取決於它在哪一天被執行 —— 用系統時鐘會讓同一句 SQL
+      每天回不同結果，預期答案也就無法固定下來。
     sql: |
       SELECT COUNT(*) AS recent_order_count
       FROM orders
-      WHERE order_date >= DATE_SUB(NOW(), INTERVAL 30 DAY);
+      WHERE order_date >= DATE_SUB('2026-08-15', INTERVAL 30 DAY);
 
   - question: "每一張訂單金額都超過 1000 元的客戶有哪些？"
     reasoning: |

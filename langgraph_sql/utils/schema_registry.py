@@ -15,6 +15,7 @@ YAML 的 DDL 文字仍然保留：它有中文 COMMENT，是餵給 LLM 的 schem
 等於免費得到一個 schema 漂移偵測。
 """
 import threading
+from collections.abc import Iterable
 
 from loguru import logger as log
 from sqlalchemy import text
@@ -110,13 +111,26 @@ def get_allowed_tables() -> set[str]:
     return set(get_table_columns().keys())
 
 
-def format_whitelist() -> str:
+def format_whitelist(tables: Iterable[str] | None = None) -> str:
     """
-    把整份白名單格式化成一行一表的文字，供錯誤訊息附帶給 LLM 參考。
-    目前 schema 只有 4 張表 / 22 個欄位，整份附上約 200 字元，
-    比起讓模型再猜錯一輪重試，這個成本划算得多。
+    把白名單格式化成一行一表的文字，供錯誤訊息附帶給 LLM 參考。
+
+    tables 指定時只展開這幾張表的欄位，其餘表僅列表名。這個表限定是必要的
+    而非優化：每個欄位在這裡約佔 12 字元，4 張表 / 22 欄時整份約 200 字元無妨，
+    但 20 張表 / 200 欄時會膨脹到約 2,500 字元，塞進錯誤訊息會把後面真正要
+    模型做的修正指示稀釋掉。模型要修的是某張表的某個欄位，不需要看完整個資料庫。
+
+    tables 為 None（或指定的表全都不存在）時退回只列出所有表名 —— 那代表
+    連該看哪張表都不確定，給表名讓模型自己指認，比灌一份全表欄位有效。
     """
-    return "\n".join(
-        f"  {table}: {', '.join(cols)}"
-        for table, cols in sorted(get_table_columns().items())
-    )
+    all_cols = get_table_columns()
+    focus = set(all_cols) if tables is None else {t.lower() for t in tables} & set(all_cols)
+
+    lines = [f"  {table}: {', '.join(all_cols[table])}" for table in sorted(focus)]
+
+    others = sorted(set(all_cols) - focus)
+    if others:
+        label = "資料庫還有這些表" if focus else "資料庫裡實際存在的表"
+        lines.append(f"  （{label}，需要時再引用其欄位）: {', '.join(others)}")
+
+    return "\n".join(lines)

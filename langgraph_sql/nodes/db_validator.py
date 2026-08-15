@@ -8,6 +8,8 @@ MySQL 是 SQL 是否可執行的唯一裁判：EXPLAIN 成功才進入真正查�
 """
 import re
 
+import sqlglot
+from sqlglot import exp
 from loguru import logger as log
 
 from langgraph_sql.config import MYSQL_URI
@@ -27,14 +29,35 @@ _SCHEMA_ERROR_PATTERN = re.compile(
 )
 
 
-def _augment_schema_error(error: str) -> str:
-    """若錯誤屬於「找不到欄位/表」，補上完整白名單讓模型有依據可改。"""
+def _referenced_tables(sql: str) -> set[str] | None:
+    """
+    取出 SQL 實際引用的實體表名（排除 CTE 名稱）。
+
+    只展開這幾張表的欄位，而不是整份 schema —— 錯誤訊息裡的白名單會隨表數
+    線性膨脹，而模型要修的只是它自己寫的那幾張表。解析失敗時回 None，
+    讓上層退回「只列表名」的保守輸出。
+    """
+    try:
+        ast = sqlglot.parse_one(sql, read="mysql")
+    except Exception:
+        return None
+
+    cte_names = {c.alias.lower() for c in ast.find_all(exp.CTE) if c.alias}
+    return {
+        t.name.lower()
+        for t in ast.find_all(exp.Table)
+        if t.name and t.name.lower() not in cte_names
+    }
+
+
+def _augment_schema_error(error: str, sql: str) -> str:
+    """若錯誤屬於「找不到欄位/表」，補上相關表的白名單讓模型有依據可改。"""
     if not _SCHEMA_ERROR_PATTERN.search(error):
         return error
     return (
         f"{error}\n"
         f"資料庫實際存在的表與欄位如下，請只使用這些欄位：\n"
-        f"{format_whitelist()}\n"
+        f"{format_whitelist(_referenced_tables(sql))}\n"
         f"若使用者要的概念在上面找不到對應欄位，不要拼湊替代公式，"
         f"請改輸出：SELECT 'SCHEMA_UNSUPPORTED' AS system_error_flag;"
     )
@@ -63,7 +86,9 @@ def db_validator(state: AgentState) -> dict:
             log.debug(f"  SQL #{index} ✅ EXPLAIN 通過")
         except Exception as exc:
             # str(exc) 含 MySQL error code/message，可直接供 Generator 修復。
-            error = _augment_schema_error(f"MySQL EXPLAIN failed for SQL #{index}: {exc}")
+            error = _augment_schema_error(
+                f"MySQL EXPLAIN failed for SQL #{index}: {exc}", sql
+            )
             errors.append(error)
             log.debug(f"  SQL #{index} ❌ {error[:300]}")
 
