@@ -730,7 +730,14 @@
 - id: 70
   question: 哪一個商品的利潤率最高？
   expect: schema_unsupported
-  note: 沒有成本欄位，利潤率無法計算。不可自行用「售價 - 某個數」拼湊。
+  note: ⚠️ schema 擴充後 product_suppliers.supply_price（進貨價）出現了，
+        資料上「售價 - 進貨價」算得出來 —— 但這題的答案沒有變。
+        原因有二：(a) 一個商品可以有多個供應商、多個進貨價，該取哪一個
+        沒有定義；(b) 利潤率的計算公式不在 business_rules 裡。
+        Prompt 的防禦條款講的正是這種情況：「概念沒有定義在 rules_text 中，
+        絕對不可自行推導或猜測計算公式」。
+        資料存在但業務定義不存在，仍然該觸發防禦 —— 擴充之後這題反而
+        變成更好的測試：它區分「查不到欄位」與「查得到欄位但算法未定義」。
 
 - id: 71
   question: 請問客戶的性別比例是多少？
@@ -739,8 +746,21 @@
 
 - id: 72
   question: 有哪些訂單使用了折扣碼？折扣了多少？
-  expect: schema_unsupported
-  note: 沒有折扣或優惠券相關欄位。
+  expect: rows
+  note: ⚠️ 這題原本是防禦題（舊 schema 沒有任何折扣欄位）。schema 擴充加入
+        promotions 與 order_promotions 之後，它變成一題可以誠實回答的問題，
+        系統也確實答對了。
+        這是 ground truth 腐化的第三種形式：不是資料變了、也不是題目硬編的
+        值消失了，而是「schema 變了，舊題目的語意跟著變」。
+        擴充 schema 時必須逐題重新檢視防禦題，否則會把正確行為判成錯誤。
+  sql: |
+    SELECT o.id AS order_id, SUM(op.discount_amount) AS total_discount
+    FROM orders o JOIN order_promotions op ON o.id = op.order_id
+    GROUP BY o.id ORDER BY o.id
+  alt_sql:
+    - |
+      SELECT op.order_id, op.discount_amount
+      FROM order_promotions op ORDER BY op.order_id
 
 - id: 73
   question: 有哪些商品的庫存是 0？

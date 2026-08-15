@@ -393,10 +393,44 @@ business_rules:
       -- ❌ 錯誤：order_items 根本沒有 customer_id
       FROM customers c JOIN order_items oi ON c.id = oi.customer_id
 
-  - name: "訂單狀態：已送達 (DELIVERED)"
-    description: "當使用者詢問「已送達」或「DELIVERED」的訂單時，必須使用 status = 'COMPLETED'。資料庫沒有 DELIVERED 狀態，絕對不可猜測為 SHIPPED。"
-    correct_sql: "WHERE status = 'COMPLETED'"
-    wrong_sql:   "WHERE status = 'SHIPPED'  -- ❌ 錯誤：這是已出貨，尚未送達"
+  - name: "status 有四種，先確認問的是哪一張表的狀態"
+    description: |
+      四張表都有 status 欄位，值域完全不同，不可跨表套用：
+        orders.status     PENDING / PAID / SHIPPED / COMPLETED / CANCELLED（訂單處理進度）
+        payments.status   SUCCESS / FAILED / REFUNDED（金流結果）
+        shipments.status  PREPARING / IN_TRANSIT / DELIVERED / RETURNED（物流進度）
+        refunds.status    REQUESTED / APPROVED / REJECTED / DONE（退款審核）
+      因此 status 欄位一律要加表前綴，不可寫成裸的 status。
+      「已送達」在訂單層級是 orders.status = 'COMPLETED'，在物流層級是
+      shipments.status = 'DELIVERED'，兩者在本資料庫中一致；問「訂單」用前者。
+      「已取消」只存在於 orders；「已退款」在 payments 與 refunds 各有一個，
+      問「退了多少錢」要用 refunds.amount，不是 payments.amount。
+    correct_sql: |
+      -- 問「已送達的訂單有幾張」
+      SELECT COUNT(*) FROM orders WHERE status = 'COMPLETED';
+    wrong_sql: |
+      -- ❌ 這是已出貨、尚未送達
+      SELECT COUNT(*) FROM orders WHERE status = 'SHIPPED';
+      -- ❌ 裸的 status 在多表 JOIN 時是有歧義的，MySQL 會直接報 ambiguous
+      SELECT COUNT(*) FROM orders o JOIN shipments s ON o.id = s.order_id
+      WHERE status = 'COMPLETED';
+
+  - name: "商品分類的權威來源是 products.category"
+    description: |
+      商品分類有兩種表示法並存，問「某類別有哪些商品 / 幾種商品 / 營收多少」時
+      一律以 products.category 為準：
+        products.category    反正規化的字串，每個商品「唯一」的主分類 ← 權威來源
+        product_categories   多對多關聯表，一個商品可以掛多個分類，
+                             其中 is_primary = 1 才是主分類
+      用 product_categories 而不過濾 is_primary，會把次要分類也算進去，
+      同一個商品被重複計數，類別的商品數就會被灌水。
+    correct_sql: |
+      SELECT category, COUNT(*) FROM products GROUP BY category;
+    wrong_sql: |
+      -- ❌ 沒過濾 is_primary，商品被重複計入多個分類
+      SELECT c.name, COUNT(DISTINCT pc.product_id)
+      FROM categories c JOIN product_categories pc ON c.id = pc.category_id
+      GROUP BY c.name;
 
   - name: "單次購買 / 單筆訂單大於 N 件"
     description: |
