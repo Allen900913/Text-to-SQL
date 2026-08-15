@@ -10,6 +10,42 @@ from langgraph_sql.data_anchor import (
     DATA_ANCHOR_DATETIME,
     DATA_RANDOM_SEED,
 )
+from init_db_ext import create_extended_tables, seed_extended
+
+# 既有 4 張表在擴充 schema 之前的內容指紋。100 題的 ground truth 綁在這份
+# 資料上，擴充只能「新增表」，不能讓這 4 張表有任何一個位元不同。
+# 擴充表的資料一律在既有資料產生「之後」才生成 —— random 是共用序列，
+# 插進去就會整份平移。這個檢查是那條鐵則的守門員。
+BASE_TABLE_FINGERPRINTS = {
+    "customers": "22422359119e",
+    "products": "8d581d952605",
+    "orders": "910c69ea8fbe",
+    "order_items": "504612da1025",
+}
+
+
+def verify_base_tables(engine) -> None:
+    """比對既有 4 張表的指紋，不符就是動到了不該動的東西。"""
+    import hashlib
+
+    import pandas as pd
+
+    drifted = []
+    with engine.connect() as conn:
+        for table, expected in BASE_TABLE_FINGERPRINTS.items():
+            df = pd.read_sql(f"SELECT * FROM {table} ORDER BY id", conn)
+            actual = hashlib.sha256(df.to_csv(index=False).encode()).hexdigest()[:12]
+            # 這裡刻意用 ASCII 標記：Windows 主控台預設 cp950，印 emoji 會直接 crash。
+            mark = "[OK]  " if actual == expected else "[DRIFT]"
+            print(f"  {mark} {table:<14} {actual}")
+            if actual != expected:
+                drifted.append(f"{table}（預期 {expected}，實得 {actual}）")
+
+    if drifted:
+        raise RuntimeError(
+            "既有資料表的內容改變了: " + "、".join(drifted) +
+            "\neval_ground_truth.yaml 的預期答案已經失效，必須重新驗證所有題目。"
+        )
 
 # 使用 root 權限連線到本地 MySQL，建立 ecommerce_demo 資料庫
 # 根據圖片 Port 為 3306，主機為 127.0.0.1
@@ -197,8 +233,21 @@ def init_database():
                 VALUES (:order_id, :product_id, :quantity, :unit_price)
             """), order_item_data)
             
+            print(f"核心 4 張表寫入完成！共 50 位客戶，{len(product_data)} 項商品，"
+                  f"200 筆訂單，{len(order_item_data)} 筆訂單明細。")
+
+            # --- 擴充 schema ---
+            # 必須在核心資料寫完之後才動，理由見 init_db_ext 的模組說明。
+            create_extended_tables(conn)
+            counts = seed_extended(conn)
+            print(f"擴充 {len(counts)} 張表，共 {sum(counts.values())} 列：")
+            for name, n in sorted(counts.items(), key=lambda kv: -kv[1]):
+                print(f"    {name:<20} {n:>5} 列")
+
             conn.commit()
-            print(f"假資料寫入完成！共 50 位客戶，{len(product_data)} 項商品，200 筆訂單，{len(order_item_data)} 筆訂單明細。")
+
+        print("\n核心表指紋檢查（ground truth 綁在這份資料上）：")
+        verify_base_tables(engine)
 
     except SQLAlchemyError as e:
         print(f"資料庫初始化失敗: {e}")

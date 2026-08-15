@@ -9,39 +9,233 @@
 # =============================================================================
 ddl: |
   CREATE TABLE customers (
-    id          INT          PRIMARY KEY COMMENT '客戶唯一ID',
-    name        VARCHAR(100) COMMENT '客戶姓名',
-    email       VARCHAR(100) COMMENT '客戶信箱',
-    phone       VARCHAR(20)  COMMENT '客戶電話',
-    city        VARCHAR(50)  COMMENT '居住城市',
-    created_at  DATETIME     COMMENT '註冊時間'
+    id         INT          PRIMARY KEY COMMENT '客戶唯一ID',
+    name       VARCHAR(100) COMMENT '客戶姓名',
+    email      VARCHAR(100) COMMENT '客戶信箱',
+    phone      VARCHAR(20)  COMMENT '客戶電話',
+    city       VARCHAR(50)  COMMENT '居住城市',
+    created_at DATETIME     COMMENT '註冊時間'
   );
 
   CREATE TABLE products (
     id          INT           PRIMARY KEY COMMENT '商品唯一ID',
     name        VARCHAR(100)  COMMENT '商品名稱',
     category    VARCHAR(50)   COMMENT '商品分類',
-    price       DECIMAL(10,2) COMMENT '商品售價',
+    price       DECIMAL(10,2) COMMENT '商品價格',
     stock       INT           COMMENT '庫存數量',
     description TEXT          COMMENT '商品描述'
   );
 
   CREATE TABLE orders (
-    id            INT           PRIMARY KEY COMMENT '訂單唯一ID',
-    customer_id   INT           COMMENT '購買客戶ID (FK → customers.id)',
-    order_date    DATETIME      COMMENT '訂單建立時間',
-    total_amount  DECIMAL(10,2) COMMENT '訂單總金額',
-    status        VARCHAR(20)   COMMENT '訂單狀態，可能的值：PENDING / PAID / SHIPPED / COMPLETED / CANCELLED',
+    id           INT           PRIMARY KEY COMMENT '訂單唯一ID',
+    customer_id  INT           COMMENT '購買客戶ID',
+    order_date   DATETIME      COMMENT '訂單建立時間',
+    total_amount DECIMAL(10,2) COMMENT '訂單總金額',
+    status       VARCHAR(20)   COMMENT '訂單狀態 (PENDING/PAID/SHIPPED/COMPLETED/CANCELLED)',
     FOREIGN KEY (customer_id) REFERENCES customers(id)
   );
 
   CREATE TABLE order_items (
-    id          INT           PRIMARY KEY COMMENT '明細唯一ID',
-    order_id    INT           COMMENT '所屬訂單ID (FK → orders.id)',
-    product_id  INT           COMMENT '購買商品ID (FK → products.id)',
-    quantity    INT           COMMENT '購買數量',
-    unit_price  DECIMAL(10,2) COMMENT '購買當下的商品單價',
-    FOREIGN KEY (order_id)   REFERENCES orders(id),
+    id         INT           PRIMARY KEY COMMENT '明細唯一ID',
+    order_id   INT           COMMENT '所屬訂單ID',
+    product_id INT           COMMENT '購買商品ID',
+    quantity   INT           COMMENT '購買數量',
+    unit_price DECIMAL(10,2) COMMENT '購買時的單價',
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  );
+
+  CREATE TABLE categories (
+    id         INT         PRIMARY KEY COMMENT '分類唯一ID',
+    name       VARCHAR(50) COMMENT '分類名稱',
+    parent_id  INT         COMMENT '上層分類ID，NULL 表示最上層',
+    sort_order INT         COMMENT '同層顯示順序',
+    is_active  TINYINT(1)  COMMENT '是否啟用中',
+    FOREIGN KEY (parent_id) REFERENCES categories(id)
+  );
+
+  CREATE TABLE product_categories (
+    id          INT        PRIMARY KEY COMMENT '唯一ID',
+    product_id  INT        COMMENT '商品ID',
+    category_id INT        COMMENT '分類ID',
+    is_primary  TINYINT(1) COMMENT '是否為主要分類',
+    FOREIGN KEY (product_id) REFERENCES products(id),
+    FOREIGN KEY (category_id) REFERENCES categories(id)
+  );
+
+  CREATE TABLE suppliers (
+    id            INT          PRIMARY KEY COMMENT '供應商唯一ID',
+    name          VARCHAR(100) COMMENT '供應商名稱（非客戶姓名）',
+    contact_email VARCHAR(100) COMMENT '供應商聯絡信箱',
+    phone         VARCHAR(20)  COMMENT '供應商電話（非客戶電話）',
+    city          VARCHAR(50)  COMMENT '供應商所在城市（非客戶居住城市）',
+    created_at    DATETIME     COMMENT '建檔時間'
+  );
+
+  CREATE TABLE product_suppliers (
+    id             INT           PRIMARY KEY COMMENT '唯一ID',
+    product_id     INT           COMMENT '商品ID',
+    supplier_id    INT           COMMENT '供應商ID',
+    supply_price   DECIMAL(10,2) COMMENT '進貨價（非售價，售價在 products.price）',
+    lead_time_days INT           COMMENT '備貨天數',
+    FOREIGN KEY (product_id) REFERENCES products(id),
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+  );
+
+  CREATE TABLE product_specs (
+    product_id        INT          PRIMARY KEY COMMENT '商品ID',
+    weight_g          INT          COMMENT '重量（公克）',
+    length_mm         INT          COMMENT '長度（公釐）',
+    width_mm          INT          COMMENT '寬度（公釐）',
+    height_mm         INT          COMMENT '高度（公釐）',
+    color             VARCHAR(30)  COMMENT '顏色',
+    material          VARCHAR(50)  COMMENT '材質',
+    origin_country    VARCHAR(50)  COMMENT '原產地',
+    warranty_months   INT          COMMENT '保固月數',
+    power_watt        INT          COMMENT '功率（瓦），僅電器類有值',
+    voltage           VARCHAR(20)  COMMENT '電壓規格，僅電器類有值',
+    battery_mah       INT          COMMENT '電池容量（mAh），僅 3C 類有值',
+    screen_inch       DECIMAL(4,1) COMMENT '螢幕尺寸（吋），僅 3C 類有值',
+    storage_gb        INT          COMMENT '儲存容量（GB），僅 3C 類有值',
+    ram_gb            INT          COMMENT '記憶體（GB），僅 3C 類有值',
+    connectivity      VARCHAR(50)  COMMENT '連線規格',
+    waterproof_rating VARCHAR(10)  COMMENT '防水等級',
+    energy_label      VARCHAR(10)  COMMENT '能源效率標示',
+    certification     VARCHAR(100) COMMENT '通過的認證',
+    package_contents  VARCHAR(200) COMMENT '包裝內容物',
+    model_no          VARCHAR(50)  COMMENT '型號',
+    release_year      INT          COMMENT '上市年份',
+    is_discontinued   TINYINT(1)   COMMENT '是否已停產',
+    updated_by        VARCHAR(50)  COMMENT '最後修改者帳號，非業務欄位',
+    updated_at        DATETIME     COMMENT '最後修改時間',
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  );
+
+  CREATE TABLE payment_methods (
+    id        INT          PRIMARY KEY COMMENT '付款方式唯一ID',
+    name      VARCHAR(50)  COMMENT '付款方式名稱，例如信用卡、貨到付款',
+    channel   VARCHAR(30)  COMMENT '金流管道代碼',
+    fee_rate  DECIMAL(5,4) COMMENT '手續費率（0.0250 表示 2.5%）',
+    is_active TINYINT(1)   COMMENT '是否開放使用'
+  );
+
+  CREATE TABLE payments (
+    id             INT           PRIMARY KEY COMMENT '付款紀錄唯一ID',
+    order_id       INT           COMMENT '對應訂單ID',
+    method_id      INT           COMMENT '使用的付款方式ID',
+    amount         DECIMAL(10,2) COMMENT '實際付款金額（可能因促銷低於 orders.total_amount）',
+    status         VARCHAR(20)   COMMENT '付款狀態 (SUCCESS/FAILED/REFUNDED)，與訂單狀態不同意義',
+    paid_at        DATETIME      COMMENT '付款完成時間，必定晚於訂單建立時間',
+    transaction_no VARCHAR(64)   COMMENT '金流商交易序號',
+    sync_version   INT           COMMENT '內部同步版本號，非業務欄位',
+    created_at     DATETIME      COMMENT '此筆紀錄寫入時間',
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (method_id) REFERENCES payment_methods(id)
+  );
+
+  CREATE TABLE refunds (
+    id          INT           PRIMARY KEY COMMENT '退款紀錄唯一ID',
+    payment_id  INT           COMMENT '對應的付款紀錄ID',
+    amount      DECIMAL(10,2) COMMENT '退款金額，可能是部分退款',
+    reason      VARCHAR(100)  COMMENT '退款原因',
+    status      VARCHAR(20)   COMMENT '退款狀態 (REQUESTED/APPROVED/REJECTED/DONE)',
+    refunded_at DATETIME      COMMENT '實際退款時間，尚未完成時為 NULL',
+    created_at  DATETIME      COMMENT '退款申請時間',
+    FOREIGN KEY (payment_id) REFERENCES payments(id)
+  );
+
+  CREATE TABLE warehouses (
+    id        INT         PRIMARY KEY COMMENT '倉庫唯一ID',
+    name      VARCHAR(50) COMMENT '倉庫名稱',
+    city      VARCHAR(50) COMMENT '倉庫所在城市',
+    capacity  INT         COMMENT '倉儲容量（單位：箱）',
+    is_active TINYINT(1)  COMMENT '是否營運中'
+  );
+
+  CREATE TABLE shipments (
+    id           INT         PRIMARY KEY COMMENT '出貨紀錄唯一ID',
+    order_id     INT         COMMENT '對應訂單ID',
+    warehouse_id INT         COMMENT '出貨倉庫ID',
+    tracking_no  VARCHAR(64) COMMENT '物流追蹤號碼',
+    status       VARCHAR(20) COMMENT '物流狀態 (PREPARING/IN_TRANSIT/DELIVERED/RETURNED)，與訂單狀態不同意義',
+    shipped_at   DATETIME    COMMENT '實際出貨時間，尚未出貨時為 NULL',
+    delivered_at DATETIME    COMMENT '實際送達時間，尚未送達時為 NULL',
+    created_at   DATETIME    COMMENT '出貨單建立時間',
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
+  );
+
+  CREATE TABLE addresses (
+    id             INT          PRIMARY KEY COMMENT '地址唯一ID',
+    customer_id    INT          COMMENT '所屬客戶ID',
+    recipient_name VARCHAR(100) COMMENT '收件人姓名（可能不是客戶本人）',
+    phone          VARCHAR(20)  COMMENT '收件人電話',
+    city           VARCHAR(50)  COMMENT '收件城市',
+    district       VARCHAR(50)  COMMENT '收件行政區',
+    street         VARCHAR(200) COMMENT '收件詳細地址',
+    is_default     TINYINT(1)   COMMENT '是否為預設地址',
+    created_at     DATETIME     COMMENT '地址建立時間',
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  );
+
+  CREATE TABLE promotions (
+    id             INT           PRIMARY KEY COMMENT '促銷活動唯一ID',
+    name           VARCHAR(100)  COMMENT '活動名稱',
+    discount_type  VARCHAR(20)   COMMENT '折扣型態 (PERCENT/FIXED)',
+    discount_value DECIMAL(10,2) COMMENT '折扣數值：PERCENT 為百分比、FIXED 為折抵金額',
+    starts_at      DATETIME      COMMENT '活動開始時間',
+    ends_at        DATETIME      COMMENT '活動結束時間',
+    is_active      TINYINT(1)    COMMENT '是否啟用'
+  );
+
+  CREATE TABLE order_promotions (
+    id              INT           PRIMARY KEY COMMENT '唯一ID',
+    order_id        INT           COMMENT '訂單ID',
+    promotion_id    INT           COMMENT '套用的促銷活動ID',
+    discount_amount DECIMAL(10,2) COMMENT '此活動實際折抵的金額',
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (promotion_id) REFERENCES promotions(id)
+  );
+
+  CREATE TABLE carts (
+    id           INT        PRIMARY KEY COMMENT '購物車唯一ID',
+    customer_id  INT        COMMENT '所屬客戶ID',
+    is_abandoned TINYINT(1) COMMENT '是否為已放棄的購物車',
+    created_at   DATETIME   COMMENT '購物車建立時間',
+    updated_at   DATETIME   COMMENT '最後異動時間',
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  );
+
+  CREATE TABLE cart_items (
+    id         INT      PRIMARY KEY COMMENT '購物車明細唯一ID',
+    cart_id    INT      COMMENT '所屬購物車ID',
+    product_id INT      COMMENT '商品ID',
+    quantity   INT      COMMENT '放入數量（尚未購買）',
+    added_at   DATETIME COMMENT '加入購物車的時間',
+    FOREIGN KEY (cart_id) REFERENCES carts(id),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  );
+
+  CREATE TABLE reviews (
+    id          INT        PRIMARY KEY COMMENT '評價唯一ID',
+    customer_id INT        COMMENT '評價者客戶ID',
+    product_id  INT        COMMENT '被評價的商品ID',
+    rating      TINYINT    COMMENT '評分 1 到 5 分',
+    comment     TEXT       COMMENT '評價文字內容',
+    is_deleted  TINYINT(1) COMMENT '軟刪除標記，1 表示已被刪除不應顯示',
+    created_at  DATETIME   COMMENT '評價時間，必定晚於購買時間',
+    FOREIGN KEY (customer_id) REFERENCES customers(id),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  );
+
+  CREATE TABLE browse_logs (
+    id           INT         PRIMARY KEY COMMENT '瀏覽紀錄唯一ID',
+    customer_id  INT         COMMENT '瀏覽者客戶ID',
+    product_id   INT         COMMENT '被瀏覽的商品ID',
+    viewed_at    DATETIME    COMMENT '瀏覽時間',
+    duration_sec INT         COMMENT '停留秒數',
+    source       VARCHAR(30) COMMENT '流量來源 (SEARCH/RECOMMEND/CATEGORY/AD)',
+    FOREIGN KEY (customer_id) REFERENCES customers(id),
     FOREIGN KEY (product_id) REFERENCES products(id)
   );
 
@@ -58,6 +252,41 @@ enum_fields:
       SHIPPED:   "已出貨"
       COMPLETED: "已完成（收貨確認）"
       CANCELLED: "已取消"
+
+  # ⚠️ 以下三個欄位同樣叫 status，值域卻完全不同。問「已取消」「已送達」
+  #    「已退款」時必須先確認講的是哪一張表的狀態，不可跨表套用。
+  payments.status:
+    description: "付款狀態（不是訂單狀態）"
+    values:
+      SUCCESS:  "付款成功"
+      FAILED:   "付款失敗"
+      REFUNDED: "已退款"
+  shipments.status:
+    description: "物流狀態（不是訂單狀態）"
+    values:
+      PREPARING:  "備貨中"
+      IN_TRANSIT: "運送中"
+      DELIVERED:  "已送達"
+      RETURNED:   "已退回"
+  refunds.status:
+    description: "退款申請的處理狀態"
+    values:
+      REQUESTED: "已申請，尚未審核"
+      APPROVED:  "已核准，尚未撥款"
+      REJECTED:  "已駁回"
+      DONE:      "已完成退款"
+  promotions.discount_type:
+    description: "折扣型態，決定 discount_value 的意義"
+    values:
+      PERCENT: "百分比折扣，discount_value 是百分比數字"
+      FIXED:   "定額折抵，discount_value 是折抵金額"
+  browse_logs.source:
+    description: "瀏覽的流量來源"
+    values:
+      SEARCH:    "站內搜尋"
+      RECOMMEND: "推薦版位"
+      CATEGORY:  "分類瀏覽"
+      AD:        "廣告導入"
 
 
 # =============================================================================
