@@ -341,6 +341,11 @@
     SELECT DATE_FORMAT(order_date, '%Y-%m') AS mo, COUNT(*) AS n FROM orders
     WHERE order_date >= '2026-07-01' AND order_date < '2026-09-01'
     GROUP BY 1 ORDER BY 1
+  alt_sql:
+    - |
+      SELECT MONTH(order_date) AS mo, COUNT(*) AS n FROM orders
+      WHERE order_date >= '2026-07-01' AND order_date < '2026-09-01'
+      GROUP BY 1 ORDER BY 1
 
 - id: 35
   question: 找出在 2026 年 3 月之後才註冊的客戶有哪些？
@@ -670,10 +675,22 @@
 - id: 64
   question: 找出商品種類數最多的那張訂單，裡面有幾種商品？
   expect: rows
+  note: ⚠️ 題目語意有歧義。「商品種類數」可讀成「不同商品數」（主解讀，
+        呼應後半句「幾種商品」），也可讀成「商品類別數」（products.category，
+        DDL 註解正是「商品分類」）。兩種讀法在本資料集的最大值都剛好是 5，
+        但訂單集合完全不同：不同商品 34 張並列，類別 7 張並列。
+        兩種都接受。若要用這題測「精確讀取語意」的能力，得先把題目改寫成
+        無歧義的說法，否則它測不出任何東西。
   sql: |
     WITH t AS (SELECT order_id AS oid, COUNT(DISTINCT product_id) AS k
                FROM order_items GROUP BY order_id)
     SELECT oid, k FROM t WHERE k = (SELECT MAX(k) FROM t) ORDER BY oid
+  alt_sql:
+    - |
+      WITH t AS (SELECT oi.order_id AS oid, COUNT(DISTINCT p.category) AS k
+                 FROM order_items oi JOIN products p ON oi.product_id = p.id
+                 GROUP BY oi.order_id)
+      SELECT oid, k FROM t WHERE k = (SELECT MAX(k) FROM t) ORDER BY oid
 
 - id: 65
   question: 有哪些訂單的商品總件數超過 10 件？
@@ -813,13 +830,24 @@
 - id: 83
   question: 客戶從註冊到第一次下單，平均間隔多久？
   expect: rows
-  note: 單位為天。只計算有下過訂單的客戶。本資料集部分訂單早於註冊時間
-        （seed 時兩者獨立亂數），故間隔可能為負，這是資料的性質不是錯誤。
+  note: 單位為天。只計算有下過訂單的客戶。
+        ⚠️ 本資料集 49 位有訂單的客戶裡，有 20 位的首單早於註冊時間
+        （seed 時 created_at 與 order_date 是獨立亂數，沒有先後約束）。
+        負值區間 DATEDIFF 與 TIMESTAMPDIFF(DAY) 的截斷方向不同，
+        20/49 ≈ 0.41 天，恰好就是兩者的差（22.08 vs 22.47），兩種都接受。
+        真正該修的是資料而不是 GT —— 擴充 schema 時應讓 order_date
+        必定晚於 created_at，這題才測得出東西。
   sql: |
     SELECT AVG(DATEDIFF(f.first_order, c.created_at)) AS avg_days
     FROM customers c JOIN (
       SELECT customer_id, MIN(order_date) AS first_order FROM orders GROUP BY customer_id
     ) f ON c.id = f.customer_id
+  alt_sql:
+    - |
+      SELECT AVG(TIMESTAMPDIFF(DAY, c.created_at, f.first_order)) AS avg_days
+      FROM customers c JOIN (
+        SELECT customer_id, MIN(order_date) AS first_order FROM orders GROUP BY customer_id
+      ) f ON c.id = f.customer_id
 
 - id: 84
   question: 有哪些客戶在同一天下過超過一張訂單？
