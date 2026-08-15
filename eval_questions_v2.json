@@ -1,103 +1,602 @@
 [
-  {"id": 1,  "type": "few_shot_like", "capability": "字串比對", "question": "找出名字最後一個字是「華」的客戶有哪些？"},
-  {"id": 2,  "type": "few_shot_like", "capability": "單品銷量", "question": "「運動鞋」總共賣出多少雙？"},
-  {"id": 3,  "type": "few_shot_like", "capability": "單品銷量", "question": "「三體」這本書總共賣出幾本？"},
-  {"id": 4,  "type": "few_shot_like", "capability": "城市聚合", "question": "新北市的客戶，平均每個人下了幾張訂單？"},
-  {"id": 5,  "type": "few_shot_like", "capability": "城市聚合", "question": "高雄市的客戶總共消費了多少錢？"},
-  {"id": 6,  "type": "few_shot_like", "capability": "極值(反向)", "question": "哪一個商品的總營收最低？總共只賺了多少錢？"},
-  {"id": 7,  "type": "few_shot_like", "capability": "極值(類別層)", "question": "哪一個商品類別的總營收最高？"},
-  {"id": 8,  "type": "few_shot_like", "capability": "極值(時間粒度)", "question": "哪一個月份的訂單數量最多？"},
-  {"id": 9,  "type": "few_shot_like", "capability": "Enum 篩選", "question": "有多少張訂單的狀態是 PAID？"},
-  {"id": 10, "type": "few_shot_like", "capability": "Enum 否定", "question": "有多少張訂單的狀態不是 CANCELLED？"},
-  {"id": 11, "type": "few_shot_like", "capability": "反向關聯", "question": "找出從來沒有出現在 PENDING 訂單裡的商品名稱。"},
-  {"id": 12, "type": "few_shot_like", "capability": "金額篩選(反向)", "question": "單筆訂單總金額低於 500 元的訂單有哪些？是哪些客戶下的？"},
-  {"id": 13, "type": "few_shot_like", "capability": "極值(ASC)", "question": "最早註冊的客戶是誰？他註冊的日期是哪天？"},
-  {"id": 14, "type": "few_shot_like", "capability": "區間篩選", "question": "庫存量介於 30 到 70 之間的商品有哪些？"},
-  {"id": 15, "type": "few_shot_like", "capability": "價格篩選", "question": "單價高於 20000 元的商品有哪些？"},
-  {"id": 16, "type": "few_shot_like", "capability": "平均(件數vs種類)", "question": "平均每張訂單的商品總件數是多少？"},
-  {"id": 17, "type": "few_shot_like", "capability": "兩步驟推理", "question": "請先算出所有商品的平均單價，再從單價高於該平均值的商品中，找出庫存最少的是哪一個？"},
-  {"id": 18, "type": "few_shot_like", "capability": "相對時間", "question": "最近 3 個月以內註冊的客戶有幾位？"},
-  {"id": 19, "type": "few_shot_like", "capability": "相對時間", "question": "最近 30 天以內，總共有幾位客戶下過訂單？"},
-  {"id": 20, "type": "few_shot_like", "capability": "全稱量詞(狀態)", "question": "找出每一張訂單都是 COMPLETED 狀態的客戶。"},
-
-  {"id": 21, "type": "unseen", "capability": "否定存在量詞", "question": "從來沒有買過「原子習慣」這本書的客戶有誰？"},
-  {"id": 22, "type": "unseen", "capability": "否定存在量詞", "question": "有哪些客戶從來沒有下過 CANCELLED 的訂單？"},
-  {"id": 23, "type": "unseen", "capability": "否定存在量詞", "question": "哪些商品從來沒有出現在 CANCELLED 的訂單裡？"},
-  {"id": 24, "type": "unseen", "capability": "否定存在量詞(類別)", "question": "列出從未購買過任何「3C數位」類別商品的客戶姓名。"},
-  {"id": 25, "type": "unseen", "capability": "否定存在量詞", "question": "有哪些城市的客戶從來沒有買過「家電」類商品？"},
-  {"id": 26, "type": "unseen", "capability": "極值(並列)", "question": "哪一位客戶的訂單張數最多？"},
-  {"id": 27, "type": "unseen", "capability": "極值(並列)", "question": "哪一個商品類別的庫存總量最少？"},
-  {"id": 28, "type": "unseen", "capability": "極值+關聯", "question": "單筆金額最高的訂單是哪一位客戶下的？金額多少？"},
-  {"id": 29, "type": "unseen", "capability": "極值(日營收)", "question": "哪一天的營業額最高？當天總共賣了多少錢？"},
-  {"id": 30, "type": "unseen", "capability": "極值(平均)", "question": "哪一個城市的客戶平均消費金額最高？"},
-  {"id": 31, "type": "unseen", "capability": "極值(庫存)", "question": "庫存量最少的商品是哪一個？"},
-  {"id": 32, "type": "unseen", "capability": "時間聚合", "question": "2026 年 5 月的總營收是多少？"},
-  {"id": 33, "type": "unseen", "capability": "時間區間", "question": "2026 年 2 月到 4 月之間總共有幾張訂單？"},
-  {"id": 34, "type": "unseen", "capability": "時間比較", "question": "比較 2026 年 7 月和 8 月的訂單數量，哪個月比較多？各有幾張？"},
-  {"id": 35, "type": "unseen", "capability": "時間篩選", "question": "找出在 2026 年 3 月之後才註冊的客戶有哪些？"},
-  {"id": 36, "type": "unseen", "capability": "時間分組", "question": "每個月的平均訂單金額分別是多少？"},
-  {"id": 37, "type": "unseen", "capability": "相對時間", "question": "註冊超過 6 個月的客戶有幾位？"},
-  {"id": 38, "type": "unseen", "capability": "日期函數", "question": "訂單日期落在週末（週六、週日）的訂單有幾張？"},
-  {"id": 39, "type": "unseen", "capability": "交集", "question": "找出同時買過「iPhone 15」和「AirPods」的客戶。"},
-  {"id": 40, "type": "unseen", "capability": "差集", "question": "找出買過「iPhone 15」但沒有買過「AirPods」的客戶。"},
-  {"id": 41, "type": "unseen", "capability": "全稱量詞(類別)", "question": "有哪些客戶買過全部 6 個商品類別的商品？"},
-  {"id": 42, "type": "unseen", "capability": "計數門檻", "question": "找出至少買過 3 種不同商品類別的客戶。"},
-  {"id": 43, "type": "unseen", "capability": "全稱量詞(金額)", "question": "有哪些客戶的每一張訂單金額都低於 10000 元？"},
-  {"id": 44, "type": "unseen", "capability": "計數等值", "question": "找出只下過一張訂單的客戶有哪些？"},
-  {"id": 45, "type": "unseen", "capability": "巢狀聚合", "question": "每個城市的客戶平均下了幾張訂單？"},
-  {"id": 46, "type": "unseen", "capability": "巢狀聚合", "question": "平均每位客戶的總消費金額是多少？"},
-  {"id": 47, "type": "unseen", "capability": "類別聚合", "question": "各商品類別各賣出多少件？請由多到少排序。"},
-  {"id": 48, "type": "unseen", "capability": "子查詢比較", "question": "訂單金額高於整體平均的訂單有幾張？"},
-  {"id": 49, "type": "unseen", "capability": "分組極值", "question": "每位客戶的最大單筆訂單金額分別是多少？請列出前 10 名。"},
-  {"id": 50, "type": "unseen", "capability": "條件聚合", "question": "統計每個城市的 COMPLETED 與 CANCELLED 訂單各有幾張。"},
-  {"id": 51, "type": "unseen", "capability": "條件分組", "question": "把商品依單價分成「1000 元以下」「1000 到 10000 元」「10000 元以上」三組，各有幾種商品？"},
-  {"id": 52, "type": "unseen", "capability": "佔比計算", "question": "各種訂單狀態的金額分別佔總營收的百分之幾？"},
-  {"id": 53, "type": "unseen", "capability": "條件佔比", "question": "統計每個月 COMPLETED 訂單佔當月訂單的比例。"},
-  {"id": 54, "type": "unseen", "capability": "佔比計算", "question": "CANCELLED 訂單佔全部訂單的百分之幾？"},
-  {"id": 55, "type": "unseen", "capability": "佔比計算", "question": "「3C數位」類別的營收佔總營收的百分之幾？"},
-  {"id": 56, "type": "unseen", "capability": "佔比計算", "question": "有下過訂單的客戶佔全部客戶的比例是多少？"},
-  {"id": 57, "type": "unseen", "capability": "Top-N", "question": "列出營收前 5 名的商品，並顯示各自的營收金額。"},
-  {"id": 58, "type": "unseen", "capability": "Top-N", "question": "列出總消費金額前 3 名的客戶。"},
-  {"id": 59, "type": "unseen", "capability": "分組 Top-1", "question": "每個商品類別中，賣得最好的商品分別是哪一個？"},
-  {"id": 60, "type": "unseen", "capability": "分組 Top-1", "question": "每個城市消費金額最高的客戶分別是誰？"},
-  {"id": 61, "type": "unseen", "capability": "關聯推論", "question": "買過「掃地機器人」的客戶，平均每人還買了幾種其他商品？"},
-  {"id": 62, "type": "unseen", "capability": "價格門檻關聯", "question": "列出所有購買過單價超過 30000 元商品的客戶。"},
-  {"id": 63, "type": "unseen", "capability": "同單交集", "question": "哪些客戶的同一張訂單裡同時出現過「食品」和「書籍」類商品？"},
-  {"id": 64, "type": "unseen", "capability": "訂單層極值", "question": "找出商品種類數最多的那張訂單，裡面有幾種商品？"},
-  {"id": 65, "type": "unseen", "capability": "訂單層聚合", "question": "有哪些訂單的商品總件數超過 10 件？"},
-  {"id": 66, "type": "unseen", "capability": "單次購買", "question": "請列出所有單次購買過大於 5 件商品的客戶電子郵件。"},
-  {"id": 67, "type": "unseen", "capability": "明細極值", "question": "哪一張訂單包含的商品件數最多？共幾件？"},
-  {"id": 68, "type": "unseen", "capability": "schema 邊界", "question": "每張訂單的運費是多少？"},
-  {"id": 69, "type": "unseen", "capability": "schema 邊界", "question": "客戶的年齡分布大概是怎樣？"},
-  {"id": 70, "type": "unseen", "capability": "schema 邊界", "question": "哪一個商品的利潤率最高？"},
-  {"id": 71, "type": "unseen", "capability": "schema 邊界", "question": "請問客戶的性別比例是多少？"},
-  {"id": 72, "type": "unseen", "capability": "schema 邊界", "question": "有哪些訂單使用了折扣碼？折扣了多少？"},
-  {"id": 73, "type": "unseen", "capability": "空集合", "question": "有哪些商品的庫存是 0？"},
-  {"id": 74, "type": "unseen", "capability": "空集合", "question": "有沒有客戶下過超過 20 張訂單？"},
-  {"id": 75, "type": "unseen", "capability": "空集合", "question": "找出訂單金額超過 200000 元的訂單。"},
-  {"id": 76, "type": "unseen", "capability": "空集合(NULL)", "question": "有哪些客戶沒有填寫電話號碼？"},
-  {"id": 77, "type": "unseen", "capability": "單筆查詢", "question": "「無線滑鼠」目前的庫存還剩下多少？"},
-  {"id": 78, "type": "unseen", "capability": "指定客戶明細", "question": "客戶「林宜蓁」總共買過哪些商品？"},
-  {"id": 79, "type": "unseen", "capability": "指定訂單明細", "question": "訂單編號 100 的明細內容是什麼？包含哪些商品？"},
-  {"id": 80, "type": "unseen", "capability": "類別平均", "question": "「書籍」類別的商品平均單價是多少？"},
-  {"id": 81, "type": "unseen", "capability": "自連接", "question": "哪兩個商品最常被一起購買？"},
-  {"id": 82, "type": "unseen", "capability": "分組首筆", "question": "每位客戶第一次下訂單是什麼時候？"},
-  {"id": 83, "type": "unseen", "capability": "跨表時間差", "question": "客戶從註冊到第一次下單，平均間隔多久？"},
-  {"id": 84, "type": "unseen", "capability": "同日重複", "question": "有哪些客戶在同一天下過超過一張訂單？"},
-  {"id": 85, "type": "unseen", "capability": "時間分組", "question": "列出每個月新註冊的客戶數量。"},
-  {"id": 86, "type": "unseen", "capability": "組內比較", "question": "「家電」類別中，有哪些商品的庫存低於該類別的平均庫存？"},
-  {"id": 87, "type": "unseen", "capability": "相關子查詢", "question": "找出單價高於所在類別平均單價的商品有哪些？"},
-  {"id": 88, "type": "unseen", "capability": "明細筆數", "question": "有哪些訂單只買了一種商品（明細只有一列）？共有幾張？"},
-  {"id": 89, "type": "unseen", "capability": "分組分布", "question": "統計每位客戶的訂單狀態分布，列出前 5 位客戶。"},
-  {"id": 90, "type": "unseen", "capability": "跨欄計算", "question": "目前的總庫存價值（庫存數量乘上單價）是多少？"},
-  {"id": 91, "type": "unseen", "capability": "類別計數", "question": "哪一個類別的商品種類數最多？有幾種？"},
-  {"id": 92, "type": "unseen", "capability": "去重計數", "question": "有哪些商品被超過 15 位不同的客戶買過？"},
-  {"id": 93, "type": "unseen", "capability": "統計量", "question": "客戶總消費金額的中位數大約是多少？"},
-  {"id": 94, "type": "unseen", "capability": "相關子查詢", "question": "找出消費金額高於所在城市平均消費的客戶。"},
-  {"id": 95, "type": "unseen", "capability": "類別銷量", "question": "「食品」類商品的總銷售件數是多少？"},
-  {"id": 96, "type": "unseen", "capability": "計數等值", "question": "有哪些客戶只買過一種商品類別？"},
-  {"id": 97, "type": "unseen", "capability": "分位數", "question": "訂單金額最高的前 10% 訂單，總共貢獻了多少營收？"},
-  {"id": 98, "type": "unseen", "capability": "兩組比較", "question": "比較「3C數位」與「家電」兩個類別的總營收，哪個比較高？"},
-  {"id": 99, "type": "unseen", "capability": "留存分析", "question": "有多少客戶在註冊後 30 天內就下了第一張訂單？"},
-  {"id": 100, "type": "unseen", "capability": "複合條件", "question": "找出住在新北市、而且總消費金額超過 50000 元的客戶。"}
+  {
+    "id": 1,
+    "type": "few_shot_like",
+    "capability": "字串比對",
+    "question": "找出名字最後一個字是「華」的客戶有哪些？"
+  },
+  {
+    "id": 2,
+    "type": "few_shot_like",
+    "capability": "單品銷量",
+    "question": "「運動鞋」總共賣出多少雙？"
+  },
+  {
+    "id": 3,
+    "type": "few_shot_like",
+    "capability": "單品銷量",
+    "question": "「三體」這本書總共賣出幾本？"
+  },
+  {
+    "id": 4,
+    "type": "few_shot_like",
+    "capability": "城市聚合",
+    "question": "新北市的客戶，平均每個人下了幾張訂單？"
+  },
+  {
+    "id": 5,
+    "type": "few_shot_like",
+    "capability": "城市聚合",
+    "question": "高雄市的客戶總共消費了多少錢？"
+  },
+  {
+    "id": 6,
+    "type": "few_shot_like",
+    "capability": "極值(反向)",
+    "question": "哪一個商品的總營收最低？總共只賺了多少錢？"
+  },
+  {
+    "id": 7,
+    "type": "few_shot_like",
+    "capability": "極值(類別層)",
+    "question": "哪一個商品類別的總營收最高？"
+  },
+  {
+    "id": 8,
+    "type": "few_shot_like",
+    "capability": "極值(時間粒度)",
+    "question": "哪一個月份的訂單數量最多？"
+  },
+  {
+    "id": 9,
+    "type": "few_shot_like",
+    "capability": "Enum 篩選",
+    "question": "有多少張訂單的狀態是 PAID？"
+  },
+  {
+    "id": 10,
+    "type": "few_shot_like",
+    "capability": "Enum 否定",
+    "question": "有多少張訂單的狀態不是 CANCELLED？"
+  },
+  {
+    "id": 11,
+    "type": "few_shot_like",
+    "capability": "反向關聯",
+    "question": "找出從來沒有出現在 PENDING 訂單裡的商品名稱。"
+  },
+  {
+    "id": 12,
+    "type": "few_shot_like",
+    "capability": "金額篩選(反向)",
+    "question": "單筆訂單總金額低於 500 元的訂單有哪些？是哪些客戶下的？"
+  },
+  {
+    "id": 13,
+    "type": "few_shot_like",
+    "capability": "極值(ASC)",
+    "question": "最早註冊的客戶是誰？他註冊的日期是哪天？"
+  },
+  {
+    "id": 14,
+    "type": "few_shot_like",
+    "capability": "區間篩選",
+    "question": "庫存量介於 30 到 70 之間的商品有哪些？"
+  },
+  {
+    "id": 15,
+    "type": "few_shot_like",
+    "capability": "價格篩選",
+    "question": "單價高於 20000 元的商品有哪些？"
+  },
+  {
+    "id": 16,
+    "type": "few_shot_like",
+    "capability": "平均(件數vs種類)",
+    "question": "平均每張訂單的商品總件數是多少？"
+  },
+  {
+    "id": 17,
+    "type": "few_shot_like",
+    "capability": "兩步驟推理",
+    "question": "請先算出所有商品的平均單價，再從單價高於該平均值的商品中，找出庫存最少的是哪一個？"
+  },
+  {
+    "id": 18,
+    "type": "few_shot_like",
+    "capability": "相對時間",
+    "question": "最近 3 個月以內註冊的客戶有幾位？"
+  },
+  {
+    "id": 19,
+    "type": "few_shot_like",
+    "capability": "相對時間",
+    "question": "最近 30 天以內，總共有幾位客戶下過訂單？"
+  },
+  {
+    "id": 20,
+    "type": "few_shot_like",
+    "capability": "全稱量詞(狀態)",
+    "question": "找出每一張訂單都是 COMPLETED 狀態的客戶。"
+  },
+  {
+    "id": 21,
+    "type": "unseen",
+    "capability": "否定存在量詞",
+    "question": "從來沒有買過「原子習慣」這本書的客戶有誰？"
+  },
+  {
+    "id": 22,
+    "type": "unseen",
+    "capability": "否定存在量詞",
+    "question": "有哪些客戶從來沒有下過 CANCELLED 的訂單？"
+  },
+  {
+    "id": 23,
+    "type": "unseen",
+    "capability": "否定存在量詞",
+    "question": "哪些商品從來沒有出現在 CANCELLED 的訂單裡？"
+  },
+  {
+    "id": 24,
+    "type": "unseen",
+    "capability": "否定存在量詞(類別)",
+    "question": "列出從未購買過任何「3C數位」類別商品的客戶姓名。"
+  },
+  {
+    "id": 25,
+    "type": "unseen",
+    "capability": "否定存在量詞",
+    "question": "有哪些城市的客戶從來沒有買過「家電」類商品？"
+  },
+  {
+    "id": 26,
+    "type": "unseen",
+    "capability": "極值(並列)",
+    "question": "哪一位客戶的訂單張數最多？"
+  },
+  {
+    "id": 27,
+    "type": "unseen",
+    "capability": "極值(並列)",
+    "question": "哪一個商品類別的庫存總量最少？"
+  },
+  {
+    "id": 28,
+    "type": "unseen",
+    "capability": "極值+關聯",
+    "question": "單筆金額最高的訂單是哪一位客戶下的？金額多少？"
+  },
+  {
+    "id": 29,
+    "type": "unseen",
+    "capability": "極值(日營收)",
+    "question": "哪一天的營業額最高？當天總共賣了多少錢？"
+  },
+  {
+    "id": 30,
+    "type": "unseen",
+    "capability": "極值(平均)",
+    "question": "哪一個城市的客戶平均消費金額最高？"
+  },
+  {
+    "id": 31,
+    "type": "unseen",
+    "capability": "極值(庫存)",
+    "question": "庫存量最少的商品是哪一個？"
+  },
+  {
+    "id": 32,
+    "type": "unseen",
+    "capability": "時間聚合",
+    "question": "2026 年 5 月的總營收是多少？"
+  },
+  {
+    "id": 33,
+    "type": "unseen",
+    "capability": "時間區間",
+    "question": "2026 年 2 月到 4 月之間總共有幾張訂單？"
+  },
+  {
+    "id": 34,
+    "type": "unseen",
+    "capability": "時間比較",
+    "question": "比較 2026 年 7 月和 8 月的訂單數量，哪個月比較多？各有幾張？"
+  },
+  {
+    "id": 35,
+    "type": "unseen",
+    "capability": "時間篩選",
+    "question": "找出在 2026 年 3 月之後才註冊的客戶有哪些？"
+  },
+  {
+    "id": 36,
+    "type": "unseen",
+    "capability": "時間分組",
+    "question": "每個月的平均訂單金額分別是多少？"
+  },
+  {
+    "id": 37,
+    "type": "unseen",
+    "capability": "相對時間",
+    "question": "註冊超過 6 個月的客戶有幾位？"
+  },
+  {
+    "id": 38,
+    "type": "unseen",
+    "capability": "日期函數",
+    "question": "訂單日期落在週末（週六、週日）的訂單有幾張？"
+  },
+  {
+    "id": 39,
+    "type": "unseen",
+    "capability": "交集",
+    "question": "找出同時買過「iPhone 15」和「AirPods」的客戶。"
+  },
+  {
+    "id": 40,
+    "type": "unseen",
+    "capability": "差集",
+    "question": "找出買過「iPhone 15」但沒有買過「AirPods」的客戶。"
+  },
+  {
+    "id": 41,
+    "type": "unseen",
+    "capability": "全稱量詞(類別)",
+    "question": "有哪些客戶買過全部 6 個商品類別的商品？"
+  },
+  {
+    "id": 42,
+    "type": "unseen",
+    "capability": "計數門檻",
+    "question": "找出至少買過 3 種不同商品類別的客戶。"
+  },
+  {
+    "id": 43,
+    "type": "unseen",
+    "capability": "全稱量詞(金額)",
+    "question": "有哪些客戶的每一張訂單金額都低於 10000 元？"
+  },
+  {
+    "id": 44,
+    "type": "unseen",
+    "capability": "計數等值",
+    "question": "找出只下過一張訂單的客戶有哪些？"
+  },
+  {
+    "id": 45,
+    "type": "unseen",
+    "capability": "巢狀聚合",
+    "question": "每個城市的客戶平均下了幾張訂單？"
+  },
+  {
+    "id": 46,
+    "type": "unseen",
+    "capability": "巢狀聚合",
+    "question": "平均每位客戶的總消費金額是多少？"
+  },
+  {
+    "id": 47,
+    "type": "unseen",
+    "capability": "類別聚合",
+    "question": "各商品類別各賣出多少件？請由多到少排序。"
+  },
+  {
+    "id": 48,
+    "type": "unseen",
+    "capability": "子查詢比較",
+    "question": "訂單金額高於整體平均的訂單有幾張？"
+  },
+  {
+    "id": 49,
+    "type": "unseen",
+    "capability": "分組極值",
+    "question": "每位客戶的最大單筆訂單金額分別是多少？請列出前 10 名。"
+  },
+  {
+    "id": 50,
+    "type": "unseen",
+    "capability": "條件聚合",
+    "question": "統計每個城市的 COMPLETED 與 CANCELLED 訂單各有幾張。"
+  },
+  {
+    "id": 51,
+    "type": "unseen",
+    "capability": "條件分組",
+    "question": "把商品依單價分成「1000 元以下」「1000 到 10000 元」「10000 元以上」三組，各有幾種商品？"
+  },
+  {
+    "id": 52,
+    "type": "unseen",
+    "capability": "佔比計算",
+    "question": "各種訂單狀態的金額分別佔總營收的百分之幾？"
+  },
+  {
+    "id": 53,
+    "type": "unseen",
+    "capability": "條件佔比",
+    "question": "統計每個月 COMPLETED 訂單佔當月訂單的比例。"
+  },
+  {
+    "id": 54,
+    "type": "unseen",
+    "capability": "佔比計算",
+    "question": "CANCELLED 訂單佔全部訂單的百分之幾？"
+  },
+  {
+    "id": 55,
+    "type": "unseen",
+    "capability": "佔比計算",
+    "question": "「3C數位」類別的營收佔總營收的百分之幾？"
+  },
+  {
+    "id": 56,
+    "type": "unseen",
+    "capability": "佔比計算",
+    "question": "有下過訂單的客戶佔全部客戶的比例是多少？"
+  },
+  {
+    "id": 57,
+    "type": "unseen",
+    "capability": "Top-N",
+    "question": "列出營收前 5 名的商品，並顯示各自的營收金額。"
+  },
+  {
+    "id": 58,
+    "type": "unseen",
+    "capability": "Top-N",
+    "question": "列出總消費金額前 3 名的客戶。"
+  },
+  {
+    "id": 59,
+    "type": "unseen",
+    "capability": "分組 Top-1",
+    "question": "每個商品類別中，賣得最好的商品分別是哪一個？"
+  },
+  {
+    "id": 60,
+    "type": "unseen",
+    "capability": "分組 Top-1",
+    "question": "每個城市消費金額最高的客戶分別是誰？"
+  },
+  {
+    "id": 61,
+    "type": "unseen",
+    "capability": "關聯推論",
+    "question": "買過「掃地機器人」的客戶，平均每人還買了幾種其他商品？"
+  },
+  {
+    "id": 62,
+    "type": "unseen",
+    "capability": "價格門檻關聯",
+    "question": "列出所有購買過單價超過 30000 元商品的客戶。"
+  },
+  {
+    "id": 63,
+    "type": "unseen",
+    "capability": "同單交集",
+    "question": "哪些客戶的同一張訂單裡同時出現過「食品」和「書籍」類商品？"
+  },
+  {
+    "id": 64,
+    "type": "unseen",
+    "capability": "訂單層極值",
+    "question": "找出商品種類數最多的那張訂單，裡面有幾種商品？"
+  },
+  {
+    "id": 65,
+    "type": "unseen",
+    "capability": "訂單層聚合",
+    "question": "有哪些訂單的商品總件數超過 10 件？"
+  },
+  {
+    "id": 66,
+    "type": "unseen",
+    "capability": "單次購買",
+    "question": "請列出所有單次購買過大於 5 件商品的客戶電子郵件。"
+  },
+  {
+    "id": 67,
+    "type": "unseen",
+    "capability": "明細極值",
+    "question": "哪一張訂單包含的商品件數最多？共幾件？"
+  },
+  {
+    "id": 68,
+    "type": "unseen",
+    "capability": "schema 邊界",
+    "question": "每張訂單的運費是多少？"
+  },
+  {
+    "id": 69,
+    "type": "unseen",
+    "capability": "schema 邊界",
+    "question": "客戶的年齡分布大概是怎樣？"
+  },
+  {
+    "id": 70,
+    "type": "unseen",
+    "capability": "schema 邊界",
+    "question": "哪一個商品的利潤率最高？"
+  },
+  {
+    "id": 71,
+    "type": "unseen",
+    "capability": "schema 邊界",
+    "question": "請問客戶的性別比例是多少？"
+  },
+  {
+    "id": 72,
+    "type": "unseen",
+    "capability": "schema 邊界",
+    "question": "有哪些訂單使用了折扣碼？折扣了多少？"
+  },
+  {
+    "id": 73,
+    "type": "unseen",
+    "capability": "空集合",
+    "question": "有哪些商品的庫存是 0？"
+  },
+  {
+    "id": 74,
+    "type": "unseen",
+    "capability": "空集合",
+    "question": "有沒有客戶下過超過 20 張訂單？"
+  },
+  {
+    "id": 75,
+    "type": "unseen",
+    "capability": "空集合",
+    "question": "找出訂單金額超過 200000 元的訂單。"
+  },
+  {
+    "id": 76,
+    "type": "unseen",
+    "capability": "空集合(NULL)",
+    "question": "有哪些客戶沒有填寫電話號碼？"
+  },
+  {
+    "id": 77,
+    "type": "unseen",
+    "capability": "單筆查詢",
+    "question": "「無線滑鼠」目前的庫存還剩下多少？"
+  },
+  {
+    "id": 78,
+    "type": "unseen",
+    "capability": "指定客戶明細",
+    "question": "客戶「王宗憲」總共買過哪些商品？"
+  },
+  {
+    "id": 79,
+    "type": "unseen",
+    "capability": "指定訂單明細",
+    "question": "訂單編號 100 的明細內容是什麼？包含哪些商品？"
+  },
+  {
+    "id": 80,
+    "type": "unseen",
+    "capability": "類別平均",
+    "question": "「書籍」類別的商品平均單價是多少？"
+  },
+  {
+    "id": 81,
+    "type": "unseen",
+    "capability": "自連接",
+    "question": "哪兩個商品最常被一起購買？"
+  },
+  {
+    "id": 82,
+    "type": "unseen",
+    "capability": "分組首筆",
+    "question": "每位客戶第一次下訂單是什麼時候？"
+  },
+  {
+    "id": 83,
+    "type": "unseen",
+    "capability": "跨表時間差",
+    "question": "客戶從註冊到第一次下單，平均間隔多久？"
+  },
+  {
+    "id": 84,
+    "type": "unseen",
+    "capability": "同日重複",
+    "question": "有哪些客戶在同一天下過超過一張訂單？"
+  },
+  {
+    "id": 85,
+    "type": "unseen",
+    "capability": "時間分組",
+    "question": "列出每個月新註冊的客戶數量。"
+  },
+  {
+    "id": 86,
+    "type": "unseen",
+    "capability": "組內比較",
+    "question": "「家電」類別中，有哪些商品的庫存低於該類別的平均庫存？"
+  },
+  {
+    "id": 87,
+    "type": "unseen",
+    "capability": "相關子查詢",
+    "question": "找出單價高於所在類別平均單價的商品有哪些？"
+  },
+  {
+    "id": 88,
+    "type": "unseen",
+    "capability": "明細筆數",
+    "question": "有哪些訂單只買了一種商品（明細只有一列）？共有幾張？"
+  },
+  {
+    "id": 89,
+    "type": "unseen",
+    "capability": "分組分布",
+    "question": "統計每位客戶的訂單狀態分布，列出前 5 位客戶。"
+  },
+  {
+    "id": 90,
+    "type": "unseen",
+    "capability": "跨欄計算",
+    "question": "目前的總庫存價值（庫存數量乘上單價）是多少？"
+  },
+  {
+    "id": 91,
+    "type": "unseen",
+    "capability": "類別計數",
+    "question": "哪一個類別的商品種類數最多？有幾種？"
+  },
+  {
+    "id": 92,
+    "type": "unseen",
+    "capability": "去重計數",
+    "question": "有哪些商品被超過 15 位不同的客戶買過？"
+  },
+  {
+    "id": 93,
+    "type": "unseen",
+    "capability": "統計量",
+    "question": "客戶總消費金額的中位數大約是多少？"
+  },
+  {
+    "id": 94,
+    "type": "unseen",
+    "capability": "相關子查詢",
+    "question": "找出消費金額高於所在城市平均消費的客戶。"
+  },
+  {
+    "id": 95,
+    "type": "unseen",
+    "capability": "類別銷量",
+    "question": "「食品」類商品的總銷售件數是多少？"
+  },
+  {
+    "id": 96,
+    "type": "unseen",
+    "capability": "計數等值",
+    "question": "有哪些客戶只買過一種商品類別？"
+  },
+  {
+    "id": 97,
+    "type": "unseen",
+    "capability": "分位數",
+    "question": "訂單金額最高的前 10% 訂單，總共貢獻了多少營收？"
+  },
+  {
+    "id": 98,
+    "type": "unseen",
+    "capability": "兩組比較",
+    "question": "比較「3C數位」與「家電」兩個類別的總營收，哪個比較高？"
+  },
+  {
+    "id": 99,
+    "type": "unseen",
+    "capability": "留存分析",
+    "question": "有多少客戶在註冊後 30 天內就下了第一張訂單？"
+  },
+  {
+    "id": 100,
+    "type": "unseen",
+    "capability": "複合條件",
+    "question": "找出住在新北市、而且總消費金額超過 50000 元的客戶。"
+  }
 ]

@@ -1,0 +1,1014 @@
+# =============================================================================
+# Ground Truth — eval_questions_v2.json 的預期答案
+# =============================================================================
+# 為什麼需要這份檔案：
+#   完成率（ok / schema_unsupported / error_end）量的是「有沒有跑出東西」，
+#   不是「答得對不對」。實測過 95% 完成率的那一輪裡，#25 回了 6 個城市而
+#   正確答案是 0 —— retry=0、語法合法、AST 與 EXPLAIN 全部放行的靜默錯答。
+#   沒有這份檔案，那種錯誤唯一的發現方式是人工重算，擴表之後就不可能了。
+#
+# 撰寫原則：
+#   1. 刻意走不同的實作路徑。極值題一律用 MIN/MAX 子查詢，而系統偏好
+#      DENSE_RANK —— 兩條路徑得到同一個結果才算交叉驗證，照抄系統的寫法
+#      只是把它的錯誤複製一遍。
+#   2. 金額口徑依 semantic_layer 的「訂單總金額」規則：訂單 / 客戶 / 城市
+#      層級用 orders.total_amount；商品 / 類別層級 total_amount 無法拆分到
+#      單一商品，改用 SUM(oi.quantity * oi.unit_price)。
+#      （本資料集 200/200 張訂單的 total_amount 與明細加總完全一致。）
+#   3. 不排除 CANCELLED 訂單，除非題目明講。規則裡沒有這條約定。
+#   4. 相對時間一律以資料錨點 2026-08-15 為基準，不用 NOW() / CURDATE()。
+#      理由見 langgraph_sql/data_anchor.py。
+#
+# 欄位說明：
+#   expect: rows                → 預期有結果
+#           empty               → 預期 0 筆。包含兩種：刻意設計的「查無資料」
+#                                 陷阱題（#73-76），以及正確答案剛好就是空集合
+#                                 的一般題（#25）。對系統來說要求相同：誠實回
+#                                 報 0 筆，不可硬湊出東西，也不可觸發防禦暗號。
+#           schema_unsupported  → schema 根本沒有這個概念，預期觸發防禦暗號
+#   sql     主要的預期答案
+#   alt_sql 題目本身語意有歧義時，同樣可接受的其他解讀（列表，任一相符即通過）
+#   note    記錄該題的解讀決定，或這題在測什麼
+#
+# ⚠️ 這份檔案綁定 DATA_RANDOM_SEED=20260815 與 DATA_ANCHOR_DATE=2026-08-15。
+#    換種子等於換一份資料，所有涉及具體數值的預期答案都要重跑驗證。
+#    題目本身也不可硬編資料相依的值 —— 原本 #78 寫「林宜蓁」，那是舊種子
+#    隨機生出來的名字，換種子後該客戶就不存在，題目會靜默變成查無資料。
+# =============================================================================
+
+- id: 1
+  question: 找出名字最後一個字是「華」的客戶有哪些？
+  expect: rows
+  sql: |
+    SELECT name FROM customers WHERE name LIKE '%華' ORDER BY name
+
+- id: 2
+  question: 「運動鞋」總共賣出多少雙？
+  expect: rows
+  sql: |
+    SELECT SUM(oi.quantity) AS qty
+    FROM order_items oi JOIN products p ON oi.product_id = p.id
+    WHERE p.name = '運動鞋'
+
+- id: 3
+  question: 「三體」這本書總共賣出幾本？
+  expect: rows
+  sql: |
+    SELECT SUM(oi.quantity) AS qty
+    FROM order_items oi JOIN products p ON oi.product_id = p.id
+    WHERE p.name = '三體'
+
+- id: 4
+  question: 新北市的客戶，平均每個人下了幾張訂單？
+  expect: rows
+  note: 分母取「該市全部客戶」（含 0 張訂單者），故用 LEFT JOIN。
+        alt 是只算「有下過訂單的客戶」。
+  sql: |
+    SELECT COUNT(o.id) / COUNT(DISTINCT c.id) AS avg_orders
+    FROM customers c LEFT JOIN orders o ON c.id = o.customer_id
+    WHERE c.city = '新北市'
+  alt_sql:
+    - |
+      SELECT COUNT(o.id) / COUNT(DISTINCT c.id) AS avg_orders
+      FROM customers c JOIN orders o ON c.id = o.customer_id
+      WHERE c.city = '新北市'
+
+- id: 5
+  question: 高雄市的客戶總共消費了多少錢？
+  expect: rows
+  sql: |
+    SELECT SUM(o.total_amount) AS total
+    FROM customers c JOIN orders o ON c.id = o.customer_id
+    WHERE c.city = '高雄市'
+
+- id: 6
+  question: 哪一個商品的總營收最低？總共只賺了多少錢？
+  expect: rows
+  note: 本資料集 40 項商品全部有銷售紀錄，不存在「營收 0」的未售商品，
+        因此含不含未售商品沒有差別。
+  sql: |
+    WITH rev AS (
+      SELECT p.name AS n, SUM(oi.quantity * oi.unit_price) AS r
+      FROM products p JOIN order_items oi ON p.id = oi.product_id
+      GROUP BY p.id, p.name)
+    SELECT n, r FROM rev WHERE r = (SELECT MIN(r) FROM rev)
+
+- id: 7
+  question: 哪一個商品類別的總營收最高？
+  expect: rows
+  sql: |
+    WITH c AS (
+      SELECT p.category AS ct, SUM(oi.quantity * oi.unit_price) AS r
+      FROM order_items oi JOIN products p ON oi.product_id = p.id
+      GROUP BY p.category)
+    SELECT ct, r FROM c WHERE r = (SELECT MAX(r) FROM c)
+
+- id: 8
+  question: 哪一個月份的訂單數量最多？
+  expect: rows
+  sql: |
+    WITH m AS (
+      SELECT DATE_FORMAT(order_date, '%Y-%m') AS mo, COUNT(*) AS n
+      FROM orders GROUP BY 1)
+    SELECT mo, n FROM m WHERE n = (SELECT MAX(n) FROM m)
+
+- id: 9
+  question: 有多少張訂單的狀態是 PAID？
+  expect: rows
+  sql: |
+    SELECT COUNT(*) AS n FROM orders WHERE status = 'PAID'
+
+- id: 10
+  question: 有多少張訂單的狀態不是 CANCELLED？
+  expect: rows
+  sql: |
+    SELECT COUNT(*) AS n FROM orders WHERE status <> 'CANCELLED'
+
+- id: 11
+  question: 找出從來沒有出現在 PENDING 訂單裡的商品名稱。
+  expect: rows
+  note: 否定存在量詞。用 NOT IN 排除「曾經出現在 PENDING 訂單」的商品。
+  sql: |
+    SELECT name FROM products WHERE id NOT IN (
+      SELECT oi.product_id FROM order_items oi
+      JOIN orders o ON oi.order_id = o.id WHERE o.status = 'PENDING')
+    ORDER BY name
+
+- id: 12
+  question: 單筆訂單總金額低於 500 元的訂單有哪些？是哪些客戶下的？
+  expect: rows
+  sql: |
+    SELECT o.id, c.name FROM orders o JOIN customers c ON o.customer_id = c.id
+    WHERE o.total_amount < 500 ORDER BY o.id
+
+- id: 13
+  question: 最早註冊的客戶是誰？他註冊的日期是哪天？
+  expect: rows
+  sql: |
+    SELECT name, created_at FROM customers
+    WHERE created_at = (SELECT MIN(created_at) FROM customers)
+
+- id: 14
+  question: 庫存量介於 30 到 70 之間的商品有哪些？
+  expect: rows
+  sql: |
+    SELECT name FROM products WHERE stock BETWEEN 30 AND 70 ORDER BY name
+
+- id: 15
+  question: 單價高於 20000 元的商品有哪些？
+  expect: rows
+  sql: |
+    SELECT name FROM products WHERE price > 20000 ORDER BY name
+
+- id: 16
+  question: 平均每張訂單的商品總件數是多少？
+  expect: rows
+  note: 件數 = SUM(quantity)，分母為有明細的訂單數。
+  sql: |
+    SELECT SUM(quantity) / COUNT(DISTINCT order_id) AS avg_items FROM order_items
+
+- id: 17
+  question: 請先算出所有商品的平均單價，再從單價高於該平均值的商品中，找出庫存最少的是哪一個？
+  expect: rows
+  note: 極值 + 前置過濾 + 非聚合欄位。系統慣性會寫 ORDER BY stock LIMIT 1，
+        會被 AST 的極值截斷檢查攔下並重試。
+  sql: |
+    SELECT name, stock FROM products
+    WHERE price > (SELECT AVG(price) FROM products)
+      AND stock = (SELECT MIN(stock) FROM products
+                   WHERE price > (SELECT AVG(price) FROM products))
+    ORDER BY name
+
+- id: 18
+  question: 最近 3 個月以內註冊的客戶有幾位？
+  expect: rows
+  sql: |
+    SELECT COUNT(*) AS n FROM customers
+    WHERE created_at >= DATE_SUB('2026-08-15', INTERVAL 3 MONTH)
+
+- id: 19
+  question: 最近 30 天以內，總共有幾位客戶下過訂單？
+  expect: rows
+  sql: |
+    SELECT COUNT(DISTINCT customer_id) AS n FROM orders
+    WHERE order_date >= DATE_SUB('2026-08-15', INTERVAL 30 DAY)
+
+- id: 20
+  question: 找出每一張訂單都是 COMPLETED 狀態的客戶。
+  expect: rows
+  note: 全稱量詞。解讀為「至少下過一張訂單，且全部都是 COMPLETED」——
+        沒下過訂單的客戶雖然空真，但不符合自然語意。
+  sql: |
+    SELECT c.name FROM customers c JOIN orders o ON c.id = o.customer_id
+    GROUP BY c.id, c.name
+    HAVING SUM(CASE WHEN o.status <> 'COMPLETED' THEN 1 ELSE 0 END) = 0
+    ORDER BY c.name
+
+- id: 21
+  question: 從來沒有買過「原子習慣」這本書的客戶有誰？
+  expect: rows
+  note: 含完全沒下過訂單的客戶。
+  sql: |
+    SELECT name FROM customers WHERE id NOT IN (
+      SELECT o.customer_id FROM orders o
+      JOIN order_items oi ON o.id = oi.order_id
+      JOIN products p ON oi.product_id = p.id
+      WHERE p.name = '原子習慣')
+    ORDER BY name
+
+- id: 22
+  question: 有哪些客戶從來沒有下過 CANCELLED 的訂單？
+  expect: rows
+  sql: |
+    SELECT name FROM customers WHERE id NOT IN (
+      SELECT customer_id FROM orders WHERE status = 'CANCELLED')
+    ORDER BY name
+
+- id: 23
+  question: 哪些商品從來沒有出現在 CANCELLED 的訂單裡？
+  expect: rows
+  sql: |
+    SELECT name FROM products WHERE id NOT IN (
+      SELECT oi.product_id FROM order_items oi
+      JOIN orders o ON oi.order_id = o.id WHERE o.status = 'CANCELLED')
+    ORDER BY name
+
+- id: 24
+  question: 列出從未購買過任何「3C數位」類別商品的客戶姓名。
+  expect: rows
+  sql: |
+    SELECT name FROM customers WHERE id NOT IN (
+      SELECT o.customer_id FROM orders o
+      JOIN order_items oi ON o.id = oi.order_id
+      JOIN products p ON oi.product_id = p.id
+      WHERE p.category = '3C數位')
+    ORDER BY name
+
+- id: 25
+  question: 有哪些城市的客戶從來沒有買過「家電」類商品？
+  expect: empty
+  note: 群組全稱量詞。主體是「城市」，條件要求該市『全部』客戶都沒買過。
+        寫成對單一客戶 NOT EXISTS 再 DISTINCT city，得到的是「該市有某位
+        客戶沒買過」，語意完全相反。
+        正確答案是 0 筆（8 個城市每一個都至少有一位家電買家），這不是陷阱題，
+        是這題的真實答案。實測錯誤寫法會回 6 個城市 —— 恰好是「買過家電的
+        人數 < 該市總人數」的那幾個，語法完全合法、retry=0，
+        AST 與 EXPLAIN 都攔不到。這題是整份 GT 存在的理由。
+  sql: |
+    SELECT DISTINCT city FROM customers WHERE city NOT IN (
+      SELECT c.city FROM customers c
+      JOIN orders o ON c.id = o.customer_id
+      JOIN order_items oi ON o.id = oi.order_id
+      JOIN products p ON oi.product_id = p.id
+      WHERE p.category = '家電')
+    ORDER BY city
+
+- id: 26
+  question: 哪一位客戶的訂單張數最多？
+  expect: rows
+  sql: |
+    WITH t AS (
+      SELECT c.name AS n, COUNT(o.id) AS k FROM customers c
+      JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name)
+    SELECT n, k FROM t WHERE k = (SELECT MAX(k) FROM t) ORDER BY n
+
+- id: 27
+  question: 哪一個商品類別的庫存總量最少？
+  expect: rows
+  sql: |
+    WITH t AS (SELECT category AS ct, SUM(stock) AS s FROM products GROUP BY category)
+    SELECT ct, s FROM t WHERE s = (SELECT MIN(s) FROM t)
+
+- id: 28
+  question: 單筆金額最高的訂單是哪一位客戶下的？金額多少？
+  expect: rows
+  sql: |
+    SELECT c.name, o.total_amount FROM orders o
+    JOIN customers c ON o.customer_id = c.id
+    WHERE o.total_amount = (SELECT MAX(total_amount) FROM orders)
+
+- id: 29
+  question: 哪一天的營業額最高？當天總共賣了多少錢？
+  expect: rows
+  sql: |
+    WITH d AS (SELECT DATE(order_date) AS dd, SUM(total_amount) AS s
+               FROM orders GROUP BY 1)
+    SELECT dd, s FROM d WHERE s = (SELECT MAX(s) FROM d)
+
+- id: 30
+  question: 哪一個城市的客戶平均消費金額最高？
+  expect: rows
+  note: 主解讀 =「每位客戶的總消費，再對城市取平均」。
+        alt =「該城市的平均單筆訂單金額」，兩種都是常見讀法。
+  sql: |
+    WITH per_cust AS (
+      SELECT c.city AS ct, c.id AS cid, SUM(o.total_amount) AS spent
+      FROM customers c JOIN orders o ON c.id = o.customer_id
+      GROUP BY c.city, c.id),
+    per_city AS (SELECT ct, AVG(spent) AS a FROM per_cust GROUP BY ct)
+    SELECT ct, a FROM per_city WHERE a = (SELECT MAX(a) FROM per_city)
+  alt_sql:
+    - |
+      WITH t AS (SELECT c.city AS ct, AVG(o.total_amount) AS a FROM customers c
+                 JOIN orders o ON c.id = o.customer_id GROUP BY c.city)
+      SELECT ct, a FROM t WHERE a = (SELECT MAX(a) FROM t)
+
+- id: 31
+  question: 庫存量最少的商品是哪一個？
+  expect: rows
+  sql: |
+    SELECT name FROM products
+    WHERE stock = (SELECT MIN(stock) FROM products) ORDER BY name
+
+- id: 32
+  question: 2026 年 5 月的總營收是多少？
+  expect: rows
+  sql: |
+    SELECT SUM(total_amount) AS rev FROM orders
+    WHERE order_date >= '2026-05-01' AND order_date < '2026-06-01'
+
+- id: 33
+  question: 2026 年 2 月到 4 月之間總共有幾張訂單？
+  expect: rows
+  sql: |
+    SELECT COUNT(*) AS n FROM orders
+    WHERE order_date >= '2026-02-01' AND order_date < '2026-05-01'
+
+- id: 34
+  question: 比較 2026 年 7 月和 8 月的訂單數量，哪個月比較多？各有幾張？
+  expect: rows
+  sql: |
+    SELECT DATE_FORMAT(order_date, '%Y-%m') AS mo, COUNT(*) AS n FROM orders
+    WHERE order_date >= '2026-07-01' AND order_date < '2026-09-01'
+    GROUP BY 1 ORDER BY 1
+
+- id: 35
+  question: 找出在 2026 年 3 月之後才註冊的客戶有哪些？
+  expect: rows
+  sql: |
+    SELECT name FROM customers
+    WHERE created_at >= '2026-03-01' ORDER BY name
+  alt_sql:
+    - |
+      SELECT name FROM customers
+      WHERE created_at >= '2026-04-01' ORDER BY name
+
+- id: 36
+  question: 每個月的平均訂單金額分別是多少？
+  expect: rows
+  sql: |
+    SELECT DATE_FORMAT(order_date, '%Y-%m') AS mo, AVG(total_amount) AS a
+    FROM orders GROUP BY 1 ORDER BY 1
+
+- id: 37
+  question: 註冊超過 6 個月的客戶有幾位？
+  expect: rows
+  sql: |
+    SELECT COUNT(*) AS n FROM customers
+    WHERE created_at < DATE_SUB('2026-08-15', INTERVAL 6 MONTH)
+
+- id: 38
+  question: 訂單日期落在週末（週六、週日）的訂單有幾張？
+  expect: rows
+  note: MySQL DAYOFWEEK：1=週日、7=週六。
+  sql: |
+    SELECT COUNT(*) AS n FROM orders WHERE DAYOFWEEK(order_date) IN (1, 7)
+
+- id: 39
+  question: 找出同時買過「iPhone 15」和「AirPods」的客戶。
+  expect: rows
+  note: 兩個存在量詞的交集，不是同一張訂單內。
+  sql: |
+    SELECT c.name FROM customers c WHERE c.id IN (
+      SELECT o.customer_id FROM orders o JOIN order_items oi ON o.id = oi.order_id
+      JOIN products p ON oi.product_id = p.id WHERE p.name = 'iPhone 15')
+    AND c.id IN (
+      SELECT o.customer_id FROM orders o JOIN order_items oi ON o.id = oi.order_id
+      JOIN products p ON oi.product_id = p.id WHERE p.name = 'AirPods')
+    ORDER BY c.name
+
+- id: 40
+  question: 找出買過「iPhone 15」但沒有買過「AirPods」的客戶。
+  expect: rows
+  sql: |
+    SELECT c.name FROM customers c WHERE c.id IN (
+      SELECT o.customer_id FROM orders o JOIN order_items oi ON o.id = oi.order_id
+      JOIN products p ON oi.product_id = p.id WHERE p.name = 'iPhone 15')
+    AND c.id NOT IN (
+      SELECT o.customer_id FROM orders o JOIN order_items oi ON o.id = oi.order_id
+      JOIN products p ON oi.product_id = p.id WHERE p.name = 'AirPods')
+    ORDER BY c.name
+
+- id: 41
+  question: 有哪些客戶買過全部 6 個商品類別的商品？
+  expect: rows
+  note: 關聯除法（relational division）。
+  sql: |
+    SELECT c.name FROM customers c
+    JOIN orders o ON c.id = o.customer_id
+    JOIN order_items oi ON o.id = oi.order_id
+    JOIN products p ON oi.product_id = p.id
+    GROUP BY c.id, c.name
+    HAVING COUNT(DISTINCT p.category) = (SELECT COUNT(DISTINCT category) FROM products)
+    ORDER BY c.name
+
+- id: 42
+  question: 找出至少買過 3 種不同商品類別的客戶。
+  expect: rows
+  sql: |
+    SELECT c.name FROM customers c
+    JOIN orders o ON c.id = o.customer_id
+    JOIN order_items oi ON o.id = oi.order_id
+    JOIN products p ON oi.product_id = p.id
+    GROUP BY c.id, c.name HAVING COUNT(DISTINCT p.category) >= 3
+    ORDER BY c.name
+
+- id: 43
+  question: 有哪些客戶的每一張訂單金額都低於 10000 元？
+  expect: rows
+  note: 全稱量詞，客戶分組形狀 → HAVING MAX(total_amount) < 10000。
+  sql: |
+    SELECT c.name FROM customers c JOIN orders o ON c.id = o.customer_id
+    GROUP BY c.id, c.name HAVING MAX(o.total_amount) < 10000
+    ORDER BY c.name
+
+- id: 44
+  question: 找出只下過一張訂單的客戶有哪些？
+  expect: rows
+  sql: |
+    SELECT c.name FROM customers c JOIN orders o ON c.id = o.customer_id
+    GROUP BY c.id, c.name HAVING COUNT(o.id) = 1 ORDER BY c.name
+
+- id: 45
+  question: 每個城市的客戶平均下了幾張訂單？
+  expect: rows
+  note: 分母含該市沒下過訂單的客戶（LEFT JOIN）。
+  sql: |
+    SELECT c.city, COUNT(o.id) / COUNT(DISTINCT c.id) AS avg_orders
+    FROM customers c LEFT JOIN orders o ON c.id = o.customer_id
+    GROUP BY c.city ORDER BY c.city
+  alt_sql:
+    - |
+      SELECT c.city, COUNT(o.id) / COUNT(DISTINCT c.id) AS avg_orders
+      FROM customers c JOIN orders o ON c.id = o.customer_id
+      GROUP BY c.city ORDER BY c.city
+
+- id: 46
+  question: 平均每位客戶的總消費金額是多少？
+  expect: rows
+  note: 分母為有消費的客戶。alt 為全部客戶（未消費者計 0）。
+  sql: |
+    SELECT AVG(t) AS a FROM (
+      SELECT customer_id, SUM(total_amount) AS t FROM orders GROUP BY customer_id) x
+  alt_sql:
+    - |
+      SELECT SUM(o.total_amount) / COUNT(DISTINCT c.id) AS a
+      FROM customers c LEFT JOIN orders o ON c.id = o.customer_id
+
+- id: 47
+  question: 各商品類別各賣出多少件？請由多到少排序。
+  expect: rows
+  ordered: true
+  sql: |
+    SELECT p.category, SUM(oi.quantity) AS qty
+    FROM order_items oi JOIN products p ON oi.product_id = p.id
+    GROUP BY p.category ORDER BY qty DESC
+
+- id: 48
+  question: 訂單金額高於整體平均的訂單有幾張？
+  expect: rows
+  sql: |
+    SELECT COUNT(*) AS n FROM orders
+    WHERE total_amount > (SELECT AVG(total_amount) FROM orders)
+
+- id: 49
+  question: 每位客戶的最大單筆訂單金額分別是多少？請列出前 10 名。
+  expect: rows
+  ordered: true
+  sql: |
+    SELECT c.name, MAX(o.total_amount) AS mx
+    FROM customers c JOIN orders o ON c.id = o.customer_id
+    GROUP BY c.id, c.name ORDER BY mx DESC LIMIT 10
+
+- id: 50
+  question: 統計每個城市的 COMPLETED 與 CANCELLED 訂單各有幾張。
+  expect: rows
+  sql: |
+    SELECT c.city,
+           SUM(CASE WHEN o.status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_n,
+           SUM(CASE WHEN o.status = 'CANCELLED' THEN 1 ELSE 0 END) AS cancelled_n
+    FROM customers c JOIN orders o ON c.id = o.customer_id
+    GROUP BY c.city ORDER BY c.city
+
+- id: 51
+  question: 把商品依單價分成「1000 元以下」「1000 到 10000 元」「10000 元以上」三組，各有幾種商品？
+  expect: rows
+  note: 邊界解讀：< 1000 / 1000~10000（含端點）/ > 10000。
+  sql: |
+    SELECT CASE WHEN price < 1000 THEN '1000元以下'
+                WHEN price <= 10000 THEN '1000到10000元'
+                ELSE '10000元以上' END AS grp,
+           COUNT(*) AS n
+    FROM products GROUP BY grp ORDER BY MIN(price)
+
+- id: 52
+  question: 各種訂單狀態的金額分別佔總營收的百分之幾？
+  expect: rows
+  sql: |
+    SELECT status,
+           SUM(total_amount) * 100.0 / (SELECT SUM(total_amount) FROM orders) AS pct
+    FROM orders GROUP BY status ORDER BY status
+  alt_sql:
+    - |
+      SELECT status,
+             SUM(total_amount) / (SELECT SUM(total_amount) FROM orders) AS ratio
+      FROM orders GROUP BY status ORDER BY status
+
+- id: 53
+  question: 統計每個月 COMPLETED 訂單佔當月訂單的比例。
+  expect: rows
+  sql: |
+    SELECT DATE_FORMAT(order_date, '%Y-%m') AS mo,
+           SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS pct
+    FROM orders GROUP BY 1 ORDER BY 1
+  alt_sql:
+    - |
+      SELECT DATE_FORMAT(order_date, '%Y-%m') AS mo,
+             SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) / COUNT(*) AS ratio
+      FROM orders GROUP BY 1 ORDER BY 1
+
+- id: 54
+  question: CANCELLED 訂單佔全部訂單的百分之幾？
+  expect: rows
+  sql: |
+    SELECT SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS pct
+    FROM orders
+  alt_sql:
+    - |
+      SELECT SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END) / COUNT(*) AS ratio
+      FROM orders
+
+- id: 55
+  question: 「3C數位」類別的營收佔總營收的百分之幾？
+  expect: rows
+  note: 類別層級營收用明細加總。
+  sql: |
+    SELECT SUM(CASE WHEN p.category = '3C數位' THEN oi.quantity * oi.unit_price ELSE 0 END)
+           * 100.0 / SUM(oi.quantity * oi.unit_price) AS pct
+    FROM order_items oi JOIN products p ON oi.product_id = p.id
+  alt_sql:
+    - |
+      SELECT SUM(CASE WHEN p.category = '3C數位' THEN oi.quantity * oi.unit_price ELSE 0 END)
+             / SUM(oi.quantity * oi.unit_price) AS ratio
+      FROM order_items oi JOIN products p ON oi.product_id = p.id
+
+- id: 56
+  question: 有下過訂單的客戶佔全部客戶的比例是多少？
+  expect: rows
+  sql: |
+    SELECT (SELECT COUNT(DISTINCT customer_id) FROM orders) * 100.0
+           / (SELECT COUNT(*) FROM customers) AS pct
+  alt_sql:
+    - |
+      SELECT (SELECT COUNT(DISTINCT customer_id) FROM orders) * 1.0
+             / (SELECT COUNT(*) FROM customers) AS ratio
+
+- id: 57
+  question: 列出營收前 5 名的商品，並顯示各自的營收金額。
+  expect: rows
+  ordered: true
+  sql: |
+    SELECT p.name, SUM(oi.quantity * oi.unit_price) AS rev
+    FROM order_items oi JOIN products p ON oi.product_id = p.id
+    GROUP BY p.id, p.name ORDER BY rev DESC LIMIT 5
+
+- id: 58
+  question: 列出總消費金額前 3 名的客戶。
+  expect: rows
+  ordered: true
+  sql: |
+    SELECT c.name, SUM(o.total_amount) AS total
+    FROM customers c JOIN orders o ON c.id = o.customer_id
+    GROUP BY c.id, c.name ORDER BY total DESC LIMIT 3
+
+- id: 59
+  question: 每個商品類別中，賣得最好的商品分別是哪一個？
+  expect: rows
+  note: 「賣得最好」主解讀為銷售件數；alt 為營收。分組內極值，必須含並列。
+  sql: |
+    WITH s AS (
+      SELECT p.category AS ct, p.name AS n, SUM(oi.quantity) AS q
+      FROM order_items oi JOIN products p ON oi.product_id = p.id
+      GROUP BY p.category, p.name),
+    m AS (SELECT ct, MAX(q) AS mq FROM s GROUP BY ct)
+    SELECT s.ct, s.n, s.q FROM s JOIN m ON s.ct = m.ct AND s.q = m.mq
+    ORDER BY s.ct, s.n
+  alt_sql:
+    - |
+      WITH s AS (
+        SELECT p.category AS ct, p.name AS n, SUM(oi.quantity * oi.unit_price) AS q
+        FROM order_items oi JOIN products p ON oi.product_id = p.id
+        GROUP BY p.category, p.name),
+      m AS (SELECT ct, MAX(q) AS mq FROM s GROUP BY ct)
+      SELECT s.ct, s.n, s.q FROM s JOIN m ON s.ct = m.ct AND s.q = m.mq
+      ORDER BY s.ct, s.n
+
+- id: 60
+  question: 每個城市消費金額最高的客戶分別是誰？
+  expect: rows
+  sql: |
+    WITH t AS (
+      SELECT c.city AS ct, c.name AS n, SUM(o.total_amount) AS s
+      FROM customers c JOIN orders o ON c.id = o.customer_id
+      GROUP BY c.id, c.city, c.name),
+    m AS (SELECT ct, MAX(s) AS ms FROM t GROUP BY ct)
+    SELECT t.ct, t.n, t.s FROM t JOIN m ON t.ct = m.ct AND t.s = m.ms
+    ORDER BY t.ct, t.n
+
+- id: 61
+  question: 買過「掃地機器人」的客戶，平均每人還買了幾種其他商品？
+  expect: rows
+  note: 「其他商品」= 排除掃地機器人本身，計不重複商品數。
+  sql: |
+    SELECT AVG(k) AS a FROM (
+      SELECT o.customer_id, COUNT(DISTINCT oi.product_id) AS k
+      FROM orders o JOIN order_items oi ON o.id = oi.order_id
+      JOIN products p ON oi.product_id = p.id
+      WHERE p.name <> '掃地機器人'
+        AND o.customer_id IN (
+          SELECT o2.customer_id FROM orders o2
+          JOIN order_items oi2 ON o2.id = oi2.order_id
+          JOIN products p2 ON oi2.product_id = p2.id
+          WHERE p2.name = '掃地機器人')
+      GROUP BY o.customer_id) x
+
+- id: 62
+  question: 列出所有購買過單價超過 30000 元商品的客戶。
+  expect: rows
+  note: 「單價」取 products.price（商品定價）。
+  sql: |
+    SELECT c.name FROM customers c
+    JOIN orders o ON c.id = o.customer_id
+    JOIN order_items oi ON o.id = oi.order_id
+    JOIN products p ON oi.product_id = p.id
+    WHERE p.price > 30000 GROUP BY c.id, c.name ORDER BY c.name
+
+- id: 63
+  question: 哪些客戶的同一張訂單裡同時出現過「食品」和「書籍」類商品？
+  expect: rows
+  note: 同一張訂單內共現，必須以 orders.id 為分組單位。
+  sql: |
+    SELECT c.name FROM customers c
+    JOIN orders o ON c.id = o.customer_id
+    WHERE o.id IN (
+      SELECT oi.order_id FROM order_items oi
+      JOIN products p ON oi.product_id = p.id
+      WHERE p.category IN ('食品', '書籍')
+      GROUP BY oi.order_id HAVING COUNT(DISTINCT p.category) = 2)
+    GROUP BY c.id, c.name ORDER BY c.name
+
+- id: 64
+  question: 找出商品種類數最多的那張訂單，裡面有幾種商品？
+  expect: rows
+  sql: |
+    WITH t AS (SELECT order_id AS oid, COUNT(DISTINCT product_id) AS k
+               FROM order_items GROUP BY order_id)
+    SELECT oid, k FROM t WHERE k = (SELECT MAX(k) FROM t) ORDER BY oid
+
+- id: 65
+  question: 有哪些訂單的商品總件數超過 10 件？
+  expect: rows
+  note: 單次購買規則：以 orders.id 分組後 HAVING SUM(quantity)。
+  sql: |
+    SELECT order_id FROM order_items GROUP BY order_id
+    HAVING SUM(quantity) > 10 ORDER BY order_id
+
+- id: 66
+  question: 請列出所有單次購買過大於 5 件商品的客戶電子郵件。
+  expect: rows
+  sql: |
+    SELECT DISTINCT c.email FROM customers c
+    JOIN orders o ON c.id = o.customer_id
+    WHERE o.id IN (SELECT order_id FROM order_items GROUP BY order_id
+                   HAVING SUM(quantity) > 5)
+    ORDER BY c.email
+
+- id: 67
+  question: 哪一張訂單包含的商品件數最多？共幾件？
+  expect: rows
+  sql: |
+    WITH t AS (SELECT order_id AS oid, SUM(quantity) AS q FROM order_items GROUP BY order_id)
+    SELECT oid, q FROM t WHERE q = (SELECT MAX(q) FROM t) ORDER BY oid
+
+- id: 68
+  question: 每張訂單的運費是多少？
+  expect: schema_unsupported
+  note: schema 沒有運費欄位，也沒有任何規則定義運費公式。防禦題。
+
+- id: 69
+  question: 客戶的年齡分布大概是怎樣？
+  expect: schema_unsupported
+  note: customers 沒有生日或年齡欄位。created_at 是註冊時間，不可拿來當年齡。
+
+- id: 70
+  question: 哪一個商品的利潤率最高？
+  expect: schema_unsupported
+  note: 沒有成本欄位，利潤率無法計算。不可自行用「售價 - 某個數」拼湊。
+
+- id: 71
+  question: 請問客戶的性別比例是多少？
+  expect: schema_unsupported
+  note: 沒有性別欄位。
+
+- id: 72
+  question: 有哪些訂單使用了折扣碼？折扣了多少？
+  expect: schema_unsupported
+  note: 沒有折扣或優惠券相關欄位。
+
+- id: 73
+  question: 有哪些商品的庫存是 0？
+  expect: empty
+  note: 查得到欄位但沒有符合的資料 —— 與 schema_unsupported 是不同的失敗模式，
+        正確行為是誠實回報 0 筆，而不是觸發防禦暗號。
+  sql: |
+    SELECT name FROM products WHERE stock = 0
+
+- id: 74
+  question: 有沒有客戶下過超過 20 張訂單？
+  expect: empty
+  sql: |
+    SELECT customer_id FROM orders GROUP BY customer_id HAVING COUNT(*) > 20
+
+- id: 75
+  question: 找出訂單金額超過 200000 元的訂單。
+  expect: empty
+  sql: |
+    SELECT id, total_amount FROM orders WHERE total_amount > 200000
+
+- id: 76
+  question: 有哪些客戶沒有填寫電話號碼？
+  expect: empty
+  sql: |
+    SELECT name FROM customers WHERE phone IS NULL OR phone = ''
+
+- id: 77
+  question: 「無線滑鼠」目前的庫存還剩下多少？
+  expect: rows
+  sql: |
+    SELECT stock FROM products WHERE name = '無線滑鼠'
+
+- id: 78
+  question: 客戶「王宗憲」總共買過哪些商品？
+  expect: rows
+  note: 姓名在本資料集有重複的情形（如「李家豪」出現兩次），「王宗憲」已確認唯一。
+  sql: |
+    SELECT DISTINCT p.name FROM customers c
+    JOIN orders o ON c.id = o.customer_id
+    JOIN order_items oi ON o.id = oi.order_id
+    JOIN products p ON oi.product_id = p.id
+    WHERE c.name = '王宗憲' ORDER BY p.name
+
+- id: 79
+  question: 訂單編號 100 的明細內容是什麼？包含哪些商品？
+  expect: rows
+  sql: |
+    SELECT p.name, oi.quantity, oi.unit_price FROM order_items oi
+    JOIN products p ON oi.product_id = p.id
+    WHERE oi.order_id = 100 ORDER BY p.name
+
+- id: 80
+  question: 「書籍」類別的商品平均單價是多少？
+  expect: rows
+  note: 商品定價的平均，非成交均價。
+  sql: |
+    SELECT AVG(price) AS a FROM products WHERE category = '書籍'
+
+- id: 81
+  question: 哪兩個商品最常被一起購買？
+  expect: rows
+  note: 同一張訂單內共現次數。自連接以 a.product_id < b.product_id 避免重複配對。
+  sql: |
+    WITH p AS (
+      SELECT a.product_id AS p1, b.product_id AS p2, COUNT(DISTINCT a.order_id) AS k
+      FROM order_items a JOIN order_items b
+        ON a.order_id = b.order_id AND a.product_id < b.product_id
+      GROUP BY 1, 2)
+    SELECT x.name AS n1, y.name AS n2, p.k FROM p
+    JOIN products x ON p.p1 = x.id JOIN products y ON p.p2 = y.id
+    WHERE p.k = (SELECT MAX(k) FROM p) ORDER BY x.name, y.name
+
+- id: 82
+  question: 每位客戶第一次下訂單是什麼時候？
+  expect: rows
+  sql: |
+    SELECT c.name, MIN(o.order_date) AS first_order
+    FROM customers c JOIN orders o ON c.id = o.customer_id
+    GROUP BY c.id, c.name ORDER BY c.name
+  alt_sql:
+    - |
+      SELECT c.name, MIN(o.order_date) AS first_order
+      FROM customers c LEFT JOIN orders o ON c.id = o.customer_id
+      GROUP BY c.id, c.name ORDER BY c.name
+
+- id: 83
+  question: 客戶從註冊到第一次下單，平均間隔多久？
+  expect: rows
+  note: 單位為天。只計算有下過訂單的客戶。本資料集部分訂單早於註冊時間
+        （seed 時兩者獨立亂數），故間隔可能為負，這是資料的性質不是錯誤。
+  sql: |
+    SELECT AVG(DATEDIFF(f.first_order, c.created_at)) AS avg_days
+    FROM customers c JOIN (
+      SELECT customer_id, MIN(order_date) AS first_order FROM orders GROUP BY customer_id
+    ) f ON c.id = f.customer_id
+
+- id: 84
+  question: 有哪些客戶在同一天下過超過一張訂單？
+  expect: rows
+  sql: |
+    SELECT c.name FROM customers c
+    JOIN orders o ON c.id = o.customer_id
+    GROUP BY c.id, c.name
+    HAVING COUNT(*) > COUNT(DISTINCT DATE(o.order_date))
+    ORDER BY c.name
+  alt_sql:
+    - |
+      SELECT c.name, DATE(o.order_date) AS d FROM customers c
+      JOIN orders o ON c.id = o.customer_id
+      GROUP BY c.id, c.name, DATE(o.order_date)
+      HAVING COUNT(*) > 1 ORDER BY c.name, d
+
+- id: 85
+  question: 列出每個月新註冊的客戶數量。
+  expect: rows
+  sql: |
+    SELECT DATE_FORMAT(created_at, '%Y-%m') AS mo, COUNT(*) AS n
+    FROM customers GROUP BY 1 ORDER BY 1
+
+- id: 86
+  question: 「家電」類別中，有哪些商品的庫存低於該類別的平均庫存？
+  expect: rows
+  sql: |
+    SELECT name FROM products
+    WHERE category = '家電'
+      AND stock < (SELECT AVG(stock) FROM products WHERE category = '家電')
+    ORDER BY name
+
+- id: 87
+  question: 找出單價高於所在類別平均單價的商品有哪些？
+  expect: rows
+  note: 相關子查詢／視窗函數皆可。
+  sql: |
+    SELECT p.name FROM products p
+    WHERE p.price > (SELECT AVG(p2.price) FROM products p2 WHERE p2.category = p.category)
+    ORDER BY p.name
+
+- id: 88
+  question: 有哪些訂單只買了一種商品（明細只有一列）？共有幾張？
+  expect: rows
+  note: 題目同時要清單與張數。主解讀給清單，alt 給張數，任一相符即通過。
+  sql: |
+    SELECT order_id FROM order_items GROUP BY order_id
+    HAVING COUNT(*) = 1 ORDER BY order_id
+  alt_sql:
+    - |
+      SELECT COUNT(*) AS n FROM (
+        SELECT order_id FROM order_items GROUP BY order_id HAVING COUNT(*) = 1) t
+
+- id: 89
+  question: 統計每位客戶的訂單狀態分布，列出前 5 位客戶。
+  expect: rows
+  note: 「前 5 位」以訂單總數由多到少取，這題本身排序基準模糊。
+        MySQL 不支援 IN 子查詢帶 LIMIT（error 1235），故改用衍生表 JOIN。
+  sql: |
+    SELECT c.name, o.status, COUNT(*) AS n
+    FROM customers c
+    JOIN orders o ON c.id = o.customer_id
+    JOIN (SELECT customer_id FROM orders GROUP BY customer_id
+          ORDER BY COUNT(*) DESC, customer_id LIMIT 5) top
+      ON top.customer_id = c.id
+    GROUP BY c.id, c.name, o.status ORDER BY c.name, o.status
+  alt_sql:
+    - |
+      SELECT c.name,
+             SUM(o.status = 'PENDING')   AS pending_n,
+             SUM(o.status = 'PAID')      AS paid_n,
+             SUM(o.status = 'SHIPPED')   AS shipped_n,
+             SUM(o.status = 'COMPLETED') AS completed_n,
+             SUM(o.status = 'CANCELLED') AS cancelled_n
+      FROM customers c
+      JOIN orders o ON c.id = o.customer_id
+      JOIN (SELECT customer_id FROM orders GROUP BY customer_id
+            ORDER BY COUNT(*) DESC, customer_id LIMIT 5) top
+        ON top.customer_id = c.id
+      GROUP BY c.id, c.name ORDER BY c.name
+
+- id: 90
+  question: 目前的總庫存價值（庫存數量乘上單價）是多少？
+  expect: rows
+  sql: |
+    SELECT SUM(stock * price) AS v FROM products
+
+- id: 91
+  question: 哪一個類別的商品種類數最多？有幾種？
+  expect: rows
+  sql: |
+    WITH t AS (SELECT category AS ct, COUNT(*) AS k FROM products GROUP BY category)
+    SELECT ct, k FROM t WHERE k = (SELECT MAX(k) FROM t) ORDER BY ct
+
+- id: 92
+  question: 有哪些商品被超過 15 位不同的客戶買過？
+  expect: rows
+  sql: |
+    SELECT p.name FROM products p
+    JOIN order_items oi ON p.id = oi.product_id
+    JOIN orders o ON oi.order_id = o.id
+    GROUP BY p.id, p.name
+    HAVING COUNT(DISTINCT o.customer_id) > 15 ORDER BY p.name
+
+- id: 93
+  question: 客戶總消費金額的中位數大約是多少？
+  expect: rows
+  note: 只計有消費的客戶。偶數筆時取中間兩筆的平均。
+        MySQL 沒有 MEDIAN()，這裡用 PERCENT_RANK 之外的獨立算法交叉驗證。
+  sql: |
+    WITH t AS (SELECT SUM(total_amount) AS s FROM orders GROUP BY customer_id),
+    r AS (SELECT s, ROW_NUMBER() OVER (ORDER BY s) AS rn, COUNT(*) OVER () AS c FROM t)
+    SELECT AVG(s) AS median FROM r WHERE rn IN (FLOOR((c + 1) / 2), FLOOR((c + 2) / 2))
+
+- id: 94
+  question: 找出消費金額高於所在城市平均消費的客戶。
+  expect: rows
+  note: 城市平均 = 該市每位客戶總消費的平均，與 #30 主解讀一致。
+  sql: |
+    WITH ct AS (SELECT customer_id AS cid, SUM(total_amount) AS t FROM orders GROUP BY 1),
+    ca AS (SELECT c.city AS ci, AVG(ct.t) AS a FROM ct
+           JOIN customers c ON c.id = ct.cid GROUP BY c.city)
+    SELECT c.name FROM ct JOIN customers c ON c.id = ct.cid
+    JOIN ca ON c.city = ca.ci WHERE ct.t > ca.a ORDER BY c.name
+
+- id: 95
+  question: 「食品」類商品的總銷售件數是多少？
+  expect: rows
+  sql: |
+    SELECT SUM(oi.quantity) AS qty FROM order_items oi
+    JOIN products p ON oi.product_id = p.id WHERE p.category = '食品'
+
+- id: 96
+  question: 有哪些客戶只買過一種商品類別？
+  expect: rows
+  sql: |
+    SELECT c.name FROM customers c
+    JOIN orders o ON c.id = o.customer_id
+    JOIN order_items oi ON o.id = oi.order_id
+    JOIN products p ON oi.product_id = p.id
+    GROUP BY c.id, c.name HAVING COUNT(DISTINCT p.category) = 1
+    ORDER BY c.name
+
+- id: 97
+  question: 訂單金額最高的前 10% 訂單，總共貢獻了多少營收？
+  expect: rows
+  note: 200 張訂單，前 10% = 前 20 張。GT 用 LIMIT，系統偏好 NTILE(10)，
+        兩條路徑一致才算交叉驗證。
+  sql: |
+    SELECT SUM(total_amount) AS s FROM (
+      SELECT total_amount FROM orders ORDER BY total_amount DESC LIMIT 20) t
+
+- id: 98
+  question: 比較「3C數位」與「家電」兩個類別的總營收，哪個比較高？
+  expect: rows
+  sql: |
+    WITH t AS (
+      SELECT p.category AS ct, SUM(oi.quantity * oi.unit_price) AS r
+      FROM order_items oi JOIN products p ON oi.product_id = p.id
+      WHERE p.category IN ('3C數位', '家電') GROUP BY p.category)
+    SELECT ct, r FROM t WHERE r = (SELECT MAX(r) FROM t)
+  alt_sql:
+    - |
+      SELECT p.category, SUM(oi.quantity * oi.unit_price) AS r
+      FROM order_items oi JOIN products p ON oi.product_id = p.id
+      WHERE p.category IN ('3C數位', '家電') GROUP BY p.category
+      ORDER BY r DESC
+
+- id: 99
+  question: 有多少客戶在註冊後 30 天內就下了第一張訂單？
+  expect: rows
+  note: 0 <= DATEDIFF <= 30。首單早於註冊者（seed 產生的負值）不計入。
+  sql: |
+    SELECT COUNT(*) AS n FROM customers c JOIN (
+      SELECT customer_id, MIN(order_date) AS first_order FROM orders GROUP BY customer_id
+    ) f ON c.id = f.customer_id
+    WHERE DATEDIFF(f.first_order, c.created_at) BETWEEN 0 AND 30
+  alt_sql:
+    - |
+      SELECT COUNT(*) AS n FROM customers c JOIN (
+        SELECT customer_id, MIN(order_date) AS first_order FROM orders GROUP BY customer_id
+      ) f ON c.id = f.customer_id
+      WHERE DATEDIFF(f.first_order, c.created_at) <= 30
+
+- id: 100
+  question: 找出住在新北市、而且總消費金額超過 50000 元的客戶。
+  expect: rows
+  sql: |
+    SELECT c.name FROM customers c JOIN orders o ON c.id = o.customer_id
+    WHERE c.city = '新北市'
+    GROUP BY c.id, c.name HAVING SUM(o.total_amount) > 50000 ORDER BY c.name
