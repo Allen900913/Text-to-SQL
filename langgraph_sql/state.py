@@ -37,6 +37,12 @@ class AgentState(TypedDict, total=False):
     # --- 控制流 ---
     retry_count: int               # 重試計數器（總預算，跨 Node 共用）
 
+    # --- 基礎設施錯誤 ---
+    # 與 error_message / db_error 刻意分開：這兩者代表「模型寫錯 SQL」，
+    # llm_error 代表「LLM API 根本沒回應」（逾時、429、503）。評估時若混為一談，
+    # 會把網路問題誤記成模型能力不足。
+    llm_error: str
+
     # --- 輸出 ---
     final_answer: str              # 最終自然語言回答
     error_message: str             # 錯誤訊息（用於 fallback）

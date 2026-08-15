@@ -9,6 +9,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from langgraph_sql.state import AgentState
 from langgraph_sql.config import llm_summarizer
+from langgraph_sql.utils.llm_retry import invoke_with_retry
 
 
 # ===========================================================================
@@ -85,21 +86,24 @@ def final_summarizer(state: AgentState) -> dict:
 
 請根據以上查詢結果，用繁體中文回答使用者的問題。"""
 
-    try:
-        response = llm_summarizer.invoke([
-            SystemMessage(content=_SUMMARIZER_SYSTEM_PROMPT),
-            HumanMessage(content=user_prompt),
-        ])
-        answer = response.content if hasattr(response, "content") else str(response)
-        answer = answer.strip()
-    except Exception as e:
-        log.error(f"[Node 6] LLM 呼叫失敗: {e}")
+    raw, llm_error = invoke_with_retry(
+        llm_summarizer,
+        [SystemMessage(content=_SUMMARIZER_SYSTEM_PROMPT),
+         HumanMessage(content=user_prompt)],
+        tag="[Node 6] Summarizer",
+    )
+
+    if llm_error:
+        # SQL 已經跑完、資料是對的，只是自然語言轉換失敗。
+        # 直接回傳原始結果，不要讓整題變成沒有答案。
         answer = (
             f"查詢結果已取得，但自然語言轉換失敗。\n"
             f"原始結果：\n{champion_result}"
         )
+    else:
+        answer = raw.strip()
 
     log.info("[Node 6] 最終回答生成完成")
     log.debug(f"[Node 6] 回答預覽: {answer[:200]}...")
 
-    return {"final_answer": answer}
+    return {"final_answer": answer, "llm_error": llm_error}

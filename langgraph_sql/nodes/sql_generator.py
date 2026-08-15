@@ -16,6 +16,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from langgraph_sql.state import AgentState
 from langgraph_sql.config import llm_fast as llm_generator
+from langgraph_sql.utils.llm_retry import invoke_with_retry
 
 
 # ===========================================================================
@@ -144,22 +145,21 @@ def sql_generator(state: AgentState) -> dict:
         HumanMessage(content=user_prompt),
     ]
 
-    # 單次精準呼叫，告別 batch 超時地獄
-    try:
-        response = llm_generator.invoke(messages)
-        raw = response.content if hasattr(response, "content") else str(response)
-    except Exception as e:
-        log.error(f"[Node 2] LLM 呼叫失敗: {e}")
+    # 單次精準呼叫，告別 batch 超時地獄。
+    # API 逾時 / 503 由 invoke_with_retry 就地退避重試，不消耗 Pipeline 的 retry 預算。
+    raw, llm_error = invoke_with_retry(llm_generator, messages, tag="[Node 2] Generator")
+    if llm_error:
         return {
             "candidate_sqls": [],
-            "error_message": f"SQL 生成失敗: {e}",
+            "llm_error": llm_error,
+            "error_message": f"SQL 生成失敗（LLM API 無回應）: {llm_error}",
         }
 
     # 解析 SQL
     sql = _parse_sql(raw)
     if sql:
         log.info(f"[Node 2] ✅ 成功生成 SQL: {sql[:100]}...")
-        return {"candidate_sqls": [sql]}
+        return {"candidate_sqls": [sql], "llm_error": ""}
     else:
         log.warning(f"[Node 2] ❌ SQL 解析失敗 (raw={raw[:150]}...)")
         return {

@@ -93,3 +93,8 @@ llm_summarizer = ChatOpenAI(
 MAX_RETRIES = 2           # 最大重試次數（重回 Node 2 重新生成的總預算）
 SQL_TIMEOUT_MS = 5000     # SQL 執行超時（毫秒）
 MAX_RESULT_ROWS = 500     # 結果集上限，超過視為異常丟棄
+
+# LLM 呼叫的退避重試（處理 API 逾時 / 429 / 503 等暫時性故障）。
+# 與 MAX_RETRIES 分開計算：基礎設施故障不該消耗修正 SQL 的預算。
+LLM_MAX_ATTEMPTS = 3      # 單次節點呼叫的最大嘗試次數
+LLM_BACKOFF_BASE = 5      # 退避基數（秒），第 n 次等待 BASE * 2^(n-1)
