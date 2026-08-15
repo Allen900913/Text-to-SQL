@@ -164,5 +164,8 @@ def sql_generator(state: AgentState) -> dict:
         log.warning(f"[Node 2] ❌ SQL 解析失敗 (raw={raw[:150]}...)")
         return {
             "candidate_sqls": [],
+            # 這一輪 API 是正常的（有拿到內容，只是不是 SQL），要清掉前一輪殘留的
+            # llm_error，否則評估會把模型的問題誤記成基礎設施故障。
+            "llm_error": "",
             "error_message": "SQL 解析失敗：LLM 輸出不含有效的 SELECT 語句",
         }
