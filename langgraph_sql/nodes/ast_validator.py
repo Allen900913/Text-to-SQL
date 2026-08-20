@@ -231,6 +231,14 @@ def ast_validator(state: AgentState) -> dict:
                 col_name = col_node.name.lower()
                 table_ref = (col_node.table or "").lower()
 
+                if col_name == "*":
+                    # `SELECT p.*` 會被 sqlglot 解析成 Column(name='*', table='p')，
+                    # 拿 '*' 去比對欄位清單必然落空 → 對**合法 SQL** 判成幻覺欄位。
+                    # 實測 `#17` 因此燒光重試預算變成 error_end（連答案都沒有）。
+                    # 注意只有**帶表限定**的星號會這樣：`SELECT *` 與 `COUNT(*)`
+                    # 解析出來是 exp.Star，根本不會進到這個迴圈。
+                    continue
+
                 if not table_ref:
                     continue  # 無表引用 → 放行
 

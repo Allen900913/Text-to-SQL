@@ -429,7 +429,7 @@
     "id": 72,
     "type": "unseen",
     "capability": "schema 邊界",
-    "question": "有哪些訂單使用了折扣碼？折扣了多少？"
+    "question": "有哪些訂單套用了促銷活動的折扣？折扣金額是多少？"
   },
   {
     "id": 73,
@@ -531,7 +531,7 @@
     "id": 89,
     "type": "unseen",
     "capability": "分組分布",
-    "question": "統計每位客戶的訂單狀態分布，列出前 5 位客戶。"
+    "question": "訂單張數最多的前 5 位客戶，各自的訂單狀態分布是什麼？"
   },
   {
     "id": 90,
@@ -598,5 +598,947 @@
     "type": "unseen",
     "capability": "複合條件",
     "question": "找出住在新北市、而且總消費金額超過 50000 元的客戶。"
+  },
+  {
+    "id": 101,
+    "type": "ext_schema",
+    "capability": "新表單表計數",
+    "question": "目前有幾種付款方式可以使用？"
+  },
+  {
+    "id": 102,
+    "type": "ext_schema",
+    "capability": "新表分組計數",
+    "question": "各種付款方式分別被使用了幾次？"
+  },
+  {
+    "id": 103,
+    "type": "ext_schema",
+    "capability": "極值(新表)",
+    "question": "手續費率最高的付款方式是哪一個？費率是多少？"
+  },
+  {
+    "id": 104,
+    "type": "ext_schema",
+    "capability": "空集合(狀態值不存在)",
+    "question": "列出所有付款失敗的紀錄。"
+  },
+  {
+    "id": 105,
+    "type": "ext_schema",
+    "capability": "時間鏈(跨表時間差)",
+    "question": "從下單到付款完成，平均間隔幾天？"
+  },
+  {
+    "id": 106,
+    "type": "ext_schema",
+    "capability": "新表關聯篩選",
+    "question": "用信用卡付款的總金額是多少？"
+  },
+  {
+    "id": 107,
+    "type": "ext_schema",
+    "capability": "status 歧義(跨表同解)",
+    "question": "有多少張訂單已經送達？"
+  },
+  {
+    "id": 108,
+    "type": "ext_schema",
+    "capability": "新表狀態篩選",
+    "question": "還在運送途中的訂單，物流追蹤號碼分別是什麼？"
+  },
+  {
+    "id": 109,
+    "type": "ext_schema",
+    "capability": "極值(新表關聯)",
+    "question": "哪一個倉庫的出貨次數最多？出了幾次？"
+  },
+  {
+    "id": 110,
+    "type": "ext_schema",
+    "capability": "時間鏈(同表兩欄)",
+    "question": "從出貨到送達，平均要花幾天？"
+  },
+  {
+    "id": 111,
+    "type": "ext_schema",
+    "capability": "反向關聯(跨新表)",
+    "question": "有哪些訂單已經付款成功，但還沒有建立出貨單？"
+  },
+  {
+    "id": 112,
+    "type": "ext_schema",
+    "capability": "新表分組計數",
+    "question": "每個倉庫各出了幾次貨？"
+  },
+  {
+    "id": 113,
+    "type": "ext_schema",
+    "capability": "NULL 語意",
+    "question": "目前有幾筆退款還沒有實際退款完成？"
+  },
+  {
+    "id": 114,
+    "type": "ext_schema",
+    "capability": "條件聚合(新表)",
+    "question": "已經實際退款完成的部分，總共退了多少錢？"
+  },
+  {
+    "id": 115,
+    "type": "ext_schema",
+    "capability": "極值(並列)",
+    "question": "最常見的退款原因是什麼？出現幾次？"
+  },
+  {
+    "id": 116,
+    "type": "ext_schema",
+    "capability": "布林旗標篩選",
+    "question": "有哪些促銷活動被標記為啟用中？"
+  },
+  {
+    "id": 117,
+    "type": "ext_schema",
+    "capability": "極值(新表關聯)",
+    "question": "哪一個促銷活動累計折抵的金額最多？折了多少？"
+  },
+  {
+    "id": 118,
+    "type": "ext_schema",
+    "capability": "新表平均",
+    "question": "有使用促銷的訂單，平均每張折抵多少錢？"
+  },
+  {
+    "id": 119,
+    "type": "ext_schema",
+    "capability": "Enum 分組",
+    "question": "百分比折扣和固定金額折抵的促銷活動，各有幾個？"
+  },
+  {
+    "id": 120,
+    "type": "ext_schema",
+    "capability": "極值(多對多)",
+    "question": "哪一家供應商供應的商品品項最多？有幾項？"
+  },
+  {
+    "id": 121,
+    "type": "ext_schema",
+    "capability": "極值(關聯欄位)",
+    "question": "備貨天數最長的是哪些商品？要幾天？"
+  },
+  {
+    "id": 122,
+    "type": "ext_schema",
+    "capability": "HAVING 門檻",
+    "question": "有哪些商品同時由兩家以上的供應商供應？"
+  },
+  {
+    "id": 123,
+    "type": "ext_schema",
+    "capability": "同名欄位陷阱(city)",
+    "question": "供應商分布在哪些城市？每個城市各有幾家？"
+  },
+  {
+    "id": 124,
+    "type": "ext_schema",
+    "capability": "自連接(階層)",
+    "question": "「電子與家電」這個大分類底下，有哪些子分類？"
+  },
+  {
+    "id": 125,
+    "type": "ext_schema",
+    "capability": "分類雙表示(is_primary)",
+    "question": "有哪些商品同時被歸在一個以上的分類底下？"
+  },
+  {
+    "id": 126,
+    "type": "ext_schema",
+    "capability": "布林旗標計數",
+    "question": "分類表裡總共有幾個啟用中的分類？"
+  },
+  {
+    "id": 127,
+    "type": "ext_schema",
+    "capability": "寬表旗標",
+    "question": "已經停產的商品有哪些？"
+  },
+  {
+    "id": 128,
+    "type": "ext_schema",
+    "capability": "寬表 NULL 語意",
+    "question": "有螢幕規格的商品，平均螢幕尺寸是幾吋？"
+  },
+  {
+    "id": 129,
+    "type": "ext_schema",
+    "capability": "極值(寬表)",
+    "question": "最重的商品是哪一個？重量幾公克？"
+  },
+  {
+    "id": 130,
+    "type": "ext_schema",
+    "capability": "空集合(寬表門檻)",
+    "question": "保固超過 24 個月的商品有哪些？"
+  },
+  {
+    "id": 131,
+    "type": "ext_schema",
+    "capability": "布林旗標計數",
+    "question": "有多少個購物車被放棄了？"
+  },
+  {
+    "id": 132,
+    "type": "ext_schema",
+    "capability": "語意捷徑陷阱(想買≠買了)",
+    "question": "被放棄的購物車裡，最常出現的商品是哪一個？出現幾次？"
+  },
+  {
+    "id": 133,
+    "type": "ext_schema",
+    "capability": "語意捷徑陷阱(看過≠買了)",
+    "question": "被瀏覽次數最多的商品是哪一個？被看了幾次？"
+  },
+  {
+    "id": 134,
+    "type": "ext_schema",
+    "capability": "Enum 分組(新表)",
+    "question": "各個流量來源的瀏覽次數分別是多少？"
+  },
+  {
+    "id": 135,
+    "type": "ext_schema",
+    "capability": "極值(分組平均)",
+    "question": "平均停留時間最長的商品是哪一個？平均停留幾秒？"
+  },
+  {
+    "id": 136,
+    "type": "ext_schema",
+    "capability": "差集(行為表 vs 交易表)",
+    "question": "有哪些客戶瀏覽過商品，卻從來沒有下過任何訂單？"
+  },
+  {
+    "id": 137,
+    "type": "ext_schema",
+    "capability": "跨表欄位比較",
+    "question": "有幾筆收件地址的收件人不是客戶本人？"
+  },
+  {
+    "id": 138,
+    "type": "ext_schema",
+    "capability": "同名欄位陷阱(兩個 city)",
+    "question": "有哪些客戶的收件地址城市和自己居住的城市不同？"
+  },
+  {
+    "id": 139,
+    "type": "ext_schema",
+    "capability": "巢狀聚合(新表)",
+    "question": "平均每位客戶有幾個收件地址？"
+  },
+  {
+    "id": 140,
+    "type": "ext_schema",
+    "capability": "schema 邊界(新表)",
+    "question": "每個倉庫的庫存週轉率是多少？"
+  },
+  {
+    "id": 141,
+    "type": "ext_schema",
+    "capability": "schema 邊界(新表)",
+    "question": "每位客戶的信用評分是多少？"
+  },
+  {
+    "id": 142,
+    "type": "ext_schema",
+    "capability": "軟刪除語意",
+    "question": "目前所有評論的平均評分是多少？"
+  },
+  {
+    "id": 143,
+    "type": "ext_schema",
+    "capability": "軟刪除語意",
+    "question": "目前有幾則一星負評？"
+  },
+  {
+    "id": 144,
+    "type": "ext_schema",
+    "capability": "軟刪除 + 反向關聯",
+    "question": "有哪些商品到目前為止都還沒有任何評論？"
+  },
+  {
+    "id": 145,
+    "type": "ext_schema",
+    "capability": "軟刪除 + 類別聚合",
+    "question": "每個商品類別的平均評分分別是多少？"
+  },
+  {
+    "id": 146,
+    "type": "ext_schema",
+    "capability": "寬表 / 快照口徑",
+    "question": "根據客戶檔案的消費快照，累計消費金額最高的前 5 位客戶是誰？金額各是多少？"
+  },
+  {
+    "id": 147,
+    "type": "ext_schema",
+    "capability": "寬表 / 快照 vs 即時",
+    "question": "客戶檔案裡的累計消費快照，和實際訂單加總對不起來的客戶有幾位？"
+  },
+  {
+    "id": 148,
+    "type": "ext_schema",
+    "capability": "寬表 / 快照 vs 即時",
+    "question": "客戶檔案記錄的訂單數，與實際訂單筆數不一致的客戶有哪些？請列出姓名、快照數與實際數。"
+  },
+  {
+    "id": 149,
+    "type": "ext_schema",
+    "capability": "寬表 / 同名不同義",
+    "question": "有多少位客戶的會員系統註冊時間，比交易系統的建檔時間還要早？"
+  },
+  {
+    "id": 150,
+    "type": "ext_schema",
+    "capability": "寬表 / 單表聚合",
+    "question": "各個會員等級各有幾位客戶？"
+  },
+  {
+    "id": 151,
+    "type": "ext_schema",
+    "capability": "寬表 / 列舉",
+    "question": "行銷分群被標記為 AT_RISK 的客戶有哪些？"
+  },
+  {
+    "id": 152,
+    "type": "ext_schema",
+    "capability": "寬表 / 布林旗標",
+    "question": "同意接收 Email 行銷的客戶有幾位？"
+  },
+  {
+    "id": 153,
+    "type": "ext_schema",
+    "capability": "寬表 / 分組平均",
+    "question": "各會員等級的平均流失風險分數是多少？"
+  },
+  {
+    "id": 154,
+    "type": "ext_schema",
+    "capability": "寬表 / NULL 語意",
+    "question": "還沒有通過 Email 驗證的客戶有幾位？"
+  },
+  {
+    "id": 155,
+    "type": "ext_schema",
+    "capability": "寬表 / 條件平均",
+    "question": "VIP 客戶的平均預估終身價值分數是多少？"
+  },
+  {
+    "id": 156,
+    "type": "ext_schema",
+    "capability": "寬表 / 多指標分組",
+    "question": "各個來源管道帶進來的客戶各有幾位？平均互動活躍度分數是多少？"
+  },
+  {
+    "id": 157,
+    "type": "ext_schema",
+    "capability": "寬表 / 跨表分組",
+    "question": "每個城市的客戶平均流失風險分數是多少？"
+  },
+  {
+    "id": 158,
+    "type": "ext_schema",
+    "capability": "寬表 / 跨表列舉",
+    "question": "被列入黑名單的客戶是誰？請列出姓名與 email。"
+  },
+  {
+    "id": 159,
+    "type": "ext_schema",
+    "capability": "寬表 / 誠實回報空集合",
+    "question": "風控標記為 HIGH 的客戶有哪些？"
+  },
+  {
+    "id": 160,
+    "type": "ext_schema",
+    "capability": "發票作廢",
+    "question": "有幾張發票已經作廢？"
+  },
+  {
+    "id": 161,
+    "type": "ext_schema",
+    "capability": "發票跨表",
+    "question": "列出所有已作廢發票的發票號碼、對應的訂單編號與該筆訂單的金額。"
+  },
+  {
+    "id": 162,
+    "type": "ext_schema",
+    "capability": "發票時間範圍",
+    "question": "2026 年 7 月開立了幾張發票？"
+  },
+  {
+    "id": 163,
+    "type": "ext_schema",
+    "capability": "工單狀態",
+    "question": "目前還沒結案的客服工單有幾張？"
+  },
+  {
+    "id": 164,
+    "type": "ext_schema",
+    "capability": "工單 NULL 語意",
+    "question": "有幾張客服工單沒有對應到任何訂單？"
+  },
+  {
+    "id": 165,
+    "type": "ext_schema",
+    "capability": "工單跨表",
+    "question": "列出所有狀態為 OPEN 的客服工單主旨，以及提出的客戶姓名。"
+  },
+  {
+    "id": 166,
+    "type": "ext_schema",
+    "capability": "退貨狀態",
+    "question": "有幾張退貨申請被拒絕？"
+  },
+  {
+    "id": 167,
+    "type": "ext_schema",
+    "capability": "退貨單位詞",
+    "question": "總共有多少件商品被退回？"
+  },
+  {
+    "id": 168,
+    "type": "ext_schema",
+    "capability": "退貨跨表",
+    "question": "列出退貨狀態是「已收到」的退貨單，包含訂單編號與退回的商品名稱。"
+  },
+  {
+    "id": 169,
+    "type": "ext_schema",
+    "capability": "付款嘗試三表",
+    "question": "有多少位客戶的訂單曾經刷卡失敗過？"
+  },
+  {
+    "id": 170,
+    "type": "ext_schema",
+    "capability": "付款嘗試分組",
+    "question": "付款嘗試的結果分別各有幾次？"
+  },
+  {
+    "id": 171,
+    "type": "ext_schema",
+    "capability": "付款嘗試次數",
+    "question": "哪些訂單嘗試付款了 3 次？"
+  },
+  {
+    "id": 172,
+    "type": "ext_schema",
+    "capability": "歷程·取消",
+    "question": "有多少張訂單曾經被取消過？"
+  },
+  {
+    "id": 173,
+    "type": "ext_schema",
+    "capability": "歷程·三表",
+    "question": "列出曾經被取消過的訂單編號與下單客戶的姓名。"
+  },
+  {
+    "id": 174,
+    "type": "ext_schema",
+    "capability": "快照·指定日",
+    "question": "2026 年 8 月 13 日這天，庫存最少的商品是哪一個？庫存剩多少？"
+  },
+  {
+    "id": 175,
+    "type": "ext_schema",
+    "capability": "快照·天數",
+    "question": "庫存快照總共記錄了幾天？"
+  },
+  {
+    "id": 176,
+    "type": "ext_schema",
+    "capability": "配送失敗",
+    "question": "有多少張出貨單配送失敗過？"
+  },
+  {
+    "id": 177,
+    "type": "ext_schema",
+    "capability": "配送次數",
+    "question": "有幾張出貨單嘗試配送了 3 次？"
+  },
+  {
+    "id": 178,
+    "type": "ext_schema",
+    "capability": "圖片數量",
+    "question": "有哪些商品的圖片超過 3 張？"
+  },
+  {
+    "id": 179,
+    "type": "ext_schema",
+    "capability": "主圖計數",
+    "question": "總共設定了幾張主圖？"
+  },
+  {
+    "id": 180,
+    "type": "ext_schema",
+    "capability": "聯絡·驗證",
+    "question": "有多少位客戶登記了已驗證的聯絡方式？"
+  },
+  {
+    "id": 181,
+    "type": "ext_schema",
+    "capability": "聯絡·分組",
+    "question": "客戶登記的聯絡方式，各種類型分別有幾筆？"
+  },
+  {
+    "id": 182,
+    "type": "ext_schema",
+    "capability": "調價·方向",
+    "question": "商品調價的紀錄裡，有幾次是調降價格？"
+  },
+  {
+    "id": 183,
+    "type": "ext_schema",
+    "capability": "調價·極值",
+    "question": "哪一次調價的降幅最大？是哪個商品，降了多少？"
+  },
+  {
+    "id": 184,
+    "type": "ext_schema",
+    "capability": "調撥·方向",
+    "question": "哪個倉庫調出的商品數量最多？調出了多少件？"
+  },
+  {
+    "id": 185,
+    "type": "ext_schema",
+    "capability": "調撥·總量",
+    "question": "倉庫之間總共調撥了多少件商品？"
+  },
+  {
+    "id": 186,
+    "type": "ext_schema",
+    "capability": "備註·內部",
+    "question": "有多少張訂單有內部備註？"
+  },
+  {
+    "id": 187,
+    "type": "ext_schema",
+    "capability": "備註·外部",
+    "question": "客戶看得到的訂單備註有幾則？"
+  },
+  {
+    "id": 188,
+    "type": "ext_schema",
+    "capability": "評價·反向",
+    "question": "有多少則商品評價還沒有被回覆？"
+  },
+  {
+    "id": 189,
+    "type": "ext_schema",
+    "capability": "評價·比例",
+    "question": "有被回覆的評價佔全部評價的百分之幾？"
+  },
+  {
+    "id": 190,
+    "type": "ext_schema",
+    "capability": "取消原因",
+    "question": "訂單取消的原因，各有幾筆？"
+  },
+  {
+    "id": 191,
+    "type": "ext_schema",
+    "capability": "取消發起方",
+    "question": "由客戶自己發起取消的訂單有幾張？"
+  },
+  {
+    "id": 192,
+    "type": "ext_schema",
+    "capability": "合約到期",
+    "question": "有幾份供應商合約在 2026 年內到期？"
+  },
+  {
+    "id": 193,
+    "type": "ext_schema",
+    "capability": "合約·跨表",
+    "question": "列出付款條件是「月結60天」的合約編號與供應商名稱。"
+  },
+  {
+    "id": 194,
+    "type": "ext_schema",
+    "capability": "促銷·疊加",
+    "question": "有幾條促銷規則是可以疊加使用的？"
+  },
+  {
+    "id": 195,
+    "type": "ext_schema",
+    "capability": "促銷·門檻",
+    "question": "促銷規則的最低消費門檻，最高是多少？"
+  },
+  {
+    "id": 196,
+    "type": "ext_schema",
+    "capability": "員工·在職",
+    "question": "公司目前有多少位在職員工？"
+  },
+  {
+    "id": 197,
+    "type": "ext_schema",
+    "capability": "員工·部門",
+    "question": "每個部門各有幾位在職員工？"
+  },
+  {
+    "id": 198,
+    "type": "ext_schema",
+    "capability": "指派·極值",
+    "question": "哪位員工經手處理的訂單最多？處理了幾張？"
+  },
+  {
+    "id": 199,
+    "type": "ext_schema",
+    "capability": "指派·去重",
+    "question": "有多少張訂單被指派給員工處理過？"
+  },
+  {
+    "id": 200,
+    "type": "ext_schema",
+    "capability": "門市·營業",
+    "question": "目前還在營業的門市有幾間？"
+  },
+  {
+    "id": 201,
+    "type": "ext_schema",
+    "capability": "取貨·極值",
+    "question": "哪一間門市的取貨訂單最多？有幾張？"
+  },
+  {
+    "id": 202,
+    "type": "ext_schema",
+    "capability": "取貨·NULL",
+    "question": "有幾張訂單選了到店取貨但還沒有去取？"
+  },
+  {
+    "id": 203,
+    "type": "ext_schema",
+    "capability": "優惠券·次數",
+    "question": "優惠券總共被使用了幾次？"
+  },
+  {
+    "id": 204,
+    "type": "ext_schema",
+    "capability": "優惠券·客戶",
+    "question": "有多少位客戶使用過優惠券？"
+  },
+  {
+    "id": 205,
+    "type": "ext_schema",
+    "capability": "禮物卡·用完",
+    "question": "有幾張禮物卡的餘額已經用完了？"
+  },
+  {
+    "id": 206,
+    "type": "ext_schema",
+    "capability": "禮物卡·加總",
+    "question": "所有禮物卡的面額總和與目前餘額總和各是多少？"
+  },
+  {
+    "id": 207,
+    "type": "ext_schema",
+    "capability": "禮物卡·正負",
+    "question": "禮物卡被用來消費的金額總共是多少？"
+  },
+  {
+    "id": 208,
+    "type": "ext_schema",
+    "capability": "禮物卡·NULL",
+    "question": "有幾張禮物卡還沒有指定持有人？"
+  },
+  {
+    "id": 209,
+    "type": "ext_schema",
+    "capability": "點數·分組",
+    "question": "會員點數的異動原因各有幾筆？"
+  },
+  {
+    "id": 210,
+    "type": "ext_schema",
+    "capability": "點數·極值",
+    "question": "哪一位客戶的累計點數最多？累計了幾點？"
+  },
+  {
+    "id": 211,
+    "type": "ext_schema",
+    "capability": "訂閱·分組",
+    "question": "目前訂閱狀態各有幾位客戶？"
+  },
+  {
+    "id": 212,
+    "type": "ext_schema",
+    "capability": "訂閱·NULL",
+    "question": "有幾筆訂閱還沒有結束？"
+  },
+  {
+    "id": 213,
+    "type": "ext_schema",
+    "capability": "願望·客戶",
+    "question": "有多少位客戶建立過願望清單？"
+  },
+  {
+    "id": 214,
+    "type": "ext_schema",
+    "capability": "願望·種類",
+    "question": "願望清單裡總共收藏了多少種不同的商品？"
+  },
+  {
+    "id": 215,
+    "type": "ext_schema",
+    "capability": "問答·未回覆",
+    "question": "商品問答裡還沒有被回覆的問題有幾則？"
+  },
+  {
+    "id": 216,
+    "type": "ext_schema",
+    "capability": "問答·極值",
+    "question": "哪位員工回覆的商品問答最多？回覆了幾則？"
+  },
+  {
+    "id": 217,
+    "type": "ext_schema",
+    "capability": "標籤·分組",
+    "question": "商品標籤各有幾個商品被標記？"
+  },
+  {
+    "id": 218,
+    "type": "ext_schema",
+    "capability": "標籤·篩選",
+    "question": "有幾個商品被標記為「熱銷」？"
+  },
+  {
+    "id": 219,
+    "type": "ext_schema",
+    "capability": "部門·排序",
+    "question": "列出所有部門的名稱與成立日期，依成立日期由早到晚排序。"
+  },
+  {
+    "id": 220,
+    "type": "ext_schema",
+    "capability": "職稱·分組",
+    "question": "員工的職稱各有幾人？"
+  },
+  {
+    "id": 221,
+    "type": "ext_schema",
+    "capability": "取貨·跨表",
+    "question": "列出有到店取貨紀錄的訂單編號與取貨門市名稱，只要已經取走的。"
+  },
+  {
+    "id": 222,
+    "type": "ext_schema",
+    "capability": "優惠券·平均",
+    "question": "使用優惠券的訂單，平均每張折抵多少錢？"
+  },
+  {
+    "id": 223,
+    "type": "ext_schema",
+    "capability": "雙EXISTS",
+    "question": "有哪些客戶同時建立過願望清單又訂閱過方案？列出姓名。"
+  },
+  {
+    "id": 224,
+    "type": "ext_schema",
+    "capability": "願望·平均",
+    "question": "每位有建立願望清單的客戶，平均收藏了幾樣商品？"
+  },
+  {
+    "id": 225,
+    "type": "ext_schema",
+    "capability": "問答·比率",
+    "question": "商品問答的回覆率是多少？"
+  },
+  {
+    "id": 226,
+    "type": "ext_schema",
+    "capability": "倉庫人力",
+    "question": "每個倉庫各配置了幾位員工？"
+  },
+  {
+    "id": 227,
+    "type": "ext_schema",
+    "capability": "倉庫人力·去重",
+    "question": "有多少位員工被派駐在倉庫？"
+  },
+  {
+    "id": 228,
+    "type": "ext_schema",
+    "capability": "門市人力",
+    "question": "每間門市各配置了幾位員工？"
+  },
+  {
+    "id": 229,
+    "type": "ext_schema",
+    "capability": "雙EXISTS·員工",
+    "question": "有哪些員工同時被派駐在倉庫和門市？列出姓名。"
+  },
+  {
+    "id": 230,
+    "type": "ext_schema",
+    "capability": "班別·分組",
+    "question": "員工班表的各種班別各排了幾班？"
+  },
+  {
+    "id": 231,
+    "type": "ext_schema",
+    "capability": "工時·加總",
+    "question": "排定的總工時是多少小時？"
+  },
+  {
+    "id": 232,
+    "type": "ext_schema",
+    "capability": "變體·計數",
+    "question": "總共有幾種商品規格變體？"
+  },
+  {
+    "id": 233,
+    "type": "ext_schema",
+    "capability": "變體·預設",
+    "question": "有幾個商品規格變體被設為預設？"
+  },
+  {
+    "id": 234,
+    "type": "ext_schema",
+    "capability": "條碼·計數",
+    "question": "總共登錄了幾組商品條碼？"
+  },
+  {
+    "id": 235,
+    "type": "ext_schema",
+    "capability": "條碼·HAVING",
+    "question": "有哪些規格變體登錄了超過一組條碼？列出變體編號與條碼數。"
+  },
+  {
+    "id": 236,
+    "type": "ext_schema",
+    "capability": "電子報·期數",
+    "question": "總共寄出了幾期電子報？"
+  },
+  {
+    "id": 237,
+    "type": "ext_schema",
+    "capability": "電子報·NULL",
+    "question": "目前還有多少位客戶訂閱著電子報？"
+  },
+  {
+    "id": 238,
+    "type": "ext_schema",
+    "capability": "電子報·退訂",
+    "question": "有多少位客戶退訂了電子報？"
+  },
+  {
+    "id": 239,
+    "type": "ext_schema",
+    "capability": "活動·渠道",
+    "question": "行銷活動的投放渠道各有幾檔？"
+  },
+  {
+    "id": 240,
+    "type": "ext_schema",
+    "capability": "點擊·跨表",
+    "question": "各投放渠道的廣告點擊次數分別是多少？"
+  },
+  {
+    "id": 241,
+    "type": "ext_schema",
+    "capability": "點擊·NULL",
+    "question": "有多少次廣告點擊是未登入的訪客產生的？"
+  },
+  {
+    "id": 242,
+    "type": "ext_schema",
+    "capability": "搜尋·極值",
+    "question": "站內搜尋最熱門的關鍵字是哪一個？被搜尋了幾次？"
+  },
+  {
+    "id": 243,
+    "type": "ext_schema",
+    "capability": "搜尋·零結果",
+    "question": "有幾次站內搜尋沒有搜到任何結果？"
+  },
+  {
+    "id": 244,
+    "type": "ext_schema",
+    "capability": "推薦·計數",
+    "question": "系統總共建立了幾筆商品推薦關聯？"
+  },
+  {
+    "id": 245,
+    "type": "ext_schema",
+    "capability": "推薦·自參照",
+    "question": "商品「iPhone 15」被推薦了哪些商品？依推薦排序列出。"
+  },
+  {
+    "id": 246,
+    "type": "ext_schema",
+    "capability": "FAQ·分類",
+    "question": "常見問題文章各分類有幾篇？"
+  },
+  {
+    "id": 247,
+    "type": "ext_schema",
+    "capability": "FAQ·比率",
+    "question": "常見問題的投票裡，覺得有幫助的佔多少百分比？"
+  },
+  {
+    "id": 248,
+    "type": "ext_schema",
+    "capability": "FAQ·NULL",
+    "question": "有幾則常見問題的投票是未登入訪客投的？"
+  },
+  {
+    "id": 249,
+    "type": "ext_schema",
+    "capability": "退貨物流·NULL",
+    "question": "有幾筆退貨的商品倉庫還沒有收到？"
+  },
+  {
+    "id": 250,
+    "type": "ext_schema",
+    "capability": "退貨物流·去重",
+    "question": "有多少筆退貨申請已經寄出物流了？"
+  },
+  {
+    "id": 251,
+    "type": "ext_schema",
+    "capability": "保固·分組",
+    "question": "保固申請的處理狀態各有幾筆？"
+  },
+  {
+    "id": 252,
+    "type": "ext_schema",
+    "capability": "保固·篩選",
+    "question": "有幾件保固申請被拒絕了？"
+  },
+  {
+    "id": 253,
+    "type": "ext_schema",
+    "capability": "預約·分組",
+    "question": "到店服務預約的各種服務類型各有幾筆？"
+  },
+  {
+    "id": 254,
+    "type": "ext_schema",
+    "capability": "預約·未到",
+    "question": "有多少筆到店服務預約客戶沒有出席？"
+  },
+  {
+    "id": 255,
+    "type": "ext_schema",
+    "capability": "保固·跨表",
+    "question": "列出有申請過保固的商品名稱與申請次數。"
+  },
+  {
+    "id": 256,
+    "type": "ext_schema",
+    "capability": "雙EXISTS·橋接",
+    "question": "有哪些客戶既預約過到店服務，也建立過保固申請？列出姓名。"
+  },
+  {
+    "id": 257,
+    "type": "ext_schema",
+    "capability": "預約·門市",
+    "question": "每間門市各有幾筆到店服務預約？"
   }
 ]

@@ -1,0 +1,22 @@
+﻿# ============================================================
+# Text-to-SQL 專案依賴套件
+# ============================================================
+
+# --- LLM / LangChain 核心 ---
+langchain
+langchain-core
+langchain-openai
+langgraph
+
+# --- 資料庫 ---
+sqlalchemy
+pymysql
+
+# --- SQL 解析 ---
+sqlglot
+
+# --- 工具 ---
+python-dotenv
+loguru
+pyyaml
+pandas

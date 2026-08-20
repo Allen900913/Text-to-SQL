@@ -13,8 +13,10 @@ class AgentState(TypedDict, total=False):
     user_query: str                # 使用者原始問題
 
     # --- Node 1: Context Retriever 填入 ---
-    schema_ddl: str                # DDL Schema 文字
+    schema_ddl: str                # DDL Schema 文字（已依檢索結果剪裁）
     enum_text: str                 # Enum 欄位說明
+    retrieved_tables: list[str]    # 檢索層選出、實際進 Prompt 的表
+    retrieval_anchors: list[str]   # 語意檢索命中的錨點（KMB 補橋接表之前）
     rules_text: str                # 商業邏輯規則
     few_shot_examples: str         # Few-Shot 範例
 

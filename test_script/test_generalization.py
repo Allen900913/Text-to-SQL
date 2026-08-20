@@ -34,7 +34,7 @@ def run_unseen_tests():
                 print(f"  -> SQL: {result.get('champion_sql')}")
                 f.write(f"回答: {result.get('final_answer')}\n")
                 f.write(f"SQL: {result.get('champion_sql')}\n")
-                f.write(f"Critic 通過: {result.get('critic_passed')} | 重試次數: {result.get('retry_count')}\n")
+                f.write(f"EXPLAIN 通過: {result.get('sql_validated')} | 重試次數: {result.get('retry_count')}\n")
                 f.write("-" * 50 + "\n")
             except Exception as e:
                 print(f"  -> 失敗: {e}")

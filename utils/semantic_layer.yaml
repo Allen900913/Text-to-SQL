@@ -15,7 +15,7 @@ ddl: |
     phone      VARCHAR(20)  COMMENT '客戶電話',
     city       VARCHAR(50)  COMMENT '居住城市',
     created_at DATETIME     COMMENT '註冊時間'
-  );
+  ) COMMENT '客戶資訊表：一位客戶一列，記錄姓名、Email、電話、居住城市與註冊時間。資料中存在同名不同人的客戶';
 
   CREATE TABLE products (
     id          INT           PRIMARY KEY COMMENT '商品唯一ID',
@@ -24,7 +24,7 @@ ddl: |
     price       DECIMAL(10,2) COMMENT '商品價格',
     stock       INT           COMMENT '庫存數量',
     description TEXT          COMMENT '商品描述'
-  );
+  ) COMMENT '商品資訊表：一項商品一列，記錄品名、售價、庫存與分類。category 是反正規化的字串欄位，與 categories 關聯表並存';
 
   CREATE TABLE orders (
     id           INT           PRIMARY KEY COMMENT '訂單唯一ID',
@@ -33,7 +33,7 @@ ddl: |
     total_amount DECIMAL(10,2) COMMENT '訂單總金額',
     status       VARCHAR(20)   COMMENT '訂單狀態 (PENDING/PAID/SHIPPED/COMPLETED/CANCELLED)',
     FOREIGN KEY (customer_id) REFERENCES customers(id)
-  );
+  ) COMMENT '訂單主表：一張訂單一列，記錄下單客戶、下單時間、訂單狀態與整張訂單的總金額。訂單狀態 PENDING/PAID/SHIPPED/COMPLETED/CANCELLED —— 查待處理、已付款、已出貨、已完成、已取消的訂單都用這張表。訂單張數、客單價、期間營收等訂單層級的統計用這張表';
 
   CREATE TABLE order_items (
     id         INT           PRIMARY KEY COMMENT '明細唯一ID',
@@ -43,7 +43,7 @@ ddl: |
     unit_price DECIMAL(10,2) COMMENT '購買時的單價',
     FOREIGN KEY (order_id) REFERENCES orders(id),
     FOREIGN KEY (product_id) REFERENCES products(id)
-  );
+  ) COMMENT '訂單明細表：一張訂單買了哪些商品、各買幾件、成交單價多少。商品銷量、商品或類別的營收、熱賣排行、銷售佔比都要用這張表計算';
 
   CREATE TABLE categories (
     id         INT         PRIMARY KEY COMMENT '分類唯一ID',
@@ -52,7 +52,7 @@ ddl: |
     sort_order INT         COMMENT '同層顯示順序',
     is_active  TINYINT(1)  COMMENT '是否啟用中',
     FOREIGN KEY (parent_id) REFERENCES categories(id)
-  );
+  ) COMMENT '商品分類表（正規化版本；products.category 是反正規化的字串欄位）';
 
   CREATE TABLE product_categories (
     id          INT        PRIMARY KEY COMMENT '唯一ID',
@@ -61,7 +61,7 @@ ddl: |
     is_primary  TINYINT(1) COMMENT '是否為主要分類',
     FOREIGN KEY (product_id) REFERENCES products(id),
     FOREIGN KEY (category_id) REFERENCES categories(id)
-  );
+  ) COMMENT '商品與分類的多對多關聯';
 
   CREATE TABLE suppliers (
     id            INT          PRIMARY KEY COMMENT '供應商唯一ID',
@@ -70,7 +70,7 @@ ddl: |
     phone         VARCHAR(20)  COMMENT '供應商電話（非客戶電話）',
     city          VARCHAR(50)  COMMENT '供應商所在城市（非客戶居住城市）',
     created_at    DATETIME     COMMENT '建檔時間'
-  );
+  ) COMMENT '供應商表：一家供應商一列，記錄名稱、聯絡方式與所在城市。此處的 city 是供應商所在地，不是客戶居住地';
 
   CREATE TABLE product_suppliers (
     id             INT           PRIMARY KEY COMMENT '唯一ID',
@@ -80,7 +80,7 @@ ddl: |
     lead_time_days INT           COMMENT '備貨天數',
     FOREIGN KEY (product_id) REFERENCES products(id),
     FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
-  );
+  ) COMMENT '商品供貨關係表：一項商品由哪家供應商供貨，含進貨價與備貨天數。進貨成本、毛利、備貨/交期天數看這張表';
 
   CREATE TABLE product_specs (
     product_id        INT          PRIMARY KEY COMMENT '商品ID',
@@ -109,7 +109,7 @@ ddl: |
     updated_by        VARCHAR(50)  COMMENT '最後修改者帳號，非業務欄位',
     updated_at        DATETIME     COMMENT '最後修改時間',
     FOREIGN KEY (product_id) REFERENCES products(id)
-  );
+  ) COMMENT '商品細部規格表：重量、尺寸、顏色、材質、原產地、保固月數、型號與上市年份等。寬表，多數欄位對多數商品為 NULL';
 
   CREATE TABLE payment_methods (
     id        INT          PRIMARY KEY COMMENT '付款方式唯一ID',
@@ -117,7 +117,7 @@ ddl: |
     channel   VARCHAR(30)  COMMENT '金流管道代碼',
     fee_rate  DECIMAL(5,4) COMMENT '手續費率（0.0250 表示 2.5%）',
     is_active TINYINT(1)   COMMENT '是否開放使用'
-  );
+  ) COMMENT '付款方式表：信用卡、貨到付款等付款管道，含各自的手續費率';
 
   CREATE TABLE payments (
     id             INT           PRIMARY KEY COMMENT '付款紀錄唯一ID',
@@ -131,7 +131,7 @@ ddl: |
     created_at     DATETIME      COMMENT '此筆紀錄寫入時間',
     FOREIGN KEY (order_id) REFERENCES orders(id),
     FOREIGN KEY (method_id) REFERENCES payment_methods(id)
-  );
+  ) COMMENT '付款紀錄表：一筆付款一列，記錄對應訂單、付款方式、金額與付款完成時間。何時付款、用什麼付、付了多少看這張表。付款狀態 SUCCESS/FAILED/REFUNDED —— 查付款成功、付款失敗、已退款的紀錄都用這張表；付款狀態與訂單狀態意義不同';
 
   CREATE TABLE refunds (
     id          INT           PRIMARY KEY COMMENT '退款紀錄唯一ID',
@@ -142,7 +142,7 @@ ddl: |
     refunded_at DATETIME      COMMENT '實際退款時間，尚未完成時為 NULL',
     created_at  DATETIME      COMMENT '退款申請時間',
     FOREIGN KEY (payment_id) REFERENCES payments(id)
-  );
+  ) COMMENT '退款紀錄表：一筆退款申請一列，記錄退多少錢、退款原因與是否已實際退成功。退款金額、原因分布、未退成件數看這張表';
 
   CREATE TABLE warehouses (
     id        INT         PRIMARY KEY COMMENT '倉庫唯一ID',
@@ -150,7 +150,7 @@ ddl: |
     city      VARCHAR(50) COMMENT '倉庫所在城市',
     capacity  INT         COMMENT '倉儲容量（單位：箱）',
     is_active TINYINT(1)  COMMENT '是否營運中'
-  );
+  ) COMMENT '倉庫表：一座倉庫一列，記錄名稱、所在城市與容量。出貨從哪個倉庫發出、各倉出貨量的統計會用到';
 
   CREATE TABLE shipments (
     id           INT         PRIMARY KEY COMMENT '出貨紀錄唯一ID',
@@ -163,7 +163,7 @@ ddl: |
     created_at   DATETIME    COMMENT '出貨單建立時間',
     FOREIGN KEY (order_id) REFERENCES orders(id),
     FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
-  );
+  ) COMMENT '出貨紀錄表：一張訂單的出貨一列，記錄從哪個倉庫出貨、物流追蹤號碼、何時出貨與何時送達。到貨天數、運送中、已送達看這張表；物流狀態與訂單狀態意義不同';
 
   CREATE TABLE addresses (
     id             INT          PRIMARY KEY COMMENT '地址唯一ID',
@@ -176,7 +176,7 @@ ddl: |
     is_default     TINYINT(1)   COMMENT '是否為預設地址',
     created_at     DATETIME     COMMENT '地址建立時間',
     FOREIGN KEY (customer_id) REFERENCES customers(id)
-  );
+  ) COMMENT '客戶地址簿：客戶登記的收件地址，一個客戶可有多筆。收件人可能不是客戶本人，收件城市也可能與居住城市不同';
 
   CREATE TABLE promotions (
     id             INT           PRIMARY KEY COMMENT '促銷活動唯一ID',
@@ -186,7 +186,7 @@ ddl: |
     starts_at      DATETIME      COMMENT '活動開始時間',
     ends_at        DATETIME      COMMENT '活動結束時間',
     is_active      TINYINT(1)    COMMENT '是否啟用'
-  );
+  ) COMMENT '促銷活動表：一檔活動一列，記錄折扣型態（百分比或固定金額）、折扣數值與活動起訖時間';
 
   CREATE TABLE order_promotions (
     id              INT           PRIMARY KEY COMMENT '唯一ID',
@@ -195,7 +195,7 @@ ddl: |
     discount_amount DECIMAL(10,2) COMMENT '此活動實際折抵的金額',
     FOREIGN KEY (order_id) REFERENCES orders(id),
     FOREIGN KEY (promotion_id) REFERENCES promotions(id)
-  );
+  ) COMMENT '訂單與促銷活動的套用紀錄：哪張訂單用了哪檔活動、實際折抵多少錢。折抵金額、活動使用次數看這張表';
 
   CREATE TABLE carts (
     id           INT        PRIMARY KEY COMMENT '購物車唯一ID',
@@ -204,7 +204,7 @@ ddl: |
     created_at   DATETIME   COMMENT '購物車建立時間',
     updated_at   DATETIME   COMMENT '最後異動時間',
     FOREIGN KEY (customer_id) REFERENCES customers(id)
-  );
+  ) COMMENT '購物車表（尚未結帳，與訂單無關）';
 
   CREATE TABLE cart_items (
     id         INT      PRIMARY KEY COMMENT '購物車明細唯一ID',
@@ -214,7 +214,7 @@ ddl: |
     added_at   DATETIME COMMENT '加入購物車的時間',
     FOREIGN KEY (cart_id) REFERENCES carts(id),
     FOREIGN KEY (product_id) REFERENCES products(id)
-  );
+  ) COMMENT '購物車明細（放入不等於購買）';
 
   CREATE TABLE reviews (
     id          INT        PRIMARY KEY COMMENT '評價唯一ID',
@@ -226,7 +226,7 @@ ddl: |
     created_at  DATETIME   COMMENT '評價時間，必定晚於購買時間',
     FOREIGN KEY (customer_id) REFERENCES customers(id),
     FOREIGN KEY (product_id) REFERENCES products(id)
-  );
+  ) COMMENT '商品評價表（只有買過該商品的客戶才會有評價）';
 
   CREATE TABLE browse_logs (
     id           INT         PRIMARY KEY COMMENT '瀏覽紀錄唯一ID',
@@ -237,7 +237,590 @@ ddl: |
     source       VARCHAR(30) COMMENT '流量來源 (SEARCH/RECOMMEND/CATEGORY/AD)',
     FOREIGN KEY (customer_id) REFERENCES customers(id),
     FOREIGN KEY (product_id) REFERENCES products(id)
-  );
+  ) COMMENT '商品瀏覽紀錄（看過不等於買過）';
+
+  CREATE TABLE api_request_logs (
+    id           INT          PRIMARY KEY COMMENT '請求唯一ID',
+    path         VARCHAR(100) COMMENT '請求路徑',
+    status_code  INT          COMMENT 'HTTP 狀態碼',
+    duration_ms  INT          COMMENT '耗時毫秒',
+    requested_at DATETIME     COMMENT '請求時間'
+  ) COMMENT 'API 請求日誌：每個對外 API 呼叫的路徑、狀態碼與耗時。系統維運用，不是業務資料';
+
+  CREATE TABLE audit_log (
+    id          INT         PRIMARY KEY COMMENT '稽核唯一ID',
+    table_name  VARCHAR(64) COMMENT '被異動的表名',
+    row_id      INT         COMMENT '被異動的資料列ID',
+    action      VARCHAR(10) COMMENT '動作 (INSERT/UPDATE/DELETE)',
+    actor       VARCHAR(50) COMMENT '執行者帳號',
+    occurred_at DATETIME    COMMENT '發生時間'
+  ) COMMENT '系統稽核軌跡：誰在什麼時候動了哪一筆資料。系統維運用，不是業務資料';
+
+  CREATE TABLE cache_entries (
+    id         INT          PRIMARY KEY COMMENT '快取唯一ID',
+    cache_key  VARCHAR(100) COMMENT '快取鍵',
+    expires_at DATETIME     COMMENT '到期時間',
+    hit_count  INT          COMMENT '命中次數'
+  ) COMMENT '快取項目：應用層快取的鍵與到期時間。系統自動維護，不是業務資料';
+
+  CREATE TABLE campaign_clicks (
+    id          INT      PRIMARY KEY COMMENT '點擊唯一ID',
+    campaign_id INT      COMMENT '活動ID',
+    customer_id INT      COMMENT '客戶ID，未登入為空',
+    clicked_at  DATETIME COMMENT '點擊時間',
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id),
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  ) COMMENT '廣告點擊紀錄：哪位客戶點了哪個活動的廣告。點擊不是購買，銷售請看 order_items';
+
+  CREATE TABLE campaigns (
+    id         INT         PRIMARY KEY COMMENT '活動唯一ID',
+    name       VARCHAR(50) COMMENT '活動名稱',
+    channel    VARCHAR(20) COMMENT '投放渠道 (EMAIL/SOCIAL/SEARCH/DISPLAY)',
+    started_at DATE        COMMENT '開始日期',
+    ended_at   DATE        COMMENT '結束日期'
+  ) COMMENT '行銷活動：廣告投放的活動名稱、渠道與期間。這是廣告活動，站上折扣檔期在 promotions';
+
+  CREATE TABLE cart_recovery_emails (
+    id      INT        PRIMARY KEY COMMENT '寄送紀錄唯一ID',
+    cart_id INT        COMMENT '對應購物車ID',
+    sent_at DATETIME   COMMENT '寄送時間',
+    opened  TINYINT(1) COMMENT '是否開信',
+    clicked TINYINT(1) COMMENT '是否點擊',
+    FOREIGN KEY (cart_id) REFERENCES carts(id)
+  ) COMMENT '購物車挽回信：對放棄購物車的客戶寄出的提醒信與開信結果';
+
+  CREATE TABLE coupon_redemptions (
+    id          INT      PRIMARY KEY COMMENT '使用紀錄唯一ID',
+    coupon_id   INT      COMMENT '使用的優惠券ID',
+    customer_id INT      COMMENT '使用的客戶ID',
+    order_id    INT      COMMENT '使用在哪張訂單，可為空',
+    redeemed_at DATETIME COMMENT '使用時間',
+    FOREIGN KEY (coupon_id) REFERENCES coupons(id),
+    FOREIGN KEY (customer_id) REFERENCES customers(id),
+    FOREIGN KEY (order_id) REFERENCES orders(id)
+  ) COMMENT '優惠券使用紀錄：哪位客戶在哪張訂單用了哪張券。券本身在 coupons，檔期折扣在 order_promotions';
+
+  CREATE TABLE coupons (
+    id              INT           PRIMARY KEY COMMENT '優惠券唯一ID',
+    code            VARCHAR(30)   COMMENT '優惠券代碼',
+    discount_amount DECIMAL(10,2) COMMENT '折抵金額',
+    valid_from      DATE          COMMENT '生效日',
+    valid_to        DATE          COMMENT '失效日'
+  ) COMMENT '優惠券主檔：券碼、折抵金額與有效期間。這是可輸入的券碼，與 promotions 檔期活動不同';
+
+  CREATE TABLE customer_contacts (
+    id            INT          PRIMARY KEY COMMENT '聯絡方式唯一ID',
+    customer_id   INT          COMMENT '所屬客戶ID',
+    contact_type  VARCHAR(20)  COMMENT '類型 (PHONE/EMAIL/LINE)',
+    contact_value VARCHAR(100) COMMENT '聯絡內容',
+    is_verified   TINYINT(1)   COMMENT '是否已驗證',
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  ) COMMENT '客戶聯絡方式：客戶登記的其他電話與信箱。主要聯絡方式在 customers';
+
+  CREATE TABLE customer_login_logs (
+    id           INT         PRIMARY KEY COMMENT '登入紀錄唯一ID',
+    customer_id  INT         COMMENT '登入的客戶ID',
+    logged_in_at DATETIME    COMMENT '登入時間',
+    ip           VARCHAR(45) COMMENT '來源IP，非業務欄位',
+    success      TINYINT(1)  COMMENT '是否登入成功',
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  ) COMMENT '客戶登入紀錄：每次登入留一筆，含失敗。最近一次登入時間在 customer_profiles.last_login_at';
+
+  CREATE TABLE customer_profiles (
+    customer_id               INT           PRIMARY KEY COMMENT '客戶ID',
+    birth_year                INT           COMMENT '出生年',
+    gender                    VARCHAR(10)   COMMENT '性別 (M/F/OTHER)',
+    occupation                VARCHAR(50)   COMMENT '職業',
+    education                 VARCHAR(30)   COMMENT '教育程度',
+    marital_status            VARCHAR(20)   COMMENT '婚姻狀態',
+    household_size            INT           COMMENT '家庭人數',
+    district                  VARCHAR(50)   COMMENT '行政區，比 customers.city 更細一層',
+    preferred_language        VARCHAR(20)   COMMENT '偏好語言',
+    registered_at             DATETIME      COMMENT '會員系統的註冊時間。與 customers.created_at 是不同系統的紀錄，可能有落差',
+    first_order_at            DATETIME      COMMENT '首次下單時間（快照）',
+    last_order_at             DATETIME      COMMENT '最近一次下單時間（快照）',
+    last_login_at             DATETIME      COMMENT '最近一次登入時間',
+    last_active_at            DATETIME      COMMENT '最近一次任何活動時間（登入、瀏覽、加購物車皆算）',
+    last_cart_at              DATETIME      COMMENT '最近一次加入購物車時間',
+    last_review_at            DATETIME      COMMENT '最近一次留評論時間',
+    email_verified_at         DATETIME      COMMENT 'Email 驗證通過時間，NULL 表示未驗證',
+    profile_updated_at        DATETIME      COMMENT '本檔案最後更新時間',
+    churned_at                DATETIME      COMMENT '判定流失的時間，NULL 表示未流失',
+    total_spent               DECIMAL(12,2) COMMENT '累計消費金額（每日結算快照，不含最近數日訂單，與即時 SUM(orders.total_amount) 可能不同）',
+    order_count               INT           COMMENT '累計訂單數（每日結算快照，與即時 COUNT(orders) 可能不同）',
+    avg_order_value           DECIMAL(12,2) COMMENT '平均訂單金額（快照）',
+    max_order_value           DECIMAL(12,2) COMMENT '最大單筆訂單金額（快照）',
+    total_items_bought        INT           COMMENT '累計購買件數（快照）',
+    return_count              INT           COMMENT '退貨次數（快照）',
+    refund_total              DECIMAL(12,2) COMMENT '累計退款金額（快照）',
+    review_count              INT           COMMENT '評論則數（快照）',
+    avg_review_score          DECIMAL(3,2)  COMMENT '平均給分（快照）',
+    browse_count              INT           COMMENT '瀏覽次數（快照）',
+    cart_abandon_count        INT           COMMENT '購物車放棄次數（快照）',
+    coupon_used_count         INT           COMMENT '使用過的優惠券次數（快照）',
+    email_opt_in              TINYINT(1)    COMMENT '是否同意 Email 行銷',
+    sms_opt_in                TINYINT(1)    COMMENT '是否同意簡訊行銷',
+    push_opt_in               TINYINT(1)    COMMENT '是否同意推播',
+    newsletter_opt_in         TINYINT(1)    COMMENT '是否訂閱電子報',
+    is_vip                    TINYINT(1)    COMMENT '是否為 VIP',
+    is_blacklisted            TINYINT(1)    COMMENT '是否列入黑名單',
+    is_employee               TINYINT(1)    COMMENT '是否為員工帳號',
+    prefers_pickup            TINYINT(1)    COMMENT '是否偏好門市自取',
+    preferred_category        VARCHAR(50)   COMMENT '偏好商品類別（行銷標記，非實際購買統計）',
+    preferred_payment_method  VARCHAR(30)   COMMENT '偏好付款方式（行銷標記，非實際付款統計）',
+    preferred_delivery_window VARCHAR(30)   COMMENT '偏好收貨時段',
+    referral_source           VARCHAR(30)   COMMENT '來源管道 (ORGANIC/AD/REFERRAL/SOCIAL)',
+    referred_by_customer_id   INT           COMMENT '推薦人的客戶ID',
+    consent_version           VARCHAR(10)   COMMENT '同意條款版本，非業務欄位',
+    tier                      VARCHAR(20)   COMMENT '會員等級 (BRONZE/SILVER/GOLD/PLATINUM)',
+    segment                   VARCHAR(30)   COMMENT '行銷分群 (NEW/GROWING/LOYAL/AT_RISK/DORMANT)',
+    lifecycle_stage           VARCHAR(30)   COMMENT '生命週期階段',
+    churn_risk_score          DECIMAL(4,3)  COMMENT '流失風險分數 0~1，越高越可能流失',
+    ltv_score                 DECIMAL(8,2)  COMMENT '預估終身價值分數',
+    engagement_score          DECIMAL(4,3)  COMMENT '互動活躍度分數 0~1',
+    satisfaction_score        DECIMAL(4,3)  COMMENT '滿意度分數 0~1，由評論與客服紀錄推估',
+    credit_limit              DECIMAL(12,2) COMMENT '信用額度',
+    loyalty_points            INT           COMMENT '目前紅利點數',
+    loyalty_tier_since        DATE          COMMENT '目前會員等級的生效日',
+    risk_flag                 VARCHAR(20)   COMMENT '風控標記 (NONE/WATCH/HIGH)',
+    sync_version              INT           COMMENT '同步版本號，非業務欄位',
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  ) COMMENT '客戶檔案寬表：客戶的人口統計、行銷偏好與同意設定、會員等級與分群、流失風險與終身價值分數，會員系統的註冊與最近活動時間，以及每日結算的消費統計快照。帳號狀態旗標（Email 驗證、黑名單、員工、VIP）、紅利點數與信用額度、推薦來源也在這張表。想知道客戶輪廓、分級、分群、活躍度或風險就看這張表';
+
+  CREATE TABLE delivery_attempts (
+    id           INT         PRIMARY KEY COMMENT '派送紀錄唯一ID',
+    shipment_id  INT         COMMENT '所屬出貨單ID',
+    attempt_no   INT         COMMENT '第幾次嘗試',
+    result       VARCHAR(20) COMMENT '派送結果 (DELIVERED/ABSENT/REFUSED)',
+    attempted_at DATETIME    COMMENT '派送時間',
+    FOREIGN KEY (shipment_id) REFERENCES shipments(id)
+  ) COMMENT '配送嘗試紀錄：每一次上門派送留一筆，含撲空。最終是否送達看 shipments.status';
+
+  CREATE TABLE departments (
+    id         INT         PRIMARY KEY COMMENT '部門唯一ID',
+    name       VARCHAR(50) COMMENT '部門名稱',
+    founded_at DATE        COMMENT '成立日期'
+  ) COMMENT '部門主檔：公司內部的部門名稱與成立時間。與商品分類 categories 無關';
+
+  CREATE TABLE employee_shifts (
+    id          INT          PRIMARY KEY COMMENT '班表唯一ID',
+    employee_id INT          COMMENT '員工ID',
+    shift_date  DATE         COMMENT '班表日期',
+    shift_type  VARCHAR(20)  COMMENT '班別 (MORNING/AFTERNOON/NIGHT)',
+    hours       DECIMAL(4,1) COMMENT '排定工時',
+    FOREIGN KEY (employee_id) REFERENCES employees(id)
+  ) COMMENT '員工班表：每位員工每天的班別與工時。這是排班不是出勤紀錄';
+
+  CREATE TABLE employees (
+    id            INT         PRIMARY KEY COMMENT '員工唯一ID',
+    department_id INT         COMMENT '所屬部門ID',
+    name          VARCHAR(50) COMMENT '員工姓名',
+    title         VARCHAR(50) COMMENT '職稱',
+    hired_at      DATE        COMMENT '到職日',
+    is_active     TINYINT(1)  COMMENT '是否在職',
+    FOREIGN KEY (department_id) REFERENCES departments(id)
+  ) COMMENT '員工主檔：公司內部人員的姓名、職稱與到職日。這是員工不是客戶，客戶在 customers';
+
+  CREATE TABLE error_reports (
+    id          INT          PRIMARY KEY COMMENT '錯誤唯一ID',
+    error_type  VARCHAR(50)  COMMENT '例外類型',
+    message     VARCHAR(200) COMMENT '錯誤訊息',
+    occurred_at DATETIME     COMMENT '發生時間'
+  ) COMMENT '錯誤回報：系統例外的類型、訊息與發生時間。工程除錯用，不是業務資料';
+
+  CREATE TABLE faq_articles (
+    id           INT          PRIMARY KEY COMMENT '文章唯一ID',
+    title        VARCHAR(100) COMMENT '文章標題',
+    category     VARCHAR(30)  COMMENT '文章分類',
+    published_at DATE         COMMENT '發布日期'
+  ) COMMENT '常見問題文章：標題、分類與發布時間。這是自助說明文件，客戶提出的工單在 support_tickets';
+
+  CREATE TABLE faq_votes (
+    id          INT        PRIMARY KEY COMMENT '投票唯一ID',
+    article_id  INT        COMMENT '文章ID',
+    customer_id INT        COMMENT '投票客戶ID，未登入為空',
+    is_helpful  TINYINT(1) COMMENT '是否有幫助',
+    voted_at    DATETIME   COMMENT '投票時間',
+    FOREIGN KEY (article_id) REFERENCES faq_articles(id),
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  ) COMMENT '常見問題投票：客戶對文章按有幫助或沒幫助。這不是商品評價，商品評價在 reviews';
+
+  CREATE TABLE feature_flags (
+    id         INT         PRIMARY KEY COMMENT '旗標唯一ID',
+    flag_key   VARCHAR(50) COMMENT '旗標名稱',
+    is_enabled TINYINT(1)  COMMENT '是否啟用',
+    updated_at DATETIME    COMMENT '最後更新時間'
+  ) COMMENT '功能開關：每個功能旗標目前是否開啟。工程團隊維護，不是業務資料';
+
+  CREATE TABLE gift_card_transactions (
+    id           INT           PRIMARY KEY COMMENT '交易唯一ID',
+    gift_card_id INT           COMMENT '禮物卡ID',
+    order_id     INT           COMMENT '消費對應的訂單ID，儲值時為空',
+    amount       DECIMAL(10,2) COMMENT '異動金額，正數儲值、負數消費',
+    occurred_at  DATETIME      COMMENT '異動時間',
+    FOREIGN KEY (gift_card_id) REFERENCES gift_cards(id),
+    FOREIGN KEY (order_id) REFERENCES orders(id)
+  ) COMMENT '禮物卡交易明細：每次儲值或扣款一筆。正數是儲值、負數是消費';
+
+  CREATE TABLE gift_cards (
+    id          INT           PRIMARY KEY COMMENT '禮物卡唯一ID',
+    card_no     VARCHAR(30)   COMMENT '禮物卡卡號',
+    customer_id INT           COMMENT '持卡客戶ID，未指定持有人為空',
+    face_value  DECIMAL(10,2) COMMENT '面額',
+    balance     DECIMAL(10,2) COMMENT '目前餘額',
+    issued_at   DATE          COMMENT '發卡日期',
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  ) COMMENT '禮物卡主檔：卡號、面額與目前餘額。餘額是卡片的儲值餘額，不是客戶的信用額度';
+
+  CREATE TABLE invoices (
+    id         INT         PRIMARY KEY COMMENT '發票唯一ID',
+    order_id   INT         COMMENT '對應訂單ID',
+    invoice_no VARCHAR(20) COMMENT '發票號碼',
+    carrier    VARCHAR(30) COMMENT '載具號碼',
+    issued_at  DATETIME    COMMENT '開立時間',
+    is_voided  TINYINT(1)  COMMENT '是否已作廢',
+    FOREIGN KEY (order_id) REFERENCES orders(id)
+  ) COMMENT '發票開立紀錄：發票號碼、開立時間與載具。實際收款金額在 payments';
+
+  CREATE TABLE job_runs (
+    id          INT         PRIMARY KEY COMMENT '執行紀錄唯一ID',
+    job_name    VARCHAR(50) COMMENT '工作名稱',
+    started_at  DATETIME    COMMENT '開始時間',
+    finished_at DATETIME    COMMENT '結束時間',
+    status      VARCHAR(20) COMMENT '執行結果 (SUCCESS/FAILED/RUNNING)'
+  ) COMMENT '背景排程執行紀錄：每次批次工作的起訖與結果。維運監控用，不是業務資料';
+
+  CREATE TABLE loyalty_points (
+    id          INT         PRIMARY KEY COMMENT '點數異動唯一ID',
+    customer_id INT         COMMENT '客戶ID',
+    order_id    INT         COMMENT '關聯訂單ID，非消費取得時為空',
+    points      INT         COMMENT '異動點數，正數獲得、負數使用',
+    reason      VARCHAR(30) COMMENT '異動原因 (PURCHASE/REDEEM/EXPIRE/BONUS)',
+    occurred_at DATETIME    COMMENT '異動時間',
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  ) COMMENT '會員點數異動：每次獲得或使用點數留一筆。點數不是金額，也不是任何評分';
+
+  CREATE TABLE newsletter_subscriptions (
+    id              INT      PRIMARY KEY COMMENT '訂閱唯一ID',
+    customer_id     INT      COMMENT '客戶ID',
+    subscribed_at   DATETIME COMMENT '訂閱時間',
+    unsubscribed_at DATETIME COMMENT '退訂時間，仍訂閱中為空',
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  ) COMMENT '電子報訂閱：哪些客戶訂閱了電子報、是否已退訂。這是收信意願，付費訂閱方案在 subscriptions';
+
+  CREATE TABLE newsletters (
+    id      INT          PRIMARY KEY COMMENT '電子報唯一ID',
+    subject VARCHAR(100) COMMENT '電子報主旨',
+    sent_at DATETIME     COMMENT '寄送時間'
+  ) COMMENT '電子報主檔：每一期電子報的主旨與寄送時間。這是群發信，購物車挽回信在 cart_recovery_emails';
+
+  CREATE TABLE order_assignments (
+    id          INT      PRIMARY KEY COMMENT '指派紀錄唯一ID',
+    order_id    INT      COMMENT '被指派的訂單ID',
+    employee_id INT      COMMENT '負責的員工ID',
+    assigned_at DATETIME COMMENT '指派時間',
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (employee_id) REFERENCES employees(id)
+  ) COMMENT '訂單處理指派：哪位員工負責處理這張訂單。一張訂單可能轉手多次，最後一筆才是現任負責人';
+
+  CREATE TABLE order_cancellations (
+    id           INT          PRIMARY KEY COMMENT '取消紀錄唯一ID',
+    order_id     INT          COMMENT '被取消的訂單ID',
+    reason       VARCHAR(100) COMMENT '取消原因',
+    cancelled_by VARCHAR(20)  COMMENT '取消發起方 (CUSTOMER/SYSTEM/STAFF)',
+    cancelled_at DATETIME     COMMENT '取消時間',
+    FOREIGN KEY (order_id) REFERENCES orders(id)
+  ) COMMENT '訂單取消紀錄：取消的原因與時間。訂單是否已取消請看 orders.status = ''CANCELLED''';
+
+  CREATE TABLE order_notes (
+    id          INT        PRIMARY KEY COMMENT '備註唯一ID',
+    order_id    INT        COMMENT '所屬訂單ID',
+    note        TEXT       COMMENT '備註內容',
+    is_internal TINYINT(1) COMMENT '是否為內部備註，客戶看不到',
+    created_at  DATETIME   COMMENT '備註時間',
+    FOREIGN KEY (order_id) REFERENCES orders(id)
+  ) COMMENT '訂單備註：客服或客戶在訂單上留的文字備註，與商品評論無關';
+
+  CREATE TABLE order_returns (
+    id           INT         PRIMARY KEY COMMENT '退貨單唯一ID',
+    order_id     INT         COMMENT '對應訂單ID',
+    product_id   INT         COMMENT '退回的商品ID',
+    quantity     INT         COMMENT '退回數量',
+    status       VARCHAR(20) COMMENT '退貨狀態 (REQUESTED/RECEIVED/REJECTED)',
+    requested_at DATETIME    COMMENT '申請時間',
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  ) COMMENT '退貨申請單：客戶寄回商品的申請與處理狀態。退款金額在 refunds，這裡只管實體退貨';
+
+  CREATE TABLE order_status_history (
+    id          INT         PRIMARY KEY COMMENT '異動紀錄唯一ID',
+    order_id    INT         COMMENT '所屬訂單ID',
+    from_status VARCHAR(20) COMMENT '異動前狀態',
+    to_status   VARCHAR(20) COMMENT '異動後狀態',
+    changed_at  DATETIME    COMMENT '狀態變更時間',
+    changed_by  VARCHAR(50) COMMENT '異動者帳號，非業務欄位',
+    FOREIGN KEY (order_id) REFERENCES orders(id)
+  ) COMMENT '訂單狀態異動歷程：每次狀態變更留一筆，記錄前後狀態與異動時間。想看訂單「現在」的狀態請用 orders.status';
+
+  CREATE TABLE payment_attempts (
+    id           INT         PRIMARY KEY COMMENT '嘗試紀錄唯一ID',
+    order_id     INT         COMMENT '對應訂單ID',
+    method_id    INT         COMMENT '嘗試使用的付款方式ID',
+    result       VARCHAR(20) COMMENT '嘗試結果：OK 成功；DECLINED 銀行拒絕、TIMEOUT 逾時未回應，這兩者都算失敗',
+    attempted_at DATETIME    COMMENT '嘗試時間',
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (method_id) REFERENCES payment_methods(id)
+  ) COMMENT '付款嘗試紀錄：每次刷卡嘗試都留一筆，含失敗的。成功的付款結果在 payments';
+
+  CREATE TABLE product_bundles (
+    id                INT PRIMARY KEY COMMENT '組合關係唯一ID',
+    bundle_product_id INT COMMENT '組合包本身的商品ID',
+    item_product_id   INT COMMENT '包含的單品商品ID',
+    quantity          INT COMMENT '包含幾件',
+    FOREIGN KEY (bundle_product_id) REFERENCES products(id),
+    FOREIGN KEY (item_product_id) REFERENCES products(id)
+  ) COMMENT '商品組合包：一個組合包由多個商品構成，例如超值三入組';
+
+  CREATE TABLE product_images (
+    id         INT          PRIMARY KEY COMMENT '圖片唯一ID',
+    product_id INT          COMMENT '商品ID',
+    url        VARCHAR(200) COMMENT '圖片路徑',
+    is_primary TINYINT(1)   COMMENT '是否為主圖',
+    sort_order INT          COMMENT '顯示順序',
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  ) COMMENT '商品圖片：主圖與附圖的檔案路徑與排序';
+
+  CREATE TABLE product_price_history (
+    id         INT           PRIMARY KEY COMMENT '調價紀錄唯一ID',
+    product_id INT           COMMENT '商品ID',
+    old_price  DECIMAL(10,2) COMMENT '調整前售價',
+    new_price  DECIMAL(10,2) COMMENT '調整後售價',
+    changed_at DATETIME      COMMENT '調價時間',
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  ) COMMENT '商品售價異動歷程：每次調價留一筆。商品「現在」的售價在 products.price';
+
+  CREATE TABLE product_qna (
+    id          INT      PRIMARY KEY COMMENT '問答唯一ID',
+    product_id  INT      COMMENT '被提問的商品ID',
+    customer_id INT      COMMENT '提問的客戶ID',
+    question    TEXT     COMMENT '問題內容',
+    answer      TEXT     COMMENT '回覆內容，尚未回覆為空',
+    answered_by INT      COMMENT '回覆的員工ID',
+    asked_at    DATETIME COMMENT '提問時間',
+    FOREIGN KEY (product_id) REFERENCES products(id),
+    FOREIGN KEY (customer_id) REFERENCES customers(id),
+    FOREIGN KEY (answered_by) REFERENCES employees(id)
+  ) COMMENT '商品問答：客戶對商品提出的問題與客服回覆。這是購買前的提問，與商品評價 reviews、客服工單 support_tickets 都不同';
+
+  CREATE TABLE product_recommendations (
+    id                     INT PRIMARY KEY COMMENT '推薦唯一ID',
+    product_id             INT COMMENT '來源商品ID',
+    recommended_product_id INT COMMENT '被推薦的商品ID',
+    rank_no                INT COMMENT '推薦排序，1 為最前',
+    FOREIGN KEY (product_id) REFERENCES products(id),
+    FOREIGN KEY (recommended_product_id) REFERENCES products(id)
+  ) COMMENT '商品推薦關聯：系統為某商品推薦的其他商品。這是演算法推薦，不是實際的共同購買紀錄';
+
+  CREATE TABLE product_stock_snapshots (
+    id            INT  PRIMARY KEY COMMENT '快照唯一ID',
+    product_id    INT  COMMENT '商品ID',
+    snapshot_date DATE COMMENT '快照日期',
+    stock_qty     INT  COMMENT '該日結算的庫存數',
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  ) COMMENT '商品庫存每日快照：每天結算一次的庫存數。即時庫存在 products.stock';
+
+  CREATE TABLE product_tags (
+    id         INT         PRIMARY KEY COMMENT '標籤紀錄唯一ID',
+    product_id INT         COMMENT '商品ID',
+    tag        VARCHAR(30) COMMENT '標籤文字',
+    tagged_at  DATETIME    COMMENT '標記時間',
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  ) COMMENT '商品標籤：行銷用的自由標籤，例如「熱銷」「新品」。與 products.category 主分類、product_categories 關聯表都不同';
+
+  CREATE TABLE product_variants (
+    id         INT         PRIMARY KEY COMMENT '變體唯一ID',
+    product_id INT         COMMENT '所屬商品ID',
+    color      VARCHAR(20) COMMENT '顏色',
+    size       VARCHAR(20) COMMENT '尺寸',
+    is_default TINYINT(1)  COMMENT '是否為預設變體',
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  ) COMMENT '商品規格變體：同一款商品的顏色與尺寸組合。商品主檔在 products，規格說明在 product_specs';
+
+  CREATE TABLE promotion_rules (
+    id           INT           PRIMARY KEY COMMENT '規則唯一ID',
+    promotion_id INT           COMMENT '所屬促銷活動ID',
+    min_amount   DECIMAL(10,2) COMMENT '最低消費門檻',
+    stackable    TINYINT(1)    COMMENT '是否可與其他活動疊加',
+    applies_to   VARCHAR(30)   COMMENT '適用範圍 (ALL/CATEGORY/PRODUCT)',
+    FOREIGN KEY (promotion_id) REFERENCES promotions(id)
+  ) COMMENT '促銷活動的適用條件：門檻金額、可疊加與否等。折扣數值本身在 promotions';
+
+  CREATE TABLE return_shipments (
+    id          INT         PRIMARY KEY COMMENT '退貨物流唯一ID',
+    return_id   INT         COMMENT '對應退貨申請ID',
+    tracking_no VARCHAR(30) COMMENT '物流單號',
+    shipped_at  DATETIME    COMMENT '客戶寄出時間',
+    received_at DATETIME    COMMENT '倉庫收到時間，尚未收到為空',
+    FOREIGN KEY (return_id) REFERENCES order_returns(id)
+  ) COMMENT '退貨物流：客戶把商品寄回時的物流單號與收件時間。退貨申請在 order_returns，退款在 refunds';
+
+  CREATE TABLE review_replies (
+    id         INT      PRIMARY KEY COMMENT '回覆唯一ID',
+    review_id  INT      COMMENT '被回覆的評論ID',
+    reply_text TEXT     COMMENT '回覆內容',
+    replied_at DATETIME COMMENT '回覆時間',
+    FOREIGN KEY (review_id) REFERENCES reviews(id)
+  ) COMMENT '評論回覆：商家對客戶評論的回應內容';
+
+  CREATE TABLE schema_migrations (
+    id         INT         PRIMARY KEY COMMENT '遷移紀錄唯一ID',
+    version    VARCHAR(30) COMMENT '版本編號',
+    applied_at DATETIME    COMMENT '套用時間',
+    checksum   VARCHAR(64) COMMENT '腳本雜湊值'
+  ) COMMENT '資料庫版本遷移紀錄：每次 schema 變更執行過哪一個版本。部署工具寫入，不是業務資料';
+
+  CREATE TABLE search_logs (
+    id           INT         PRIMARY KEY COMMENT '搜尋紀錄唯一ID',
+    customer_id  INT         COMMENT '客戶ID，未登入為空',
+    keyword      VARCHAR(50) COMMENT '搜尋關鍵字',
+    result_count INT         COMMENT '命中筆數',
+    searched_at  DATETIME    COMMENT '搜尋時間',
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  ) COMMENT '站內搜尋紀錄：客戶輸入的關鍵字與命中筆數。搜尋不是瀏覽也不是購買，瀏覽在 browse_logs';
+
+  CREATE TABLE service_appointments (
+    id           INT         PRIMARY KEY COMMENT '預約唯一ID',
+    customer_id  INT         COMMENT '預約客戶ID',
+    store_id     INT         COMMENT '預約門市ID',
+    service_type VARCHAR(30) COMMENT '服務類型 (REPAIR/CONSULT/INSTALL)',
+    scheduled_at DATETIME    COMMENT '預約時間',
+    attended     TINYINT(1)  COMMENT '是否實際到場',
+    FOREIGN KEY (store_id) REFERENCES stores(id),
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  ) COMMENT '到店服務預約：客戶預約到哪間門市、什麼時間、做什麼服務。這是預約不是取貨，取貨在 store_pickups';
+
+  CREATE TABLE store_pickups (
+    id           INT      PRIMARY KEY COMMENT '取貨紀錄唯一ID',
+    order_id     INT      COMMENT '對應訂單ID',
+    store_id     INT      COMMENT '取貨門市ID',
+    picked_up_at DATETIME COMMENT '實際取貨時間，未取貨為空',
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (store_id) REFERENCES stores(id)
+  ) COMMENT '門市取貨紀錄：訂單選擇到店取貨時，在哪間門市、什麼時候取走。宅配出貨在 shipments';
+
+  CREATE TABLE store_staff (
+    id          INT  PRIMARY KEY COMMENT '配置唯一ID',
+    store_id    INT  COMMENT '門市ID',
+    employee_id INT  COMMENT '員工ID',
+    assigned_at DATE COMMENT '派駐起始日',
+    FOREIGN KEY (store_id) REFERENCES stores(id),
+    FOREIGN KEY (employee_id) REFERENCES employees(id)
+  ) COMMENT '門市人員配置：哪位員工在哪間門市服務。這是實體門市的人力，倉庫人力在 warehouse_staff';
+
+  CREATE TABLE stores (
+    id        INT         PRIMARY KEY COMMENT '門市唯一ID',
+    name      VARCHAR(50) COMMENT '門市名稱',
+    city      VARCHAR(50) COMMENT '門市所在城市',
+    opened_at DATE        COMMENT '開幕日期',
+    is_active TINYINT(1)  COMMENT '是否仍在營業'
+  ) COMMENT '實體門市主檔：店名、所在城市與開幕日。這是實體店面，不是倉庫（倉庫在 warehouses）';
+
+  CREATE TABLE subscriptions (
+    id          INT         PRIMARY KEY COMMENT '訂閱唯一ID',
+    customer_id INT         COMMENT '訂閱的客戶ID',
+    plan_name   VARCHAR(30) COMMENT '方案名稱',
+    status      VARCHAR(20) COMMENT '訂閱狀態 (ACTIVE/PAUSED/CANCELLED)',
+    started_at  DATE        COMMENT '訂閱起始日',
+    ended_at    DATE        COMMENT '訂閱結束日，仍在訂閱中為空',
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  ) COMMENT '訂閱方案：客戶訂閱的方案名稱、狀態與起訖日。這是定期訂閱，與單次訂單 orders 不同';
+
+  CREATE TABLE supplier_contracts (
+    id            INT         PRIMARY KEY COMMENT '合約唯一ID',
+    supplier_id   INT         COMMENT '供應商ID',
+    contract_no   VARCHAR(30) COMMENT '合約編號',
+    starts_at     DATE        COMMENT '合約起始日',
+    ends_at       DATE        COMMENT '合約到期日',
+    payment_terms VARCHAR(30) COMMENT '付款條件，例如月結30天',
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+  ) COMMENT '供應商合約：合約期間與付款條件。單一商品的進貨價在 product_suppliers';
+
+  CREATE TABLE support_tickets (
+    id          INT          PRIMARY KEY COMMENT '工單唯一ID',
+    customer_id INT          COMMENT '提出的客戶ID',
+    order_id    INT          COMMENT '相關訂單ID，可為空',
+    subject     VARCHAR(100) COMMENT '問題主旨',
+    status      VARCHAR(20)  COMMENT '工單狀態 (OPEN/PENDING/CLOSED)',
+    created_at  DATETIME     COMMENT '建立時間',
+    FOREIGN KEY (customer_id) REFERENCES customers(id),
+    FOREIGN KEY (order_id) REFERENCES orders(id)
+  ) COMMENT '客服工單：客戶提出的問題與處理狀態，與商品評價無關';
+
+  CREATE TABLE user_sessions (
+    id          INT         PRIMARY KEY COMMENT 'Session 唯一ID',
+    session_key VARCHAR(64) COMMENT 'Session 金鑰',
+    customer_id INT         COMMENT '對應客戶ID，未登入為空',
+    created_at  DATETIME    COMMENT '建立時間',
+    expires_at  DATETIME    COMMENT '到期時間',
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  ) COMMENT '登入工作階段：網站 session 的建立與到期。框架自動維護，不是業務資料。客戶登入事件請看 customer_login_logs';
+
+  CREATE TABLE variant_barcodes (
+    id            INT         PRIMARY KEY COMMENT '條碼唯一ID',
+    variant_id    INT         COMMENT '變體ID',
+    barcode       VARCHAR(20) COMMENT '條碼字串',
+    registered_at DATE        COMMENT '登錄日期',
+    FOREIGN KEY (variant_id) REFERENCES product_variants(id)
+  ) COMMENT '變體條碼：每個規格變體對應的國際條碼。一個變體可能有多組條碼（改版）';
+
+  CREATE TABLE warehouse_staff (
+    id           INT  PRIMARY KEY COMMENT '配置唯一ID',
+    warehouse_id INT  COMMENT '倉庫ID',
+    employee_id  INT  COMMENT '員工ID',
+    assigned_at  DATE COMMENT '派駐起始日',
+    FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+    FOREIGN KEY (employee_id) REFERENCES employees(id)
+  ) COMMENT '倉庫人員配置：哪位員工被派駐在哪個倉庫。員工主檔在 employees，倉庫主檔在 warehouses';
+
+  CREATE TABLE warehouse_transfers (
+    id                INT      PRIMARY KEY COMMENT '調撥單唯一ID',
+    from_warehouse_id INT      COMMENT '來源倉庫ID',
+    to_warehouse_id   INT      COMMENT '目的倉庫ID',
+    product_id        INT      COMMENT '調撥商品ID',
+    quantity          INT      COMMENT '調撥數量',
+    transferred_at    DATETIME COMMENT '調撥時間',
+    FOREIGN KEY (from_warehouse_id) REFERENCES warehouses(id),
+    FOREIGN KEY (to_warehouse_id) REFERENCES warehouses(id),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  ) COMMENT '倉庫調撥單：商品在兩個倉庫之間移動的紀錄，不是出貨給客戶';
+
+  CREATE TABLE warranty_claims (
+    id         INT         PRIMARY KEY COMMENT '保固申請唯一ID',
+    order_id   INT         COMMENT '購買時的訂單ID',
+    product_id INT         COMMENT '申請保固的商品ID',
+    status     VARCHAR(20) COMMENT '處理狀態 (SUBMITTED/APPROVED/REJECTED/DONE)',
+    claimed_at DATETIME    COMMENT '申請時間',
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  ) COMMENT '保固申請：客戶對已購商品提出的保固維修申請與處理狀態。這不是退貨，退貨在 order_returns';
+
+  CREATE TABLE wishlist_items (
+    id          INT      PRIMARY KEY COMMENT '品項唯一ID',
+    wishlist_id INT      COMMENT '所屬清單ID',
+    product_id  INT      COMMENT '收藏的商品ID',
+    added_at    DATETIME COMMENT '加入時間',
+    FOREIGN KEY (wishlist_id) REFERENCES wishlists(id),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  ) COMMENT '願望清單品項：清單裡收藏了哪些商品。收藏 ≠ 購買，銷售請看 order_items';
+
+  CREATE TABLE wishlists (
+    id          INT         PRIMARY KEY COMMENT '清單唯一ID',
+    customer_id INT         COMMENT '建立清單的客戶ID',
+    name        VARCHAR(50) COMMENT '清單名稱',
+    created_at  DATETIME    COMMENT '建立時間',
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  ) COMMENT '願望清單主檔：客戶建立的收藏清單。加入願望清單不是購買，也不是加入購物車';
 
 
 # =============================================================================
@@ -306,11 +889,6 @@ enum_fields:
 #    正確率由 7/8 掉到 3/8，且錯誤是語法合法的靜默錯答，AST 與 EXPLAIN 都攔不到。
 #    因此以群組量詞的正確形狀重新寫回。
 business_rules:
-  - name: "訂單總金額 / 總營收 / 總消費"
-    description: "計算金額時使用 orders.total_amount，這已是每張訂單的最終合計金額。"
-    correct_sql: "SUM(o.total_amount)"
-    wrong_sql:   "SUM(oi.quantity * oi.unit_price)  -- ⚠️ 可用於驗算，但非首選"
-
   - name: "客戶人數"
     description: "計算不重複的客戶數，避免因多筆訂單而重複計算同一位客戶。"
     correct_sql: "COUNT(DISTINCT customer_id)"
@@ -415,6 +993,50 @@ business_rules:
       SELECT COUNT(*) FROM orders o JOIN shipments s ON o.id = s.order_id
       WHERE status = 'COMPLETED';
 
+  - name: "利潤率 / 毛利 / 成本 沒有定義，不可用進貨價推導"
+    description: |
+      product_suppliers.supply_price 是「進貨價」，但它不等於商品成本：
+      同一個商品可以有多個供應商、多個進貨價，該取哪一個（最低？最高？平均？
+      最近一次？）沒有任何業務定義，取法不同答案就不同。
+      本 semantic layer 也沒有定義利潤率的計算公式。
+      因此問到利潤率、毛利率、成本、賺多少時，一律觸發防禦暗號，
+      不可自行挑一個聚合方式湊出公式 —— 那是猜的，不是算的。
+    correct_sql: |
+      SELECT 'SCHEMA_UNSUPPORTED' AS system_error_flag;
+    wrong_sql: |
+      -- ❌ MIN 是憑空選的，換成 MAX 或 AVG 答案就不一樣
+      SELECT p.name, (p.price - MIN(ps.supply_price)) / p.price AS profit_margin
+      FROM products p JOIN product_suppliers ps ON p.id = ps.product_id
+      GROUP BY p.id, p.name ORDER BY profit_margin DESC;
+
+  - name: "庫存週轉率 / 週轉天數 沒有定義，不可用出貨量除以容量硬湊"
+    description: |
+      週轉率的定義是「期間出庫成本 ÷ 平均在庫存貨」。本資料庫**兩邊都沒有**：
+        warehouses.capacity 是**容量上限**，不是在庫量 —— 一個空倉庫的 capacity
+                            跟一個滿倉的一樣，拿它當分母算出來的數字沒有意義。
+        products.stock      是**目前**庫存的單一數字，沒有期初／期末，
+                            無法構成「平均在庫」。
+      也沒有任何規則定義週轉率該怎麼算。所以問到庫存週轉率、週轉天數、
+      存貨周轉、turnover 時，一律觸發防禦暗號。
+      實測模型會寫出 SUM(出貨數量) / capacity 這種式子 —— 那是把兩個不相干的
+      量相除，SQL 合法、EXPLAIN 會過、只有數字沒有意義。
+
+      **邊界（這些是答得出來的，不要一起擋掉）**：
+        「每個倉庫的容量是多少」          → warehouses.capacity，直接答
+        「每個倉庫出貨了幾張單／幾件」    → shipments / order_items 聚合，直接答
+        「哪些商品庫存最少 / 庫存是 0」   → products.stock，直接答
+      擋的是「週轉」這個**沒有定義的比率**，不是庫存與出貨這兩個有資料的量。
+    correct_sql: |
+      SELECT 'SCHEMA_UNSUPPORTED' AS system_error_flag;
+    wrong_sql: |
+      -- ❌ 實測產出過的假公式：capacity 是容量上限不是在庫量，
+      --    出貨件數也不是出庫成本，兩者相除不是任何一種週轉率
+      SELECT w.id, w.name, COALESCE(SUM(oi.quantity), 0) / w.capacity AS turnover_rate
+      FROM warehouses w
+      LEFT JOIN shipments s ON s.warehouse_id = w.id
+      LEFT JOIN order_items oi ON oi.order_id = s.order_id
+      GROUP BY w.id, w.name;
+
   - name: "商品分類的權威來源是 products.category"
     description: |
       商品分類有兩種表示法並存，問「某類別有哪些商品 / 幾種商品 / 營收多少」時
@@ -489,6 +1111,17 @@ few_shot_examples:
       從 order_items JOIN products，用 SUM(quantity*unit_price) 計算各商品營收。
       「最高」是極值問題，可能有並列，不可用 LIMIT 1，
       必須用 DENSE_RANK() 取出所有第 1 名。
+
+      **邊界 —— DENSE_RANK 是給「極值」的，不是給「前 N 名清單」的**：
+        「最高 / 最多 / 最少 / 哪一個最…」→ 問的是**第一名這個位置**，
+            有幾個並列就答幾個，用 `DENSE_RANK() ... WHERE rnk = 1`。
+        「前 5 位 / 前 10 名 / Top N」    → 問的是**一份 N 筆的清單**，
+            使用者要的就是 N 筆。用 `ORDER BY … DESC, <唯一鍵> LIMIT N`，
+            加第二排序鍵讓平手時的取捨固定下來。
+      **把 `rnk <= N` 當成 top-N 是錯的**：DENSE_RANK 排的是「不同的值」，
+      `rnk <= 5` 取的是前 5 個**不同的數量**，不是前 5 **位**。
+      實測「訂單張數最多的前 5 位客戶」——張數是 10/8/8/7/7/7/7/6/6/6/5/5…，
+      `rnk <= 5`（10、8、7、6、5 這五個值）撈出 14 位客戶、52 列，正解是 5 位、19 列。
     sql: |
       WITH ranked AS (
         SELECT p.name, SUM(oi.quantity * oi.unit_price) AS total_revenue,
@@ -499,10 +1132,26 @@ few_shot_examples:
       )
       SELECT name, total_revenue FROM ranked WHERE rnk = 1;
 
+  - question: "各商品類別的總營收分別是多少？"
+    reasoning: |
+      營收的公式取決於「粒度」：
+      問的是訂單本身（幾張訂單、單筆多少、某客戶花了多少）→ 用 orders.total_amount；
+      問的是訂單「裡面」的東西（類別、商品、供應商）→ 一張訂單常橫跨多個類別，
+      total_amount 無法拆給其中任一類別，硬算會讓同一張訂單在每個類別各記一次全額，
+      只能用品項金額 SUM(oi.quantity * oi.unit_price)。
+      （兩式在全庫加總時相等，但一往訂單以下切就會發散。）
+    sql: |
+      SELECT p.category, SUM(oi.quantity * oi.unit_price) AS total_revenue
+      FROM order_items oi
+      JOIN products p ON oi.product_id = p.id
+      GROUP BY p.category
+      ORDER BY total_revenue DESC;
+
   - question: "哪一天的訂單數量最多？"
     reasoning: |
       按日期分組計數後取極值。同樣的訂單數可能發生在好幾天（並列），
       不可用 LIMIT 1，必須用 DENSE_RANK() 列出所有筆數最多的日期。
+      （這是「極值」，`rnk = 1`；問「前 N 天」要改用 LIMIT N，見上面那題的邊界說明。）
       「單日營業額最高是哪一天」也是同一個形狀，把 COUNT(*) 換成 SUM(o.total_amount) 即可。
     sql: |
       WITH ranked AS (
@@ -528,6 +1177,108 @@ few_shot_examples:
       LEFT JOIN orders o ON c.id = o.customer_id
       WHERE o.id IS NULL
       ORDER BY c.name;
+
+  - question: "哪些客戶買過「機械鍵盤」？"
+    reasoning: |
+      問「哪些客戶」時答案是一份名單，一位客戶只能出現一次。但 JOIN 到一對多的
+      明細表之後，買過幾次就會多出幾列，必須對主體收斂回「一人一列」。
+      收斂要用 GROUP BY c.id, c.name 而不是 SELECT DISTINCT c.name ——
+      資料裡有同名不同人的客戶，只對姓名去重會把兩個人併成一個。
+      （反之，問「哪些訂單」「哪幾筆」時本來就該一筆一列，不可去重。）
+    sql: |
+      SELECT c.name
+      FROM customers c
+      JOIN orders o ON c.id = o.customer_id
+      JOIN order_items oi ON o.id = oi.order_id
+      JOIN products p ON oi.product_id = p.id
+      WHERE p.name = '機械鍵盤'
+      GROUP BY c.id, c.name
+      ORDER BY c.name;
+
+  - question: "有哪些客戶的訂單被取消過？"
+    reasoning: |
+      同一個「主體收斂」規則，換成「JOIN 明細表後用狀態篩選」的形狀。
+      這一題三種寫法會得到三個不同的答案，可以看清楚兩種錯誤各長什麼樣：
+        不收斂（直接 JOIN 後選 name）        → 17 列，同一位客戶取消幾張就出現幾次
+        SELECT DISTINCT c.name              → 13 列，把同名不同人的客戶併掉了
+        GROUP BY c.id, c.name（正確）        → 15 位客戶
+      判斷方式永遠一樣：問句要的是「客戶」這個實體，就以 customers.id 收斂，
+      而不是以顯示用的姓名收斂。姓名只是拿來顯示的欄位，不是身分。
+    sql: |
+      SELECT c.name
+      FROM customers c
+      JOIN orders o ON c.id = o.customer_id
+      WHERE o.status = 'CANCELLED'
+      GROUP BY c.id, c.name
+      ORDER BY c.name;
+
+  - question: "從來沒有下過 PENDING 訂單的客戶有哪些？"
+    reasoning: |
+      同一個規則，換成「反向連接（NOT IN / NOT EXISTS）」的形狀。
+      這個形狀本來就一位客戶一列，不會扇出，所以**不需要**再收斂 ——
+      但也絕對不可以為了保險加上 SELECT DISTINCT c.name：
+      符合條件的是 33 位客戶，其中有同名不同人，加了 DISTINCT 只剩 32 列，
+      憑空少掉一個人。
+      通則：DISTINCT 不是「保險起見加了不會錯」的東西。要收斂就對 id 收斂，
+      不會扇出的查詢就什麼都不要加。
+    sql: |
+      SELECT name
+      FROM customers
+      WHERE id NOT IN (
+        SELECT customer_id FROM orders WHERE status = 'PENDING'
+      )
+      ORDER BY name;
+
+  - question: "被加入過購物車的商品，佔全部商品的比例是多少？"
+    reasoning: |
+      同一個「主體收斂」規則，換成「佔比」的形狀 —— 而佔比的陷阱在**分母**。
+      這裡問的是「商品」的比例，所以分子分母都必須以商品為單位：
+        分母 = 全部商品數 = COUNT(*) FROM products
+        分子 = 曾出現在 cart_items 裡的相異商品數
+      最常見的錯法是先 LEFT JOIN 再算：
+        SELECT COUNT(DISTINCT ci.product_id) / COUNT(*)
+        FROM products p LEFT JOIN cart_items ci ON p.id = ci.product_id
+      分子有 DISTINCT 收斂回商品，**分母的 COUNT(*) 卻沒有** —— 它數的是
+      JOIN 之後的列數（一個商品被加入幾次就算幾次），分母被灌大，比例偏低。
+      SQL 合法、EXPLAIN 也會過，只有數字是錯的。
+      正確做法是讓分子分母各自獨立成純量子查詢，兩邊都不受 JOIN 扇出影響。
+      通則：算比例時先問「這個比例的單位是什麼」，分子分母都要收斂到那個單位。
+    sql: |
+      SELECT (SELECT COUNT(DISTINCT product_id) FROM cart_items) * 100.0
+             / (SELECT COUNT(*) FROM products) AS pct;
+
+  - question: "有哪些客戶的訂單時間早於自己的註冊時間？"
+    reasoning: |
+      同一個「主體收斂」規則，換成**這一族最難的形狀：WHERE 的兩邊各來自
+      JOIN 的一邊**（o.order_date 來自子表、c.created_at 來自母表）。
+      前面幾題的條件都是「子表欄位 vs 常數」，一眼看得出主體是客戶；
+      這裡條件是「子表欄位 vs 母表欄位」，符合條件的東西看起來像是**那個配對**
+      （這張訂單配這位客戶），於是很自然就一筆配對寫一列。
+      實際數字：符合條件的訂單有 57 張，但**客戶只有 20 位**。
+      判斷方式不變，而且只看問句：問句問「哪些客戶」，單位就是客戶，
+      跟 WHERE 裡出現了幾張表無關。跨表比較只是條件的寫法，不是答案的單位。
+      注意兩張表都有時間欄位、名字也像，比較時每一邊都要帶表別名，
+      寫錯邊會得到一個合法但無意義的結果。
+    sql: |
+      SELECT c.name
+      FROM customers c
+      JOIN orders o ON c.id = o.customer_id
+      WHERE o.order_date < c.created_at
+      GROUP BY c.id, c.name
+      ORDER BY c.name;
+
+  - question: "每個商品各有幾則評論？"
+    reasoning: |
+      reviews.is_deleted = 1 代表這則評論已被刪除，只是還留在表裡（軟刪除）。
+      任何評論相關的統計都要先排除已刪除的，否則會把刪掉的內容算進去。
+      這條同樣適用於平均分、評論數、找出沒有評論的商品等所有問法。
+    sql: |
+      SELECT p.name, COUNT(*) AS review_count
+      FROM reviews r
+      JOIN products p ON r.product_id = p.id
+      WHERE r.is_deleted = 0
+      GROUP BY p.id, p.name
+      ORDER BY review_count DESC;
 
   - question: "單筆訂單總金額超過 5 萬元的訂單，都是哪些客戶買的？"
     reasoning: "從 orders 篩選 total_amount > 50000，JOIN customers 取得姓名"
@@ -606,3 +1357,95 @@ few_shot_examples:
       GROUP BY c.id, c.name
       HAVING MIN(o.total_amount) > 1000
       ORDER BY c.name;
+
+  - question: "有哪些客戶付款成功過？"
+    reasoning: |
+      這一題是「主體收斂」這一族**最後也最容易漏掉的形狀：收斂寫對了，
+      卻被 SELECT 裡的一個顯示欄位破壞掉**。前面幾題示範的都是「收斂成功」，
+      沒有一題碰到「以為自己收斂了、其實沒有」。
+
+      實測三種寫法的列數（正解是 49 位客戶）：
+        直接 JOIN 後選 c.name                    → 164 列，一張付款單一列
+        SELECT DISTINCT c.name, m.name           → 112 列 ← 陷阱在這裡
+        GROUP BY c.id, c.name                    →  49 列（正確）
+
+      中間那個 112 是關鍵：**DISTINCT 沒有失效，它只是照著你給的欄位去重。**
+      你給了 (客戶, 付款方式)，它就對這個組合去重 —— 一位客戶用過三種付款方式
+      就留三列。答案的單位被那個顯示欄位偷偷從「客戶」改成了「客戶×付款方式」。
+
+      判斷方式：**SELECT 裡只要出現一個來自「多的那一邊」的欄位，
+      這份結果就不可能是一人一列，DISTINCT 與 GROUP BY 都救不回來。**
+      問句問「哪些客戶」，就只能顯示客戶自己的欄位；想附帶顯示多邊的資訊，
+      必須先聚合（MIN / MAX / GROUP_CONCAT / COUNT），不能直接放原始欄位。
+
+      同一個陷阱的另一個入口：JOIN 一個「已經 GROUP BY 過」的子查詢時，
+      要看它 GROUP BY 了什麼。`GROUP BY customer_id, DATE(order_date)`
+      的粒度是「一位客戶一天一列」，不是「一位客戶一列」，
+      JOIN 回母表照樣會重複。子查詢有沒有聚合，跟它的粒度是不是主體，是兩件事。
+    sql: |
+      SELECT c.name
+      FROM customers c
+      JOIN orders o ON o.customer_id = c.id
+      JOIN payments pm ON pm.order_id = o.id
+      GROUP BY c.id, c.name
+      ORDER BY c.name;
+
+  - question: "客戶總消費金額的中位數大約是多少？"
+    reasoning: |
+      這一題考的不是中位數怎麼寫，是**同一個量有兩個來源時該選哪一個**。
+
+      customer_profiles 是一張客戶檔案寬表，裡面有一組**每日結算的快照欄位**：
+        total_spent       累計消費金額（快照）
+        order_count       累計訂單數（快照）
+        avg_order_value   平均訂單金額（快照）
+      這些欄位的 COMMENT 都寫著「與即時 SUM(orders.total_amount) 可能不同」——
+      **那句話不是提醒，是規格**：實測 50 位客戶有 27 位對不上，
+      直接拿 total_spent 算中位數會得到 45,259，走 orders 是 65,050。
+      兩個都是資料庫裡真實存在的數字，但它們回答的是不同的問題。
+
+      判斷方式只有一條，看**問句有沒有指定來源**：
+        問句沒提來源（「客戶總消費金額」「客戶下了幾張訂單」「平均客單價」）
+          → 問的是**現在的事實**，權威來源是事實表 orders，快照不可用。
+        問句明講「客戶檔案」「快照」「會員資料裡記錄的」（見下一題）
+          → 才用 customer_profiles 的快照欄位。
+
+      **這條原則不限於 total_spent**：任何「事實表算得出來、寬表又存了一份」的
+      欄位都一樣 —— 沒指定來源就以事實表為準。反過來，
+      寬表上事實表**沒有**的欄位（tier、ltv_score、risk_flag、gender、
+      email_opt_in、birth_year…）沒有第二個來源，本來就只能查 customer_profiles，
+      不在這條原則的射程內，不要一起避開。
+    sql: |
+      WITH t AS (
+        SELECT SUM(total_amount) AS s FROM orders GROUP BY customer_id
+      ),
+      r AS (
+        SELECT s, ROW_NUMBER() OVER (ORDER BY s) AS rn, COUNT(*) OVER () AS c FROM t
+      )
+      SELECT AVG(s) AS median
+      FROM r
+      WHERE rn IN (FLOOR((c + 1) / 2), FLOOR((c + 2) / 2));
+    wrong_sql: |
+      -- ❌ total_spent 是每日結算快照，不含最近數日的訂單。
+      --    問句沒有說「快照」，要的就是即時值，這個答案少算了 27 位客戶的近期消費。
+      WITH ranked AS (
+        SELECT total_spent, ROW_NUMBER() OVER (ORDER BY total_spent) AS rn,
+               COUNT(*) OVER () AS cnt
+        FROM customer_profiles WHERE total_spent IS NOT NULL
+      )
+      SELECT AVG(total_spent) FROM ranked
+      WHERE rn IN (FLOOR((cnt + 1) / 2), CEIL((cnt + 1) / 2));
+
+  - question: "根據客戶檔案的消費快照，累計消費金額最高的前 5 位客戶是誰？金額各是多少？"
+    reasoning: |
+      上一題的**反面**，兩題必須成對讀 —— 只學會「一律走 orders」就會把這一題做錯。
+
+      問句明講「客戶檔案的消費快照」，指定了來源，這時就**必須**用
+      customer_profiles.total_spent，不可以自作聰明改走 orders 重算 ——
+      那樣算出來的是即時值，不是使用者要的快照值。
+      姓名不在寬表裡，用 customer_id 1:1 JOIN 回 customers 取。
+    sql: |
+      SELECT c.name, p.total_spent
+      FROM customer_profiles p
+      JOIN customers c ON c.id = p.customer_id
+      ORDER BY p.total_spent DESC, c.name
+      LIMIT 5;

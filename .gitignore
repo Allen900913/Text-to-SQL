@@ -1,5 +1,6 @@
 # 虛擬環境
 venv/
+.venv/
 env/
 .env
 
@@ -16,6 +17,15 @@ logs/
 answers.json
 update_readme_queries.py
 
+# 評估產出（每跑一次多兩個檔，只留手邊最新的即可）
+# 2026-08-20 分類搬遷後集中在 eval/results/
+eval/results/
+eval_report_*.txt
+eval_result_*.json
+
+# 表向量快取（key 是表文件雜湊，schema 一改就自動重算，不該進版控）
+.table_vectors.json
+
 # IDE / 編輯器相關
 .vscode/
 .idea/
@@ -24,3 +34,6 @@ update_readme_queries.py
 
 # 其他
 .DS_Store
+
+# 離線評估用的欄位向量快取（eval_column_recall.py 自動重建）
+.column_vectors.json

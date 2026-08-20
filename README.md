@@ -4,6 +4,11 @@
 
 ## 整體架構與工作流程
 
+> ⚠️ **本節描述的是舊版 Tool-Calling Agent。該版本（`agent.py` 及其配套）
+> 已於 2026-08-20 刪除，需要時從 git 歷史取回。**
+> 現行主線是 LangGraph Pipeline（`langgraph_sql/`，進入點 `langgraph_sql/main.py`），
+> 架構、設計理由與被否決的方案記錄在 **[ARCHITECTURE.md](ARCHITECTURE.md)**。
+
 本系統採用 **Tool-Calling Agent** 模式，讓大型語言模型 (LLM) 擁有自主探索與驗證資料庫的能力，而非單純的「盲寫 SQL」。
 
 核心架構依賴以下 5 個專用工具（Tools），Agent 會依序或視情況動態呼叫：
@@ -24,7 +29,7 @@
 
 ## 支援查詢的資料與範例
 
-系統預設內建一套「電子商務 (E-commerce)」虛擬資料庫（可透過 `python init_db.py` 自動生成與初始化），包含以下關聯式資料表：
+系統預設內建一套「電子商務 (E-commerce)」虛擬資料庫（可透過 `python db/init_db.py` 自動生成與初始化），包含以下關聯式資料表：
 
 - **`customers` (客戶資料)**：包含姓名、Email、電話與註冊時間。
 - **`products` (商品資料)**：包含商品名稱、分類 (類別)、單價與目前庫存量。
@@ -67,16 +72,22 @@
    - 確保本機 MySQL 伺服器 (Port: 3306) 已啟動，且 `.env` 檔案中設定了正確的 `MYSQL_URI` 與 `GROQ_API_KEY` (或對應的 LLM API Key)。
 2. **初始化假資料**：
    ```bash
-   python init_db.py
+   python db/init_db.py
    ```
-3. **（選用）更新 README 範例答案**：
-   每次重新執行 `init_db.py` 後，資料庫內容都會隨機重新生成，本 README 中的預期回答範例也會跟著失效。
-   請執行以下腳本，自動查詢資料庫中的正確答案並更新 `answers.json`，再手動對照更新 README：
+   ⚠️ **重跑 `init_db.py` 會重新隨機生成資料，`eval_ground_truth.yaml` 的
+   257 題答案會整份失效。** schema 要改請走 metadata-only（`ALTER TABLE … COMMENT`）
+   或純新增，不要重建。
+
+3. **啟動對話終端**：
    ```bash
-   python get_answers.py
+   python langgraph_sql/main.py
    ```
-4. **啟動對話終端**：
+   啟動後，即可直接在提示符號 `>` 後方輸入您的問題與 Pipeline 進行互動！
+
+4. **評估與閘門**：
    ```bash
-   python main.py
+   python tools/check_schema_pipeline.py   # 八項閘門，改 schema 或 semantic layer 後必跑
+   python eval/test_runner.py              # 完整 e2e（257 題）→ eval/results/
+   python eval/eval_score.py                    # 對帳（預設取 eval/results/ 最新）
+   python eval/eval_stability.py --ids 93 --n 8   # 單題重複取樣（單輪分數分不出穩定與擲中）
    ```
-   啟動後，即可直接在提示符號 `>` 後方輸入您的問題與 Agent 進行互動！

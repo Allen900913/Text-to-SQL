@@ -6,6 +6,8 @@ Schema 解析器
 """
 import os
 import re
+from collections.abc import Iterable
+
 import yaml
 from loguru import logger as log
 
@@ -40,13 +42,48 @@ class SchemaParser:
         """取得完整 DDL 文字。"""
         return (self._data.get("ddl") or "").strip()
 
+    def get_ddl_for(self, tables: Iterable[str] | None) -> str:
+        """
+        只取指定那幾張表的 DDL。tables 為 None 時回傳完整 DDL。
+
+        DDL 是由 tools/gen_ddl.py 從 INFORMATION_SCHEMA 產生的，格式固定為
+        以空行分隔的 CREATE TABLE 區塊，所以可以安全地照區塊切。
+        找不到任何一張表時退回完整 DDL —— 給模型一份空的 schema，
+        會讓它開始憑空捏造欄位，那比 Prompt 長要糟得多。
+        """
+        full = self.get_ddl()
+        if tables is None:
+            return full
+
+        wanted = {t.lower() for t in tables}
+        blocks = [b for b in full.split("\n\n") if b.strip()]
+        picked = []
+        for block in blocks:
+            match = re.match(r"\s*CREATE TABLE\s+(\w+)", block, re.I)
+            if match and match.group(1).lower() in wanted:
+                picked.append(block.strip())
+
+        if not picked:
+            log.warning(f"[Schema] 這些表在 DDL 裡一張都找不到: {sorted(wanted)}，"
+                        "退回完整 DDL")
+            return full
+        return "\n\n".join(picked)
+
     # ------------------------------------------------------------------
     # Enum 欄位說明
     # ------------------------------------------------------------------
-    def get_enum_text(self) -> str:
-        """取得 Enum 欄位的格式化說明文字。"""
+    def get_enum_text(self, tables: Iterable[str] | None = None) -> str:
+        """
+        取得 Enum 欄位的格式化說明文字。
+
+        給了 tables 就只列這些表的 enum —— 剪掉了 DDL 卻留著全部的 enum，
+        等於在告訴模型有一些它看不到 schema 的欄位可以用。
+        """
+        wanted = None if tables is None else {t.lower() for t in tables}
         lines: list[str] = []
         for field, info in (self._data.get("enum_fields") or {}).items():
+            if wanted is not None and field.split(".")[0].lower() not in wanted:
+                continue
             lines.append(f"  {field} ({info.get('description', '')})")
             for val, desc in (info.get("values") or {}).items():
                 lines.append(f"    - '{val}' = {desc}")
@@ -80,6 +117,15 @@ class SchemaParser:
         lines: list[str] = []
         for ex in self._data.get("few_shot_examples") or []:
             lines.append(f"  Question: {ex['question']}")
+            # reasoning 說明「為什麼是這個寫法」。這裡曾經只送 question + SQL ——
+            # 等於要模型從一份答案反推它示範的是哪一條教訓，口徑選擇、粒度、
+            # 量詞這些教訓級的內容根本傳不過去。get_rules_text() 早就為
+            # business_rules 修過同一個問題（見上），這裡漏了：YAML 裡
+            # 每一則 reasoning 都寫了，卻從來沒有進過 Prompt。
+            reasoning = (ex.get("reasoning") or "").strip()
+            if reasoning:
+                lines.append("\n".join(
+                    f"      {ln}" for ln in reasoning.splitlines() if ln.strip()))
             if "sql_step1" in ex and "sql_step2" in ex:
                 s1 = ex["sql_step1"].strip().replace("\n", "\n          ")
                 s2 = ex["sql_step2"].strip().replace("\n", "\n          ")
@@ -88,6 +134,11 @@ class SchemaParser:
             else:
                 sql_block = ex["sql"].strip().replace("\n", "\n          ")
                 lines.append(f"  SQL:\n          {sql_block}")
+            # 反例：只給正解，模型分不出「這樣寫也對」與「這樣寫是錯的」。
+            wrong = (ex.get("wrong_sql") or "").strip()
+            if wrong:
+                lines.append("  ❌ 錯誤寫法:\n          "
+                             + wrong.replace("\n", "\n          "))
             lines.append("")
         return "\n".join(lines)
 
@@ -116,7 +167,11 @@ class SchemaParser:
         self._table_columns = {}
 
         # 用 regex 拆出每個 CREATE TABLE 區塊
-        pattern = r"CREATE\s+TABLE\s+(\w+)\s*\((.*?)\);"
+        # `\)` 後面要容許表級 COMMENT —— gen_ddl.py 從 2026-08-19 起會輸出
+        # `) COMMENT '...';`（§10.7）。原本的 `\);` 一個區塊都對不上，
+        # 這支會靜默回傳空 dict：它是 schema_registry 連不上 MySQL 時的
+        # 降級來源，也是 _report_drift 的比對基準，壞掉不會有人喊。
+        pattern = r"CREATE\s+TABLE\s+(\w+)\s*\((.*?)\)\s*(?:COMMENT\s*'(?:[^']|'')*')?\s*;"
         for match in re.finditer(pattern, ddl, re.IGNORECASE | re.DOTALL):
             table_name = match.group(1).lower()
             body = match.group(2)

@@ -1,0 +1,469 @@
+# 干擾表灌資料計畫 —— 值域宣告在前，灌資料在後
+# ============================================================================
+# 為什麼要有這份檔案（ARCHITECTURE.md §8.8 的鏡像）：
+#
+#   要判斷「灌資料會不會讓既有題目變歧義」，必須先知道會灌什麼**值** ——
+#   而值是灌的時候才決定的。雞生蛋。解法是把值域先宣告成資料，
+#   讓稽核（tools/check_ambiguity.py）與產生器（tools/seed_distractor_data.py）
+#   讀同一份宣告：**稽核過的才准灌，灌的必須跟稽核的一致。**
+#
+# 五條設計準則（ARCHITECTURE.md，每一條在 seed 腳本裡都有對應的 assert）：
+#   1. 列數比例合理，且**不能一律偏小** —— 干擾表一律小的話，列數本身
+#      就變成免費的答案洩漏，那還是作弊，只是換個變數。
+#   2. 值域要跟正解表**重疊**，否則值檢索一秒分辨出來 → 假性有效。
+#   3. 參照完整性 —— FK 指到真的存在的列（FK 已建，MySQL 會硬擋）。
+#   4. 時序一致 —— 子事件的時間不早於父事件。
+#   5. 查得出「像樣但錯」的答案，而不是靜悄悄的空集合。
+#
+# rows 的寫法：
+#   int          絕對列數
+#   "T x X~Y"    每一列父表 T 產生 X~Y 列（例如 "orders x1~3"）
+#   "T pct N"    父表 T 的 N% 產生一列
+#
+# values：只宣告**帶語意的非鍵欄位**。鍵與時間戳不必宣告 ——
+#   它們在任何正規化 schema 裡到處都是，不構成語意上的可替代性。
+#
+# empty: true —— 刻意保持零列。真實 warehouse 本來就有剛上線與已棄用的表；
+#   「空」必須是一個**刻意的測試項**，不是建構的副作用。它同時測到熱度先驗
+#   最危險的失效模式：用熱度當硬過濾會誤殺剛上線的正確新表。
+
+order_status_history:
+  rows: "orders x1~3"
+  parent: orders
+  after: orders.order_date
+  values:
+    from_status: [PENDING, PAID, SHIPPED, COMPLETED]
+    to_status: [PENDING, PAID, SHIPPED, COMPLETED, CANCELLED]
+  note: |
+    值域刻意與 orders.status 完全相同 —— 這正是準則 2 要的重疊：
+    任何靠「值長什麼樣」分辨兩張表的方法，在這裡必須失效。
+
+order_notes:
+  rows: "orders pct 30"
+  parent: orders
+  after: orders.order_date
+  values:
+    is_internal: [0, 1]
+
+order_cancellations:
+  rows: "orders where status=CANCELLED"
+  parent: orders
+  after: orders.order_date
+  values:
+    cancelled_by: [CUSTOMER, SYSTEM, STAFF]
+    reason: [改變心意, 找到更便宜的, 逾期未付款, 缺貨, 重複下單]
+
+order_returns:
+  rows: "orders pct 12"
+  parent: orders
+  after: orders.order_date
+  values:
+    status: [REQUESTED, RECEIVED, REJECTED]
+  note: |
+    status 值域刻意**不含** PAID / COMPLETED / CANCELLED ——
+    退貨狀態與訂單狀態是不同的狀態機，硬讓它們重疊是製造假歧義，
+    不是製造真難度。準則 2 要的是「同一件事的值長得像」，
+    不是「不同的事硬用同一組值」。
+
+payment_attempts:
+  rows: "payments x1~3"
+  parent: orders
+  after: orders.order_date
+  values:
+    result: [OK, DECLINED, TIMEOUT]
+  note: |
+    列數必須**多於** payments（164）—— 每筆成功付款至少一次嘗試，
+    失敗的還會重試。若干擾表列數一律小於正解表，列數就成了答案洩漏（準則 1）。
+    欄位叫 result 不叫 status、值域無 FAILED，所以 #104 的
+    `payments.status='FAILED'` 不可移植 —— 這是設計時就避開的歧義。
+
+invoices:
+  rows: "orders where status in PAID,SHIPPED,COMPLETED"
+  parent: orders
+  after: orders.order_date
+  values:
+    is_voided: [0, 1]
+
+delivery_attempts:
+  rows: "shipments x1~2"
+  parent: shipments
+  after: shipments.shipped_at
+  values:
+    result: [DELIVERED, ABSENT, REFUSED]
+
+warehouse_transfers:
+  rows: 55
+  parent: warehouses
+  values:
+    quantity: [1, 60]
+  note: |
+    product_id + quantity 與 order_items 重疊，形狀上「可移植」。
+    但調撥不是銷售，而且它沒有 order_id、沒有 unit_price ——
+    任何要接到訂單或算金額的題目都接不上去。稽核會把它列出來，
+    裁決依據是「業務定義在不在」，不是「欄位在不在」（§8.8 同一條判準）。
+
+product_price_history:
+  rows: "products x1~3"
+  parent: products
+  values:
+    old_price: price_like
+    new_price: price_like
+
+product_stock_snapshots:
+  rows: "products x7"
+  parent: products
+  values:
+    stock_qty: [0, 200]
+  note: |
+    stock_qty 與 products.stock 語意重疊（都是庫存數），但這是**快照**：
+    它是「某一天的庫存」，products.stock 是「現在的庫存」。
+    這正是 §8.9 說的**語意誘餌** —— 字面對、語意錯。刻意保留。
+
+product_images:
+  rows: "products x2~4"
+  parent: products
+  values:
+    is_primary: [0, 1]
+
+product_bundles:
+  never_answered: true
+  rows: "6 個組合包 x2~4 項"
+  parent: products
+  late_rng: true
+  note: |
+    2026-08-20 從 `empty: true` 改成灌資料（ARCHITECTURE.md §10.11）。
+    原本留空是為了測「熱度／列數先驗會不會誤殺零列的新表」，但**企業不會
+    建一張表然後永遠是空的** —— 那個設定本身不真實，而它要測的先驗方法
+    （A 方案）早就實測否決了。
+    仍然是 never_answered：組合包是真功能，但分析師很少問它，
+    它現在的角色是**有資料、內容合理、卻沒人問**的稀釋律樣本 ——
+    比零列版本更接近真實，也更難。
+
+customer_contacts:
+  rows: "customers x1~3"
+  parent: customers
+  after: customers.created_at
+  values:
+    contact_type: [PHONE, EMAIL, LINE]
+    is_verified: [0, 1]
+  note: |
+    is_verified 與 customer_profiles.email_verified_at 概念重疊 ——
+    #154「還沒有通過 Email 驗證的客戶」灌了資料之後**可能變歧義**。
+    這一題必須經稽核裁決，不能默默灌下去。
+
+customer_login_logs:
+  never_answered: true
+  note: |
+    **設計為永不作答**（ARCHITECTURE.md §10.2）。真實企業資料庫裡到處都是
+    這種基礎設施表（session、audit log、ETL 暫存），分析師不會問它們。
+    保留它是為了測**稀釋律**：一張永遠不相關的表會不會把正解表擠掉。
+    不要把它當成 GT 覆蓋缺口再補題 —— 補了就失去這個測試組。
+  rows: "customers x4~12"
+  parent: customers
+  after: customers.created_at
+  values:
+    success: [0, 1]
+
+support_tickets:
+  rows: "customers pct 60"
+  parent: customers
+  after: customers.created_at
+  values:
+    status: [OPEN, PENDING, CLOSED]
+  note: |
+    ⚠️ status 含 **PENDING**，與 orders.status='PENDING' 直接相撞。
+    這是整批干擾表裡最真實的一個歧義風險，必須逐題裁決。
+    不改值域 —— 工單狀態叫 PENDING 是真實世界的常態，
+    把它改掉等於為了讓 benchmark 好看而扭曲 schema。
+
+review_replies:
+  rows: "reviews pct 30"
+  parent: reviews
+  after: reviews.created_at
+
+cart_recovery_emails:
+  never_answered: true
+  rows: "carts pct 60"
+  parent: carts
+  after: carts.created_at
+  late_rng: true
+  values:
+    opened: [0, 1]
+    clicked: [0, 1]
+  note: |
+    2026-08-20 從 `empty: true` 改成灌資料，理由同 product_bundles。
+    clicked = 1 蘊含 opened = 1（沒開信不可能點連結），生成器有 assert。
+
+promotion_rules:
+  rows: "promotions x1"
+  parent: promotions
+  values:
+    applies_to: [ALL, CATEGORY, PRODUCT]
+    stackable: [0, 1]
+    min_amount: [0, 5000]
+
+supplier_contracts:
+  rows: "suppliers x1"
+  parent: suppliers
+  values:
+    payment_terms: [月結30天, 月結60天, 貨到付款, 預付訂金]
+
+# ===========================================================================
+# 2026-08-20 第一波擴表 41 → 60（ARCHITECTURE.md §11.3）
+# ---------------------------------------------------------------------------
+# 全部用 RNG_LATE（late_rng: true）—— 插在計畫檔中間會平移主亂數序列，
+# 讓既有 17 張表的資料整批改變，#160-195 那 36 題 GT 就全部作廢。
+#
+# 這一波的父表（departments / employees / stores / coupons / gift_cards /
+# wishlists）自己也是新表，快照時是空的，所以產生器**明確指定 id**
+# 而不依賴 AUTO_INCREMENT —— 這樣重灌才會逐列相同。
+# ===========================================================================
+
+departments:
+  rows: "固定 6"
+  late_rng: true
+  explicit_id: true
+
+employees:
+  rows: "固定 24"
+  parent: departments
+  late_rng: true
+  explicit_id: true
+  values:
+    title: [專員, 資深專員, 組長, 經理]
+
+order_assignments:
+  rows: "orders pct 70"
+  parent: orders
+  after: orders.order_date
+  late_rng: true
+
+stores:
+  rows: "固定 8"
+  late_rng: true
+  explicit_id: true
+
+store_pickups:
+  rows: "orders pct 25"
+  parent: orders
+  after: orders.order_date
+  late_rng: true
+
+coupons:
+  rows: "固定 12"
+  late_rng: true
+  explicit_id: true
+
+coupon_redemptions:
+  rows: "orders pct 30"
+  parent: orders
+  after: orders.order_date
+  late_rng: true
+
+gift_cards:
+  rows: "固定 15"
+  parent: customers
+  late_rng: true
+  explicit_id: true
+
+gift_card_transactions:
+  rows: "gift_cards x1~4"
+  parent: gift_cards
+  late_rng: true
+
+loyalty_points:
+  rows: "orders pct 80 + 額外 BONUS/EXPIRE"
+  parent: customers
+  late_rng: true
+  values:
+    reason: [PURCHASE, REDEEM, EXPIRE, BONUS]
+
+subscriptions:
+  rows: "customers pct 30"
+  parent: customers
+  late_rng: true
+  values:
+    status: [ACTIVE, PAUSED, CANCELLED]
+    plan_name: [基本方案, 進階方案, 尊榮方案]
+
+wishlists:
+  rows: "customers pct 60"
+  parent: customers
+  after: customers.created_at
+  late_rng: true
+  explicit_id: true
+
+wishlist_items:
+  rows: "wishlists x1~5"
+  parent: wishlists
+  late_rng: true
+
+product_qna:
+  rows: "固定 60"
+  parent: products
+  late_rng: true
+
+product_tags:
+  rows: "products x0~3"
+  parent: products
+  late_rng: true
+  values:
+    tag: [熱銷, 新品, 限量, 環保, 送禮首選, 編輯推薦]
+
+audit_log:
+  never_answered: true
+  rows: "固定 300"
+  late_rng: true
+  note: |
+    **設計為永不作答**：系統稽核軌跡，分析師不會問。
+    與 customer_login_logs 同一組稀釋律樣本（§10.2）。
+  values:
+    action: [INSERT, UPDATE, DELETE]
+
+schema_migrations:
+  never_answered: true
+  rows: "固定 24"
+  late_rng: true
+  note: "**設計為永不作答**：部署工具寫入的版本紀錄。"
+
+job_runs:
+  never_answered: true
+  rows: "固定 120"
+  late_rng: true
+  note: "**設計為永不作答**：背景排程監控紀錄。"
+  values:
+    status: [SUCCESS, FAILED, RUNNING]
+
+user_sessions:
+  never_answered: true
+  rows: "customers x2~6"
+  parent: customers
+  late_rng: true
+  note: |
+    **設計為永不作答**：框架維護的 session。
+    與 customer_login_logs 刻意做成近義表 —— 一個是業務登入事件、
+    一個是框架 session，用來測「近義但不同概念」的鑑別。
+
+# ===========================================================================
+# 2026-08-20 第二波擴表 60 → 80（ARCHITECTURE.md §11.5）
+# ---------------------------------------------------------------------------
+# 同樣全部 late_rng。本波自己的父表（product_variants / campaigns /
+# newsletters / faq_articles）也用 explicit_id，理由同第一波。
+# ===========================================================================
+
+warehouse_staff:
+  rows: "warehouses x2~4"
+  parent: warehouses
+  late_rng: true
+
+store_staff:
+  rows: "stores x2~5"
+  parent: stores
+  late_rng: true
+
+employee_shifts:
+  rows: "employees x14 天"
+  parent: employees
+  late_rng: true
+  values:
+    shift_type: [MORNING, AFTERNOON, NIGHT]
+
+product_variants:
+  rows: "products x1~4"
+  parent: products
+  late_rng: true
+  explicit_id: true
+
+variant_barcodes:
+  rows: "product_variants x1~2"
+  parent: product_variants
+  late_rng: true
+
+newsletters:
+  rows: "固定 12"
+  late_rng: true
+  explicit_id: true
+
+newsletter_subscriptions:
+  rows: "customers pct 50"
+  parent: customers
+  after: customers.created_at
+  late_rng: true
+
+campaigns:
+  rows: "固定 10"
+  late_rng: true
+  explicit_id: true
+  values:
+    channel: [EMAIL, SOCIAL, SEARCH, DISPLAY]
+
+campaign_clicks:
+  rows: "campaigns x30~60"
+  parent: campaigns
+  late_rng: true
+
+search_logs:
+  rows: "customers x6~14"
+  parent: customers
+  late_rng: true
+
+product_recommendations:
+  rows: "products x3"
+  parent: products
+  late_rng: true
+
+faq_articles:
+  rows: "固定 20"
+  late_rng: true
+  explicit_id: true
+  values:
+    category: [訂單, 付款, 配送, 退換貨, 會員]
+
+faq_votes:
+  rows: "faq_articles x4~12"
+  parent: faq_articles
+  late_rng: true
+
+return_shipments:
+  rows: "order_returns pct 80"
+  parent: order_returns
+  after: order_returns.requested_at
+  late_rng: true
+
+warranty_claims:
+  rows: "固定 30"
+  parent: orders
+  late_rng: true
+  values:
+    status: [SUBMITTED, APPROVED, REJECTED, DONE]
+
+service_appointments:
+  rows: "固定 45"
+  parent: customers
+  late_rng: true
+  values:
+    service_type: [REPAIR, CONSULT, INSTALL]
+
+api_request_logs:
+  never_answered: true
+  rows: "固定 800"
+  late_rng: true
+  note: "**設計為永不作答**：API 請求日誌，維運用。"
+
+feature_flags:
+  never_answered: true
+  rows: "固定 15"
+  late_rng: true
+  note: "**設計為永不作答**：功能開關，工程團隊維護。"
+
+cache_entries:
+  never_answered: true
+  rows: "固定 200"
+  late_rng: true
+  note: "**設計為永不作答**：應用層快取，系統自動維護。"
+
+error_reports:
+  never_answered: true
+  rows: "固定 60"
+  late_rng: true
+  note: "**設計為永不作答**：例外回報，工程除錯用。"

@@ -1,0 +1,184 @@
+# 歧義稽核的人工裁決 —— tools/check_ambiguity.py 讀這一份
+# ============================================================================
+# 為什麼獨立成一個檔，而不是像防禦題那樣寫回 eval_ground_truth.yaml：
+#   GT 檔有 159 筆、大量多行 note，用 yaml round-trip 寫回會把整份格式重排，
+#   風險遠大於「裁決和題目放在一起」的收益。這份檔以題號為鍵，
+#   check_ambiguity.py 每次都會回頭驗證「裁決的表現在還在不在命中清單裡」——
+#   所以裁決過期會被抓到，不會因為分家而失聯。
+#
+# 判準與 §8.8 相同：**業務定義在不在，不是欄位在不在。**
+#
+# 每一筆的 tables 是「這一題確認不會被這些干擾表變成歧義」。
+# reason 一定要寫得夠具體，讓下一個人能重新檢查這個判斷，而不只是看到一個 OK。
+
+# ---------------------------------------------------------------------------
+# 模式一：quantity —— order_returns / warehouse_transfers vs order_items
+#
+# 「賣出 / 銷售 / 購買 / 訂單包含」的業務定義是**銷售**。
+#   order_returns      是退貨，方向相反；而且**沒有 unit_price**，接不上任何金額。
+#   warehouse_transfers 是倉庫間調撥，**沒有 order_id**，接不到訂單這個主體。
+# 兩張表都無法回答「這張訂單賣出幾件」，所以灌了資料也不會產生第二個答案。
+# ---------------------------------------------------------------------------
+2:
+  tables: [order_returns, warehouse_transfers, product_bundles]
+  reason: 「賣出多少雙」是銷售量；退貨與調撥都不是銷售，且兩表都接不到訂單金額
+3:
+  tables: [order_returns, warehouse_transfers, product_bundles]
+  reason: 同 #2，「賣出幾本」的業務定義是銷售
+16:
+  tables: [order_returns, warehouse_transfers, product_bundles]
+  reason: 「每張訂單的商品總件數」以訂單為主體；warehouse_transfers 無 order_id，接不上
+47:
+  tables: [order_returns, warehouse_transfers, product_bundles]
+  reason: 「各類別賣出多少件」是銷售量，退貨與調撥都不是
+59:
+  tables: [order_returns, warehouse_transfers, product_bundles]
+  reason: 「賣得最好」是銷售排名，退貨量高反而是負面訊號，語意相反
+65:
+  tables: [order_returns, warehouse_transfers, product_bundles]
+  reason: 「訂單的商品總件數」以訂單為主體；warehouse_transfers 無 order_id
+66:
+  tables: [order_returns, warehouse_transfers, product_bundles]
+  reason: 「單次購買大於 5 件」是購買行為，需要 order → customer 的路徑，兩表都沒有
+67:
+  tables: [order_returns, warehouse_transfers, product_bundles]
+  reason: 「哪一張訂單包含最多件」以訂單為主體；warehouse_transfers 無 order_id
+95:
+  tables: [order_returns, warehouse_transfers, product_bundles]
+  reason: 「總銷售件數」是銷售量的定義，退貨與調撥都不是
+
+# ---------------------------------------------------------------------------
+# 模式二：status —— order_returns / support_tickets vs orders
+#
+# 三個狀態機各自獨立：訂單狀態、退貨狀態、工單狀態。
+# 只有 support_tickets 的值域與 orders 有交集（PENDING），
+# 但命中的兩題都在問句裡**明講了「訂單」**。
+# ---------------------------------------------------------------------------
+11:
+  tables: [support_tickets]
+  reason: |
+    問句明講「PENDING 訂單」，主體是訂單不是工單；而且題目要的是「商品名稱」，
+    support_tickets 根本接不到 products。這是本批唯一的 HIGH（值域含 PENDING），
+    裁決為不歧義的理由是問句自帶主體，不是值域不重疊。
+89:
+  tables: [order_returns, support_tickets, job_runs]
+  reason: 問句明講「訂單狀態分布」，主體是訂單
+
+# ---------------------------------------------------------------------------
+# 模式三：reason —— order_cancellations vs refunds
+# ---------------------------------------------------------------------------
+115:
+  tables: [order_cancellations]
+  reason: |
+    問句明講「退款原因」，而 refunds 表存在且就是退款。
+    取消發生在出貨前、退款發生在出貨後，是兩個業務事件。
+    值域也零重疊：refunds.reason 實際值為 送錯商品／商品瑕疵／尺寸不合／
+    延遲到貨／不想要了，宣告的 order_cancellations.reason 為
+    改變心意／找到更便宜的／逾期未付款／缺貨／重複下單。
+    這是四個模式裡最接近邊界的一個 —— 若日後 refunds 的值域改動，要重新裁決。
+
+# ---------------------------------------------------------------------------
+# 模式五：正解表本身就是「干擾表」時（#160-171 補題之後才出現）
+#
+# 這兩筆和前面四種模式不同：前面是「核心表是正解、干擾表想搶」，
+# 這兩筆是「干擾表是正解、另一張干擾表想搶」。判準沒變 —— 業務定義在不在。
+# ---------------------------------------------------------------------------
+167:
+  tables: [warehouse_transfers, product_bundles]
+  reason: |
+    「被退回」的業務定義是客戶把商品寄回（order_returns）。
+    warehouse_transfers 是倉庫之間的調撥，方向是內部搬運不是客戶回流，
+    而且沒有 order_id、接不到訂單這個主體 —— 與 #2/#3/#16 同一條理由。
+170:
+  tables: [delivery_attempts]
+  reason: |
+    delivery_attempts.result 與 payment_attempts.result 欄位名、值域形狀都像，
+    差別只在「配送」與「付款」。題目明寫「付款嘗試」，指向唯一。
+    **這一對是刻意保留的鑑別題**：兩張近乎孿生的表只靠一個動詞區分，
+    如果檢索層答錯，錯的是相似度而不是題目，正是想量到的東西。
+
+# ---------------------------------------------------------------------------
+# 模式六：product_bundles.quantity（2026-08-20 這張表從留空改成灌資料後才出現）
+#
+# 組合包的 quantity 是「這個組合包裡含幾件某商品」—— 那是**商品設計**，
+# 不是**交易**。與模式一同一條理由，而且更硬：product_bundles 沒有 order_id，
+# 接不到訂單這個主體，也沒有任何時間欄位，接不到任何期間條件。
+# 所以問「賣出幾件 / 退回幾件 / 調撥幾件」時，它一列都答不出來。
+# ---------------------------------------------------------------------------
+184:
+  tables: [product_bundles]
+  reason: 組合包的 quantity 是商品設計不是交易；無 order_id、無時間欄位，接不上這題的主體
+185:
+  tables: [product_bundles]
+  reason: 組合包的 quantity 是商品設計不是交易；無 order_id、無時間欄位，接不上這題的主體
+
+# ---------------------------------------------------------------------------
+# 模式七：job_runs.status（2026-08-20 第一波擴表新增）
+#
+# job_runs 是背景排程的執行紀錄，值域 SUCCESS / FAILED / RUNNING 與
+# payments.status、orders.status、subscriptions.status 形狀相同 ——
+# 但它**沒有 order_id、沒有 customer_id、沒有任何業務外鍵**，
+# 是全庫連通圖上的孤點。問任何跟訂單／客戶／訂閱有關的事，它一列都答不出來。
+#
+# 這正是 §10.2 說的「基礎設施表」：值域像、概念完全不同，
+# 保留它就是為了測這種**形狀相似但接不上主體**的干擾。
+# ---------------------------------------------------------------------------
+111:
+  tables: [job_runs]
+  reason: 問的是訂單的付款與出貨；job_runs 無 order_id，SUCCESS 只是排程成功不是付款成功
+211:
+  tables: [job_runs]
+  reason: 問的是客戶訂閱狀態；job_runs 無 customer_id，RUNNING 不是 ACTIVE
+251:
+  tables: [job_runs]
+  reason: 問的是保固申請的處理狀態；job_runs 無 order_id / product_id，SUCCESS 不是 APPROVED
+
+# ---------------------------------------------------------------------------
+# 模式八：擴表到 80 張之後，v3 逐題定義才看得到的三組（2026-08-20）
+#
+# 這三組在 v2 定義下全部看不見 —— subscriptions / warranty_claims / stores
+# 都有自己的 GT 題，v2 因此永遠不拿它們跟別題比（§11.7）。
+# ---------------------------------------------------------------------------
+
+# (a) orders.status='CANCELLED' vs subscriptions.status（值域也含 CANCELLED）
+#     「取消訂閱」與「取消訂單」是兩件事。subscriptions 沒有 order_id，
+#     問「幾張訂單」時它一列訂單都給不出來。
+10:
+  tables: [subscriptions]
+  reason: subscriptions.status='CANCELLED' 是取消訂閱不是取消訂單；無 order_id
+22:
+  tables: [subscriptions]
+  reason: 同 #10，問的主體是客戶的訂單
+23:
+  tables: [subscriptions]
+  reason: 同 #10，問的主體是商品出現在哪些訂單
+50:
+  tables: [subscriptions]
+  reason: 同 #10，且要按城市分組，subscriptions 沒有城市維度
+54:
+  tables: [subscriptions]
+  reason: 同 #10，分母是全部訂單數
+
+# (b) customers.city + name vs stores / warehouses（兩張都有 name 與 city）
+#     這一組是 name+city 兩個欄位同時命中，不是單欄巧合，所以值得裁決。
+#     判準仍是主體：問句問的是「客戶」所在城市，不是門市或倉庫的城市。
+60:
+  tables: [stores, warehouses]
+  reason: 問的是客戶消費金額按客戶所在城市分組；門市／倉庫的 city 是設施位置
+94:
+  tables: [stores, warehouses]
+  reason: 同 #60，平均值的母體是客戶不是設施
+138:
+  tables: [stores]
+  reason: 比的是 addresses.city 與 customers.city，兩邊都在客戶側
+
+# (c) order_returns.status='REJECTED' vs warranty_claims.status='REJECTED'
+#     **這一對是我自己在第二波造出來的最尖銳碰撞**，值域字面完全相同。
+#     保留是刻意的：問句各自明寫「退貨申請」與「保固申請」，
+#     模型要能靠這兩個詞分開兩張結構幾乎一樣的表 —— 那正是想量的東西。
+166:
+  tables: [warranty_claims]
+  reason: 問「退貨申請」被拒絕；保固申請是 warranty_claims，兩者都用 REJECTED，靠問句的名詞區分
+252:
+  tables: [order_returns]
+  reason: 問「保固申請」被拒絕；退貨申請是 order_returns，鏡像對照

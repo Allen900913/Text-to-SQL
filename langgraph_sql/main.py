@@ -31,7 +31,7 @@ def main():
     print("  架構：SQL 生成 → AST 安全快篩 → MySQL EXPLAIN → 查詢執行")
     print("  輸入自然語言問題，系統會自動完成整條 Pipeline 並回答。")
     print("  輸入 'exit' 或 'quit' 退出。")
-    print("  請確認已執行 python init_db.py 完成資料庫初始化！")
+    print("  請確認已執行 python db/init_db.py 完成資料庫初始化！")
     print(sep)
 
     while True:

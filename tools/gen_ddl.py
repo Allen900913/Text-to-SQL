@@ -46,6 +46,12 @@ WHERE TABLE_SCHEMA = DATABASE()
 ORDER BY TABLE_NAME, ORDINAL_POSITION
 """
 
+_TABLE_SQL = """
+SELECT TABLE_NAME, TABLE_COMMENT
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_SCHEMA = DATABASE()
+"""
+
 _FK_SQL = """
 SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
 FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
@@ -59,6 +65,8 @@ def build_ddl() -> str:
     with db.engine.connect() as conn:
         cols = conn.execute(text(_COLUMNS_SQL)).fetchall()
         fks = conn.execute(text(_FK_SQL)).fetchall()
+        tbl_comments = {t: (c or "") for t, c in
+                        conn.execute(text(_TABLE_SQL)).fetchall()}
 
     by_table: dict[str, list] = {}
     for t, c, typ, key, comment in cols:
@@ -86,7 +94,14 @@ def build_ddl() -> str:
         for col, rt, rc in fk_by_table.get(table, []):
             body.append(f"  FOREIGN KEY ({col}) REFERENCES {rt}({rc})")
         lines.append(",\n".join(body))
-        lines.append(");")
+        # 表級 COMMENT —— 2026-08-19 補上（ARCHITECTURE.md §10.7）。
+        # 這些註解寫得很有防禦性（「即時庫存在 products.stock」、
+        # 「想看訂單『現在』的狀態請用 orders.status」），但原本**只出現在
+        # 檢索目錄**裡，也就是只有選表 LLM 看得到，生成 LLM 從來沒看過。
+        # 干擾表補進 DDL 之後生成端第一次看得到 stock_qty 這種欄位，
+        # 誘惑到位而警告沒到 —— 那會變成只有一道防線。
+        comment = tbl_comments.get(table, "").replace("'", "''")
+        lines.append(f") COMMENT '{comment}';" if comment else ");")
         blocks.append("\n".join(lines))
 
     return "\n\n".join(blocks) + "\n"
