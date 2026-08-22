@@ -86,8 +86,16 @@
 
 4. **評估與閘門**：
    ```bash
-   python tools/check_schema_pipeline.py   # 八項閘門，改 schema 或 semantic layer 後必跑
-   python eval/test_runner.py              # 完整 e2e（257 題）→ eval/results/
-   python eval/eval_score.py                    # 對帳（預設取 eval/results/ 最新）
-   python eval/eval_stability.py --ids 93 --n 8   # 單題重複取樣（單輪分數分不出穩定與擲中）
+   python tools/check_schema_pipeline.py    # 八項閘門，改 schema 或 semantic layer 後必跑
+   python eval/eval_gt_check.py             # GT 自檢（SQL 跑得動、alt_sql 同值）
+   python eval/test_runner.py               # 完整 e2e（257 題）→ eval/results/
+   python eval/eval_score.py                # 對帳（不給檔名＝取 eval/results/ 最新）
+   python eval/eval_stability.py --ids 93 --n 8   # 單題重複取樣
    ```
+   前兩支不打 LLM、幾秒跑完，排在最前面是為了不要跑完 257 題才發現
+   量到的是 GT 或 DDL 的問題。
+
+   現況：80 張表 / 482 欄位、GT 257 題、基準 **253/257 = 98.4%**
+   （穩定通過 253｜硬幣池 3｜穩定錯 0｜防禦題 4/4）。
+   設計理由與被否決的方案見 [ARCHITECTURE.md](ARCHITECTURE.md)，
+   今天的逐項數字見其中的 §0；逐輪的完整過程紀錄在 ARCHITECTURE_archive.md。
