@@ -58,6 +58,16 @@ TUPLE_SRCS = [
     os.path.join(ROOT, "tools", "add_domain_tables.py"),
     os.path.join(ROOT, "tools", "add_domain_tables_w2.py"),
 ]
+# 第三種來源：**結構化宣告檔**（YAML）。既不是 SQL 文字也不是 Python tuple，
+# 所以不用 regex，直接讀 —— 這也是比較好的形狀，因為它本來就是宣告。
+# 同樣的規矩：加新的宣告檔一定要登記在這裡。
+YAML_SRCS = [os.path.join(ROOT, "tools", "wide_table_plan.yaml")]
+
+
+def _norm(text_: str) -> str:
+    """YAML 的折疊純量（>-）會留下換行與縮排空白，正規化成單行。
+    建表腳本寫進資料庫時走同一個函式，兩邊才不會永遠比不一致。"""
+    return " ".join((text_ or "").split())
 
 # CREATE TABLE ... ) COMMENT '...';  —— 兩支 init 腳本都是這個排版
 _PATTERN = re.compile(
@@ -103,6 +113,18 @@ def declared() -> tuple[dict[str, str], dict[tuple[str, str], str]]:
                 tables[t] = comment
                 for col, cm in _columns_of(body).items():
                     columns[(t, col)] = cm
+
+    for path in YAML_SRCS:
+        if not os.path.exists(path):
+            continue
+        import yaml
+        with open(path, encoding="utf-8") as f:
+            plan = yaml.safe_load(f) or {}
+        for table, spec in (plan.get("tables") or {}).items():
+            t = table.lower()
+            tables[t] = _norm(spec.get("table_comment"))
+            for col in spec.get("columns") or []:
+                columns[(t, col["name"].lower())] = _norm(col.get("comment"))
 
     return tables, columns
 

@@ -1,0 +1,490 @@
+# 寬表擴充計畫（宣告檔）—— 先宣告，再稽核，最後才建表
+# =============================================================================
+# 為什麼要做（ARCHITECTURE.md §2.6 §7 的前置條件）：
+#
+#   今天 80 張表裡只有 2 張超過 12 欄、1 張超過 30 欄，中位表寬 5 欄。
+#   「欄位裁剪不用做」「欄位進檢索沒幫助」這兩個結論都是在這個 schema 上量的
+#   —— 而它們正是要測「寬表」的結論。**靶子是空的**，跟當初干擾表全是零列時
+#   量熱度先驗假性滿分是同一個病（§7.4）。
+#
+# 這份計畫要讓三個指標動起來，否則加了也白加：
+#
+#   >30 欄的表            1  →  7
+#   p90 scoped DDL     4,114 → >10,000    （靠「一題同時選中兩張寬表」達成）
+#   需要單表 5+ 非鍵欄位的題  0  →  ≥15    ← 最關鍵。光加表不配題，
+#                                            eval_column_recall 還是會回 100%
+#
+# 硬約束（違反任何一條都會靜默毀掉既有 GT）：
+#   1. 只 CREATE + INSERT，絕不重跑 db/init_db.py（會作廢 257 題 GT）
+#   2. 亂數用專屬種子，不碰任何既有序列（同 RNG_LATE 的理由）
+#   3. 建表後跑逐表 SHA 指紋，確認既有 80 張表一位元都沒動
+#   4. 欄位名與註解不得命中防禦題探針 —— 見下方 probe_policy
+#   5. 每張新表都要有 GT 題（閘門第 6 項會擋）
+#
+# 流程：
+#   python tools/check_wide_table_plan.py     # 稽核這份宣告（還沒碰資料庫）
+#   → 全綠才准建表
+
+# =============================================================================
+# 防禦題探針政策
+# =============================================================================
+# check_defence_gt.py 只對「沒有 acknowledged 的概念」報警，所以探針分兩級。
+# 兩級都要避開，理由不同。
+probe_policy:
+  live:
+    # 命中 → 閘門直接紅。這些字串不得出現在任何欄位名或欄位註解裡。
+    why: 會讓 tools/check_defence_gt.py 報未裁決命中，閘門第 6 項紅燈
+    strings: [運費, freight, shipping_fee, 郵資, 配送費, 物流費,
+              利潤, 毛利, profit, margin,
+              週轉, turnover, 在庫, 期初, 期末, inventory, on_hand,
+              信用評分, credit_score, 信評, 徵信]
+  acknowledged:
+    # 命中**不會**報警（該概念已裁決）—— 這才是真陷阱：
+    # 加了沒有人會喊，防禦題卻默默變得答得出來。
+    why: 不報警但可能讓防禦題實質失效，判準是「業務定義在不在」（§6.2）
+    strings: [庫存, stock, 容量, capacity, 成本, 進貨價, supply_price,
+              手續費, fee_rate, credit, 額度, risk, 風險, 風控, score, 評分, 分數]
+  # 除了字串比對，還有四條語意禁令（字串掃不到，要人守）：
+  semantic_bans:
+    - "不得出現「每個倉庫的在庫數量」這類欄位 —— 會讓 #140 實質可答，
+       即使欄位名叫 qty_at_site 之類掃不到的名字"
+    - "不得出現商品層級的成本／進價／利潤欄位 —— 會讓 #70 實質可答"
+    - "不得在訂單層級出現任何運送費用，也不得出現「小計 vs 總額」的差額，
+       否則模型會把差額當成運費（#68 要擋的正是「發明公式」）"
+    - "不得出現客戶層級的綜合信用分數 —— 會讓 #141 實質可答"
+
+# =============================================================================
+# 六張寬表
+# =============================================================================
+# 每張 1:1 掛在既有主體上（沿用 customer_profiles 已驗證安全的模式）。
+# table_comment 刻意只寫 3~4 個概念群 —— 那是 §2.5 量到的容量上限，
+# 寫滿 5 群反而會讓它在不相干的題目上到處排第一。
+# **這正是要測的現象之一**：概念群塞不下的那一群，會不會變成檢索盲區。
+
+tables:
+
+  # ---------------------------------------------------------------- 1
+  product_profiles:
+    attach: {to: products, fk: product_id, cardinality: "1:1"}
+    table_comment: >-
+      商品內容檔案寬表：商品的上架狀態與生命週期、多語系名稱與行銷文案、
+      SEO 與圖片內容完整度、包裝與運送限制、法規合規與認證。
+      這是內容與合規面，商品的品名售價在 products，實體規格在 product_specs。
+    concept_groups: [上架與生命週期, 多語系與文案, SEO與內容完整度, 包裝與運送限制, 法規合規]
+    columns:
+      - {name: id, type: INT AUTO_INCREMENT PRIMARY KEY, comment: 流水號}
+      - {name: product_id, type: INT, comment: 對應的商品}
+      - {name: lifecycle_stage, type: VARCHAR(20), comment: "生命週期：NEW 新品／GROWTH 成長／MATURE 成熟／EOL 停產"}
+      - {name: listed_at, type: DATETIME, comment: 首次上架時間}
+      - {name: delisted_at, type: DATETIME, comment: 下架時間，NULL 表示仍在架上}
+      - {name: is_published, type: TINYINT, comment: 是否對外顯示，0 表示隱藏中}
+      - {name: is_searchable, type: TINYINT, comment: 是否允許站內搜尋找到}
+      - {name: is_giftable, type: TINYINT, comment: 是否可指定為禮物贈送}
+      - {name: is_preorder, type: TINYINT, comment: 是否為預購商品}
+      - {name: preorder_ship_date, type: DATE, comment: 預購商品的預計出貨日}
+      - {name: name_en, type: VARCHAR(120), comment: 英文品名}
+      - {name: name_ja, type: VARCHAR(120), comment: 日文品名}
+      - {name: short_copy, type: VARCHAR(200), comment: 一句話行銷短文案}
+      - {name: long_copy, type: TEXT, comment: 完整商品介紹文案}
+      - {name: selling_points, type: VARCHAR(255), comment: 賣點條列，以分號分隔}
+      - {name: target_audience, type: VARCHAR(60), comment: "目標客群描述，例如：學生族／通勤族"}
+      - {name: usage_scenario, type: VARCHAR(120), comment: 建議使用情境}
+      - {name: care_instructions, type: VARCHAR(255), comment: 保養與清潔說明}
+      - {name: seo_title, type: VARCHAR(120), comment: SEO 標題}
+      - {name: seo_description, type: VARCHAR(255), comment: SEO 描述}
+      - {name: seo_keywords, type: VARCHAR(200), comment: SEO 關鍵字，以逗號分隔}
+      - {name: canonical_url, type: VARCHAR(200), comment: 正規化網址}
+      - {name: image_count, type: INT, comment: "商品頁圖片張數，內容維護登記的快照，與 product_images 的實際列數可能不同"}
+      - {name: has_video, type: TINYINT, comment: 是否有商品影片}
+      - {name: has_size_chart, type: TINYINT, comment: 是否附尺寸對照表}
+      - {name: has_manual_pdf, type: TINYINT, comment: 是否附電子說明書}
+      - {name: content_completeness, type: INT, comment: 內容完整度百分比，由必填欄位填寫比例計算}
+      - {name: content_updated_at, type: DATETIME, comment: 內容最後更新時間}
+      - {name: content_owner, type: VARCHAR(40), comment: 內容維護負責人}
+      - {name: translation_status, type: VARCHAR(20), comment: "翻譯狀態：NONE 未翻／PARTIAL 部分／DONE 完成"}
+      - {name: package_type, type: VARCHAR(20), comment: "包裝型式：BOX 紙盒／BAG 軟袋／PALLET 棧板"}
+      - {name: package_length_cm, type: "DECIMAL(6,1)", comment: 外包裝長度（公分）}
+      - {name: package_width_cm, type: "DECIMAL(6,1)", comment: 外包裝寬度（公分）}
+      - {name: package_height_cm, type: "DECIMAL(6,1)", comment: 外包裝高度（公分）}
+      - {name: package_weight_g, type: INT, comment: 含包裝的總重量（公克）}
+      - {name: is_fragile, type: TINYINT, comment: 是否易碎品}
+      - {name: needs_cold_chain, type: TINYINT, comment: 是否需要冷鏈配送}
+      - {name: is_air_restricted, type: TINYINT, comment: 是否禁止空運}
+      - {name: is_oversized, type: TINYINT, comment: 是否為大型件，需特殊配送安排}
+      - {name: hazard_class, type: VARCHAR(20), comment: 危險品分類，NONE 表示非危險品}
+      - {name: origin_certified, type: TINYINT, comment: 是否有產地證明}
+      - {name: safety_cert_no, type: VARCHAR(40), comment: 安全認證字號}
+      - {name: safety_cert_expiry, type: DATE, comment: 安全認證到期日}
+      - {name: energy_label, type: VARCHAR(10), comment: "能源效率標示等級：1~5 級"}
+      - {name: recyclable_code, type: VARCHAR(10), comment: 回收材質代碼}
+      - {name: is_restricted_age, type: TINYINT, comment: 是否有年齡購買限制}
+      - {name: compliance_note, type: VARCHAR(255), comment: 法規備註}
+      - {name: compliance_checked_at, type: DATE, comment: 最近一次合規檢核日期}
+      - {name: warranty_policy, type: VARCHAR(120), comment: 保固政策說明文字}
+      - {name: return_policy_days, type: INT, comment: 可退貨天數}
+      - {name: is_return_exempt, type: TINYINT, comment: 是否屬於不可退換的品項}
+      - {name: created_at, type: DATETIME, comment: 建檔時間}
+
+  # ---------------------------------------------------------------- 2
+  order_profiles:
+    attach: {to: orders, fk: order_id, cardinality: "1:1"}
+    # 「風控人工覆核」是 2026-08-22 補的：check_comment_coverage.py 指出
+    # fraud_review_* 四個欄位的概念在表註解裡完全不存在，而 #263 正是 8/8 全錯
+    # （5 次誤觸防禦暗號）。補法刻意是**壓縮不是追加** —— 併進既有的「客服接觸」
+    # 子句，註解只長 5 個字。同時量過「17 個缺口全補」的版本：買到的一樣
+    # （#263 排名都是 1），代價是 @5 −1.8pp、27 題排名退步（§2.5 的容量上限）。
+    table_comment: >-
+      訂單情境檔案寬表：下單的通路與裝置、流量來源與行銷歸因、
+      結帳過程與付款情境、收件偏好與包裝指示、客服接觸與風控人工覆核。
+      這是「這張訂單是怎麼來的」，訂單金額與狀態在 orders。
+    concept_groups: [通路與裝置, 流量來源歸因, 結帳過程, 收件與包裝偏好, 客服接觸]
+    # ⚠️ 刻意不含任何運送費用欄位，也不含小計／稅額 —— 見 probe_policy.semantic_bans
+    columns:
+      - {name: id, type: INT AUTO_INCREMENT PRIMARY KEY, comment: 流水號}
+      - {name: order_id, type: INT, comment: 對應的訂單}
+      - {name: channel, type: VARCHAR(20), comment: "下單通路：WEB 官網／APP 行動應用／PHONE 電話／STORE 門市"}
+      - {name: device_type, type: VARCHAR(20), comment: "裝置類型：DESKTOP／MOBILE／TABLET"}
+      - {name: os_name, type: VARCHAR(20), comment: 作業系統名稱}
+      - {name: browser_name, type: VARCHAR(20), comment: 瀏覽器名稱}
+      - {name: app_version, type: VARCHAR(20), comment: 行動應用版本，網頁下單為 NULL}
+      - {name: screen_size, type: VARCHAR(20), comment: 螢幕解析度}
+      - {name: ip_country, type: VARCHAR(10), comment: 下單時的 IP 所在國別}
+      - {name: utm_source, type: VARCHAR(40), comment: 流量來源，例如 google／facebook／direct}
+      - {name: utm_medium, type: VARCHAR(40), comment: "流量媒介：cpc 付費點擊／organic 自然／email 電子報"}
+      - {name: utm_campaign, type: VARCHAR(60), comment: "歸因到的行銷活動代號，格式 CMP-NN，NN 是 campaigns.id 補零成兩位"}
+      - {name: referrer_domain, type: VARCHAR(80), comment: 導流來源網域}
+      - {name: landing_page, type: VARCHAR(160), comment: 進站的第一個頁面}
+      - {name: is_first_order, type: TINYINT, comment: 是否為該客戶的首張訂單}
+      - {name: is_guest_checkout, type: TINYINT, comment: 是否以訪客身分結帳，未登入}
+      - {name: session_minutes, type: INT, comment: 本次造訪從進站到送出訂單的分鐘數}
+      - {name: pages_viewed, type: INT, comment: 本次造訪瀏覽的頁面數}
+      - {name: cart_edit_count, type: INT, comment: 送出前修改購物車的次數}
+      - {name: checkout_seconds, type: INT, comment: 結帳頁停留到送出的秒數}
+      - {name: checkout_attempts, type: INT, comment: 結帳送出的嘗試次數，含失敗}
+      - {name: coupon_tried_count, type: INT, comment: 嘗試輸入優惠券碼的次數}
+      - {name: is_split_payment, type: TINYINT, comment: 是否分多筆付款完成}
+      - {name: installment_periods, type: INT, comment: 分期期數，0 表示一次付清}
+      - {name: currency_code, type: VARCHAR(10), comment: 結帳幣別}
+      - {name: exchange_rate, type: "DECIMAL(10,4)", comment: 結帳當下的匯率}
+      - {name: invoice_type, type: VARCHAR(20), comment: "發票類型：PERSONAL 個人／COMPANY 公司／DONATE 捐贈"}
+      - {name: invoice_carrier, type: VARCHAR(40), comment: 電子發票載具號碼}
+      - {name: tax_id_used, type: VARCHAR(20), comment: 開立公司發票時使用的統一編號}
+      - {name: delivery_preference, type: VARCHAR(20), comment: "配送偏好：HOME 宅配／STORE 門市取貨／LOCKER 智取櫃"}
+      - {name: preferred_time_slot, type: VARCHAR(20), comment: "希望送達時段：MORNING／AFTERNOON／EVENING／ANY"}
+      - {name: delivery_note, type: VARCHAR(200), comment: 客戶填寫的配送備註}
+      - {name: is_gift_wrap, type: TINYINT, comment: 是否加購禮物包裝}
+      - {name: gift_message, type: VARCHAR(200), comment: 禮物卡片留言}
+      - {name: hide_price_on_slip, type: TINYINT, comment: 是否隱藏出貨單上的金額}
+      - {name: signature_required, type: TINYINT, comment: 是否必須本人簽收}
+      - {name: contact_before_delivery, type: TINYINT, comment: 是否要求送達前先電聯}
+      - {name: support_contact_count, type: INT, comment: 這張訂單客戶聯繫客服的次數}
+      - {name: first_support_at, type: DATETIME, comment: 首次聯繫客服的時間}
+      - {name: has_complaint, type: TINYINT, comment: 是否留下客訴紀錄}
+      - {name: satisfaction_survey_sent, type: TINYINT, comment: 是否已寄出滿意度問卷}
+      - {name: survey_responded_at, type: DATETIME, comment: 客戶回覆問卷的時間}
+      - {name: fraud_review_required, type: TINYINT, comment: 是否被系統標記需人工覆核}
+      - {name: fraud_review_result, type: VARCHAR(20), comment: "覆核結果：PASS 放行／HOLD 暫扣／REJECT 婉拒"}
+      - {name: reviewed_by, type: VARCHAR(40), comment: 執行覆核的人員}
+      - {name: reviewed_at, type: DATETIME, comment: 覆核完成時間}
+      - {name: created_at, type: DATETIME, comment: 建檔時間}
+
+  # ---------------------------------------------------------------- 3
+  employee_profiles:
+    attach: {to: employees, fk: employee_id, cardinality: "1:1"}
+    table_comment: >-
+      員工人資檔案寬表：雇用型態與職級異動、工作地點與遠端安排、
+      學歷語言與證照、教育訓練與年度考核等第、特休時數與緊急聯絡人。
+      這是人資檔案，員工的姓名職稱在 employees，排班在 employee_shifts。
+    concept_groups: [雇用與職級, 工作地點與遠端, 學歷語言證照, 訓練與考核, 休假與緊急聯絡]
+    # ⚠️ 考核用「等第 A/B/C」不用分數 —— 避開 #141 的 score/分數/評分
+    columns:
+      - {name: id, type: INT AUTO_INCREMENT PRIMARY KEY, comment: 流水號}
+      - {name: employee_id, type: INT, comment: 對應的員工}
+      - {name: employment_type, type: VARCHAR(20), comment: "雇用型態：FULLTIME 正職／PARTTIME 兼職／CONTRACT 約聘／INTERN 實習"}
+      - {name: job_level, type: VARCHAR(10), comment: "職級：J1~J8，數字越大越資深"}
+      - {name: job_family, type: VARCHAR(30), comment: "職務家族：工程／營運／業務／行政"}
+      - {name: reports_to, type: INT, comment: 直屬主管的員工編號}
+      - {name: probation_end_date, type: DATE, comment: 試用期結束日}
+      - {name: is_probation_passed, type: TINYINT, comment: 試用期是否通過}
+      - {name: last_promotion_date, type: DATE, comment: 最近一次升遷日期，未升遷為 NULL}
+      - {name: promotion_count, type: INT, comment: 到職至今的升遷次數}
+      - {name: resigned_at, type: DATE, comment: 離職日期，NULL 表示仍在職}
+      - {name: resign_reason, type: VARCHAR(60), comment: 離職原因}
+      - {name: rehire_eligible, type: TINYINT, comment: 是否列為可再任用}
+      - {name: work_city, type: VARCHAR(20), comment: 主要工作城市}
+      - {name: work_site, type: VARCHAR(40), comment: 辦公據點名稱}
+      - {name: desk_no, type: VARCHAR(20), comment: 座位編號}
+      - {name: remote_policy, type: VARCHAR(20), comment: "遠端安排：ONSITE 全實體／HYBRID 混合／REMOTE 全遠端"}
+      - {name: remote_days_per_week, type: INT, comment: 每週可遠端天數}
+      - {name: timezone, type: VARCHAR(30), comment: 工作時區}
+      - {name: education_level, type: VARCHAR(20), comment: "最高學歷：HIGHSCHOOL／BACHELOR／MASTER／PHD"}
+      - {name: major, type: VARCHAR(40), comment: 主修科系}
+      - {name: graduated_school, type: VARCHAR(60), comment: 畢業學校}
+      - {name: graduated_year, type: INT, comment: 畢業年份}
+      - {name: language_primary, type: VARCHAR(20), comment: 主要工作語言}
+      - {name: language_secondary, type: VARCHAR(20), comment: 第二語言，無則為 NULL}
+      - {name: english_level, type: VARCHAR(10), comment: "英語能力等級：A1~C2"}
+      - {name: certifications, type: VARCHAR(200), comment: 持有證照，以分號分隔}
+      - {name: cert_expiry_nearest, type: DATE, comment: 最近一張即將到期的證照日期}
+      - {name: training_hours_ytd, type: INT, comment: 今年度累計受訓時數}
+      - {name: training_required_hours, type: INT, comment: 今年度應完成的受訓時數}
+      - {name: last_training_at, type: DATE, comment: 最近一次受訓日期}
+      - {name: onboarding_completed, type: TINYINT, comment: 到職訓練是否完成}
+      - {name: safety_training_expiry, type: DATE, comment: 職安訓練效期到期日}
+      - {name: review_grade_last, type: VARCHAR(5), comment: "最近一次年度考核等第：A／B／C／D"}
+      - {name: review_grade_prev, type: VARCHAR(5), comment: 前一年度考核等第}
+      - {name: review_date_last, type: DATE, comment: 最近一次考核日期}
+      - {name: annual_leave_quota, type: INT, comment: 年度特休總時數}
+      - {name: annual_leave_used, type: INT, comment: 已使用的特休時數}
+      - {name: sick_leave_used, type: INT, comment: 已使用的病假時數}
+      - {name: overtime_hours_ytd, type: INT, comment: 今年度累計加班時數}
+      - {name: emergency_contact_name, type: VARCHAR(40), comment: 緊急聯絡人姓名}
+      - {name: emergency_contact_phone, type: VARCHAR(30), comment: 緊急聯絡人電話}
+      - {name: emergency_contact_relation, type: VARCHAR(20), comment: 與緊急聯絡人的關係}
+      - {name: has_company_laptop, type: TINYINT, comment: 是否配發公司筆電}
+      - {name: badge_no, type: VARCHAR(20), comment: 門禁識別證號}
+      - {name: created_at, type: DATETIME, comment: 建檔時間}
+
+  # ---------------------------------------------------------------- 4
+  store_profiles:
+    attach: {to: stores, fk: store_id, cardinality: "1:1"}
+    table_comment: >-
+      門市營運檔案寬表：門市地址與交通停車、每週各日營業時間、
+      提供哪些到店服務、店面設施與無障礙、裝修與稽核紀錄。
+      這是實體門市的營運面，店名與所在城市在 stores。
+    concept_groups: [地址與交通, 營業時間, 到店服務項目, 設施與無障礙, 裝修與稽核]
+    # ⚠️ 不含任何庫存或容量欄位 —— 見 probe_policy.semantic_bans
+    columns:
+      - {name: id, type: INT AUTO_INCREMENT PRIMARY KEY, comment: 流水號}
+      - {name: store_id, type: INT, comment: 對應的門市}
+      - {name: address_line, type: VARCHAR(120), comment: 門市完整地址}
+      - {name: district, type: VARCHAR(30), comment: 行政區}
+      - {name: postal_code, type: VARCHAR(10), comment: 郵遞區號}
+      - {name: floor_no, type: VARCHAR(10), comment: 所在樓層}
+      - {name: floor_area_ping, type: "DECIMAL(6,1)", comment: 店面坪數}
+      - {name: nearest_mrt, type: VARCHAR(40), comment: 最近的捷運站}
+      - {name: walk_minutes_from_mrt, type: INT, comment: 從捷運站步行分鐘數}
+      - {name: parking_spaces, type: INT, comment: 附設停車位數量，0 表示無}
+      - {name: has_bike_parking, type: TINYINT, comment: 是否有機車停車位}
+      - {name: district_type, type: VARCHAR(20), comment: "商圈類型：MALL 百貨／STREET 街邊／STATION 車站／SUBURB 郊區"}
+      - {name: phone, type: VARCHAR(30), comment: 門市電話}
+      - {name: email, type: VARCHAR(80), comment: 門市聯絡信箱}
+      - {name: mon_open, type: VARCHAR(11), comment: 週一營業時間，CLOSED 表示公休}
+      - {name: tue_open, type: VARCHAR(11), comment: 週二營業時間}
+      - {name: wed_open, type: VARCHAR(11), comment: 週三營業時間}
+      - {name: thu_open, type: VARCHAR(11), comment: 週四營業時間}
+      - {name: fri_open, type: VARCHAR(11), comment: 週五營業時間}
+      - {name: sat_open, type: VARCHAR(11), comment: 週六營業時間}
+      - {name: sun_open, type: VARCHAR(11), comment: 週日營業時間}
+      - {name: weekly_open_hours, type: "DECIMAL(5,1)", comment: 每週總營業時數}
+      - {name: is_24h, type: TINYINT, comment: 是否 24 小時營業}
+      - {name: holiday_policy, type: VARCHAR(60), comment: 國定假日營業規則說明}
+      - {name: offers_pickup, type: TINYINT, comment: 是否提供線上購買門市取貨}
+      - {name: offers_return, type: TINYINT, comment: 是否受理退貨}
+      - {name: offers_repair, type: TINYINT, comment: 是否提供維修送修服務}
+      - {name: offers_installation, type: TINYINT, comment: 是否提供安裝服務}
+      - {name: offers_trade_in, type: TINYINT, comment: 是否提供舊機換購}
+      - {name: offers_gift_wrap, type: TINYINT, comment: 是否提供禮物包裝}
+      - {name: offers_consultation, type: TINYINT, comment: 是否提供專人諮詢預約}
+      - {name: service_counter_count, type: INT, comment: 服務櫃檯數量}
+      - {name: fitting_room_count, type: INT, comment: 試衣間數量}
+      - {name: has_wifi, type: TINYINT, comment: 是否提供免費無線網路}
+      - {name: has_restroom, type: TINYINT, comment: 是否有洗手間供顧客使用}
+      - {name: has_nursing_room, type: TINYINT, comment: 是否設有哺乳室}
+      - {name: wheelchair_accessible, type: TINYINT, comment: 是否無障礙通行}
+      - {name: has_elevator, type: TINYINT, comment: 是否有電梯直達}
+      - {name: has_braille_signage, type: TINYINT, comment: 是否設有點字標示}
+      - {name: pet_friendly, type: TINYINT, comment: 是否允許攜帶寵物}
+      - {name: last_renovated_at, type: DATE, comment: 最近一次裝修完成日}
+      - {name: renovation_budget_level, type: VARCHAR(10), comment: "裝修規模等級：S／M／L"}
+      - {name: last_audit_at, type: DATE, comment: 最近一次營運稽核日期}
+      - {name: audit_result, type: VARCHAR(20), comment: "稽核結果：PASS 通過／CONDITIONAL 有條件通過／FAIL 未通過"}
+      - {name: fire_cert_expiry, type: DATE, comment: 消防安檢合格證到期日}
+      - {name: lease_end_date, type: DATE, comment: 租約到期日}
+      - {name: created_at, type: DATETIME, comment: 建檔時間}
+
+  # ---------------------------------------------------------------- 5
+  supplier_profiles:
+    attach: {to: suppliers, fk: supplier_id, cardinality: "1:1"}
+    table_comment: >-
+      供應商資格檔案寬表：公司登記與銀行帳戶、對接窗口與往來語言時區、
+      品質認證與稽核結果、交期承諾與配合條件。
+      這是供應商的資格與往來條件，單一商品的供貨關係在 product_suppliers。
+    concept_groups: [公司登記與帳戶, 對接窗口, 認證與稽核, 交期與配合條件]
+    # ⚠️ 不含任何價格／成本欄位 —— 見 probe_policy.semantic_bans
+    columns:
+      - {name: id, type: INT AUTO_INCREMENT PRIMARY KEY, comment: 流水號}
+      - {name: supplier_id, type: INT, comment: 對應的供應商}
+      - {name: legal_name, type: VARCHAR(80), comment: 公司法定全名}
+      - {name: tax_id, type: VARCHAR(20), comment: 統一編號}
+      - {name: registered_country, type: VARCHAR(20), comment: 公司登記國別}
+      - {name: registered_address, type: VARCHAR(140), comment: 登記地址}
+      - {name: established_year, type: INT, comment: 公司成立年份}
+      - {name: employee_scale, type: VARCHAR(20), comment: "員工規模級距：1-50／51-200／201-1000／1000+"}
+      - {name: bank_name, type: VARCHAR(60), comment: 往來銀行名稱}
+      - {name: bank_account_last4, type: VARCHAR(10), comment: 匯款帳號末四碼}
+      - {name: payment_terms, type: VARCHAR(30), comment: "付款條件：NET30／NET60／PREPAID 預付"}
+      - {name: invoice_method, type: VARCHAR(20), comment: "請款方式：EINVOICE 電子／PAPER 紙本"}
+      - {name: contact_sales_name, type: VARCHAR(40), comment: 業務窗口姓名}
+      - {name: contact_sales_phone, type: VARCHAR(30), comment: 業務窗口電話}
+      - {name: contact_sales_email, type: VARCHAR(80), comment: 業務窗口信箱}
+      - {name: contact_qa_name, type: VARCHAR(40), comment: 品保窗口姓名}
+      - {name: contact_qa_email, type: VARCHAR(80), comment: 品保窗口信箱}
+      - {name: contact_logistics_name, type: VARCHAR(40), comment: 物流窗口姓名}
+      - {name: contact_logistics_email, type: VARCHAR(80), comment: 物流窗口信箱}
+      - {name: escalation_contact, type: VARCHAR(40), comment: 爭議升級聯絡人}
+      - {name: business_language, type: VARCHAR(20), comment: 往來使用語言}
+      - {name: timezone, type: VARCHAR(30), comment: 對方所在時區}
+      - {name: response_sla_hours, type: INT, comment: 承諾回覆時數}
+      - {name: iso9001_certified, type: TINYINT, comment: 是否通過 ISO 9001 品質管理認證}
+      - {name: iso14001_certified, type: TINYINT, comment: 是否通過 ISO 14001 環境管理認證}
+      - {name: cert_expiry_nearest, type: DATE, comment: 最近一張即將到期的認證日期}
+      - {name: last_audit_at, type: DATE, comment: 最近一次現場稽核日期}
+      - {name: audit_result, type: VARCHAR(20), comment: "稽核結果：PASS 通過／CONDITIONAL 有條件通過／FAIL 未通過"}
+      - {name: audit_findings_open, type: INT, comment: 尚未結案的稽核缺失項數}
+      - {name: quality_grade, type: VARCHAR(5), comment: "品質等第：A／B／C"}
+      - {name: defect_rate_ppm, type: INT, comment: 不良品率，單位 ppm}
+      - {name: on_time_delivery_pct, type: "DECIMAL(5,2)", comment: 準時交貨百分比}
+      - {name: lead_time_committed_days, type: INT, comment: 合約承諾的交期天數}
+      - {name: min_order_qty, type: INT, comment: 最小訂購量}
+      - {name: is_exclusive, type: TINYINT, comment: 是否為獨家供應商}
+      - {name: is_backup_supplier, type: TINYINT, comment: 是否為備援供應商}
+      - {name: accepts_dropship, type: TINYINT, comment: 是否接受直送客戶}
+      - {name: accepts_returns, type: TINYINT, comment: 是否接受退回瑕疵品}
+      - {name: nda_signed_at, type: DATE, comment: 保密協議簽署日}
+      - {name: onboarded_at, type: DATE, comment: 供應商建立往來的日期}
+      - {name: suspended_at, type: DATE, comment: 暫停往來日期，NULL 表示正常往來}
+      - {name: suspend_reason, type: VARCHAR(80), comment: 暫停往來原因}
+      - {name: created_at, type: DATETIME, comment: 建檔時間}
+
+  # ---------------------------------------------------------------- 6
+  campaign_profiles:
+    attach: {to: campaigns, fk: campaign_id, cardinality: "1:1"}
+    table_comment: >-
+      行銷活動檔案寬表：投放預算與花費、受眾鎖定與版位設定、
+      素材與 A/B 分組、曝光點擊轉換等成效數字、負責人與審核。
+      這是廣告投放的設定與成效，活動名稱與期間在 campaigns。
+    concept_groups: [預算與花費, 受眾與版位, 素材與AB分組, 成效數字, 負責人與審核]
+    # ⚠️ 花費是廣告支出，不是商品成本；不含任何毛利／利潤欄位
+    columns:
+      - {name: id, type: INT AUTO_INCREMENT PRIMARY KEY, comment: 流水號}
+      - {name: campaign_id, type: INT, comment: 對應的行銷活動}
+      - {name: budget_total, type: "DECIMAL(12,2)", comment: 活動總預算金額}
+      - {name: budget_daily, type: "DECIMAL(10,2)", comment: 每日預算上限}
+      - {name: spend_total, type: "DECIMAL(12,2)", comment: 實際投放花費總額}
+      - {name: spend_pacing_pct, type: "DECIMAL(5,2)", comment: 花費進度百分比，實際花費佔總預算}
+      - {name: bid_strategy, type: VARCHAR(30), comment: "出價策略：CPC 單次點擊／CPM 千次曝光／CPA 單次行動"}
+      - {name: bid_amount, type: "DECIMAL(8,2)", comment: 出價金額}
+      - {name: currency_code, type: VARCHAR(10), comment: 投放幣別}
+      - {name: audience_name, type: VARCHAR(60), comment: 受眾包名稱}
+      - {name: audience_size, type: INT, comment: 受眾包人數規模}
+      - {name: target_age_min, type: INT, comment: 鎖定最小年齡}
+      - {name: target_age_max, type: INT, comment: 鎖定最大年齡}
+      - {name: target_gender, type: VARCHAR(10), comment: "鎖定性別：ALL／M／F"}
+      - {name: target_cities, type: VARCHAR(160), comment: 鎖定城市，以逗號分隔}
+      - {name: target_interests, type: VARCHAR(200), comment: 鎖定興趣標籤}
+      - {name: exclude_existing_customers, type: TINYINT, comment: 是否排除既有客戶}
+      - {name: placement, type: VARCHAR(60), comment: "投放版位：FEED 動態／STORY 限動／SEARCH 搜尋／DISPLAY 聯播網"}
+      - {name: device_target, type: VARCHAR(20), comment: "鎖定裝置：ALL／MOBILE／DESKTOP"}
+      - {name: creative_type, type: VARCHAR(20), comment: "素材型式：IMAGE 圖片／VIDEO 影片／CAROUSEL 輪播"}
+      - {name: creative_count, type: INT, comment: 使用的素材件數}
+      - {name: creative_updated_at, type: DATETIME, comment: 素材最後更新時間}
+      - {name: headline_text, type: VARCHAR(120), comment: 廣告主標題文案}
+      - {name: cta_text, type: VARCHAR(40), comment: 行動呼籲按鈕文字}
+      - {name: landing_url, type: VARCHAR(200), comment: 廣告導向的落地頁網址}
+      - {name: ab_test_group, type: VARCHAR(10), comment: "A/B 測試分組：A／B／NONE"}
+      - {name: ab_test_variable, type: VARCHAR(40), comment: A/B 測試變因說明}
+      - {name: impressions, type: INT, comment: 曝光次數}
+      - {name: clicks, type: INT, comment: 點擊次數}
+      - {name: ctr_pct, type: "DECIMAL(6,3)", comment: 點擊率百分比}
+      - {name: reach, type: INT, comment: 觸及不重複人數}
+      - {name: frequency, type: "DECIMAL(5,2)", comment: 平均每人看到幾次}
+      - {name: video_views, type: INT, comment: 影片觀看次數，非影片素材為 0}
+      - {name: video_completion_pct, type: "DECIMAL(5,2)", comment: 影片完整看完的百分比}
+      - {name: conversions, type: INT, comment: 轉換次數}
+      - {name: conversion_rate_pct, type: "DECIMAL(6,3)", comment: 轉換率百分比}
+      - {name: add_to_cart_count, type: INT, comment: 由此活動帶來的加入購物車次數}
+      - {name: bounce_rate_pct, type: "DECIMAL(5,2)", comment: 落地頁跳出率百分比}
+      - {name: avg_session_seconds, type: INT, comment: 落地頁平均停留秒數}
+      - {name: owner_name, type: VARCHAR(40), comment: 活動負責人}
+      - {name: agency_name, type: VARCHAR(60), comment: 委外代理商名稱，自操為 NULL}
+      - {name: approved_by, type: VARCHAR(40), comment: 預算核准人}
+      - {name: approved_at, type: DATETIME, comment: 預算核准時間}
+      - {name: is_paused, type: TINYINT, comment: 是否已暫停投放}
+      - {name: paused_reason, type: VARCHAR(80), comment: 暫停原因}
+      - {name: created_at, type: DATETIME, comment: 建檔時間}
+
+# =============================================================================
+# GT 題目計畫
+# =============================================================================
+# 三種角色，缺任何一種這次擴充就白做：
+#
+#   multi_col  需要單表 5+ 個非鍵欄位 —— 逼 eval_column_recall 的 K=4 破功。
+#              今天 248 題**一題都沒有**，所以 K=4 永遠回 100%。
+#   two_wide   一題同時需要兩張寬表 —— 把 p90 scoped DDL 推過 10,000。
+#   discrim    概念藏在寬表欄位裡、表註解塞不下（#154 的形狀）——
+#              測 §2.5 的「一張表一句註解」容量上限。
+#
+# 刻意讓 discrim 題目的關鍵詞**不在 table_comment 裡**（在 concept_groups
+# 的第 5 群，也就是被容量上限擠掉的那一群）—— 那正是要量的東西。
+
+questions:
+  # phrasing: terse   條列式、schema 關鍵詞密度高（今天 257 題大多是這種）
+  #           spoken  業務口語、有贅字與間接指稱、關鍵詞被稀釋
+  # 刻意各半。口語化會**降低問句裡的 schema 訊號密度**，那正是真實使用者的樣子，
+  # 也正好是檢索最吃力的條件 —— 只配 terse 題會把難度調低。
+
+  - {table: product_profiles, roles: [multi_col], phrasing: terse,
+     q: "列出所有已停產商品的品名、英文品名、下架時間、內容維護負責人與可退貨天數。"}
+  - {table: product_profiles, roles: [multi_col, discrim], phrasing: spoken,
+     q: "有些東西是不能走空運的，這類商品我想看一下它們的危險品分類、外箱長寬高跟含包裝的重量，幫我整理出來。"}
+  - {table: product_profiles, roles: [discrim], phrasing: spoken,
+     q: "有沒有商品的安全認證其實已經過期了？我怕有合規風險。"}
+  - {table: product_profiles, roles: [multi_col], phrasing: terse,
+     q: "內容完整度低於 60% 的商品，內容檔案上登記的圖片張數、是否有影片、是否附說明書與翻譯狀態各是什麼？"}
+
+  - {table: order_profiles, roles: [multi_col], phrasing: terse,
+     q: "列出所有以行動應用下單的訂單，含裝置類型、作業系統、應用版本與結帳耗時秒數。"}
+  - {table: order_profiles, roles: [multi_col, discrim], phrasing: spoken,
+     q: "那些被系統擋下來說要人工看過的單子，最後審的結果是什麼？誰審的、什麼時候審的、客人有沒有抱怨？"}
+  - {table: order_profiles, roles: [discrim], phrasing: spoken,
+     q: "有多少客人下單的時候有特別交代說送到之前要先打電話給他？"}
+  - {table: order_profiles, roles: [multi_col], phrasing: terse,
+     q: "訪客結帳的訂單，其流量來源、媒介、導流網域與落地頁分別是什麼？"}
+
+  - {table: employee_profiles, roles: [multi_col], phrasing: spoken,
+     q: "我想知道哪些同事是完全在家上班的，順便看一下他們一週可以遠端幾天、人在哪個城市、時區跟聘僱方式。"}
+  - {table: employee_profiles, roles: [multi_col, discrim], phrasing: spoken,
+     q: "今年教育訓練時數還沒補齊的同仁有哪些？我要看他們上了幾小時、規定要幾小時、上次上課是什麼時候，還有職安訓練什麼時候到期。"}
+  - {table: employee_profiles, roles: [discrim], phrasing: terse,
+     q: "最近一次年度考核等第是 A 的員工有哪些？"}
+
+  - {table: store_profiles, roles: [multi_col], phrasing: spoken,
+     q: "禮拜天不開的店有哪些？順便告訴我它們在哪一區、店多大、離最近的捷運站走路要幾分鐘。"}
+  - {table: store_profiles, roles: [multi_col, discrim], phrasing: spoken,
+     q: "我想找那種維修、安裝、舊機換購三種服務都有做的門市，這些店的服務櫃檯有幾個？有沒有無障礙？"}
+  - {table: store_profiles, roles: [discrim], phrasing: spoken,
+     q: "有沒有哪幾家店的消防安檢快到期了？今年年底前會過期的那種。"}
+
+  - {table: supplier_profiles, roles: [multi_col], phrasing: terse,
+     q: "列出準時交貨率低於 90% 的供應商，含不良品率、品質等第、承諾交期天數與尚未結案的稽核缺失數。"}
+  - {table: supplier_profiles, roles: [discrim], phrasing: spoken,
+     q: "我們現在有跟哪幾家廠商停止往來嗎？為什麼停？"}
+
+  - {table: campaign_profiles, roles: [multi_col], phrasing: terse,
+     q: "列出每一檔活動的總預算、實際花費、花費進度、曝光數、點擊數與點擊率。"}
+  - {table: campaign_profiles, roles: [multi_col, discrim], phrasing: spoken,
+     q: "有哪幾檔廣告後來被停掉了？為什麼停、當初是誰核准的、什麼時候核的、已經花掉多少錢？"}
+
+  # ---- 同時需要兩張寬表（把 p90 scoped DDL 推過 10,000）----
+  - {tables: [product_profiles, supplier_profiles], roles: [two_wide, multi_col], phrasing: spoken,
+     q: "已經停止往來的那些供應商，他們供的貨裡面還有哪些是現在架上還在賣的？我想看商品的英文品名跟那家廠商的品質等第。"}
+  - {tables: [order_profiles, customer_profiles], roles: [two_wide, multi_col], phrasing: terse,
+     q: "以行動應用下單、而且客戶會員等級是 GOLD 的訂單有幾張？"}
+  - {tables: [store_profiles, employee_profiles], roles: [two_wide, multi_col], phrasing: spoken,
+     q: "我想找那些有提供維修服務的門市，而且裡面有配置「全遠端」工作的員工，有哪些店？"}
+  - {tables: [campaign_profiles, order_profiles], roles: [two_wide], phrasing: terse,
+     q: "點擊率最高的那一檔活動，歸因到它的訂單有幾張？總金額多少？"}
+
+# GT SQL 刻意還沒寫 —— 答案依賴實際灌進去的資料，而且照 §5.1 要先驗證
+# 平手題與同名不同人才能定案。灌完資料才寫得出來。

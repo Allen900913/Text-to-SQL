@@ -150,6 +150,14 @@ _DEFAULT_COST_REVIEWED: frozenset[str] = frozenset({
     "warranty_claims", "service_appointments",
     # 基礎設施（never_answered），全部不連業務主體
     "api_request_logs", "feature_flags", "cache_entries", "error_reports",
+    # --- 2026-08-21 寬表擴充：六張 1:1 檔案表，維持成本 1 ---
+    # 這六張各自只有**一條** FK 連回母體（products / orders / employees /
+    # stores / suppliers / campaigns），在外鍵圖上是 degree-1 的**葉節點**。
+    # 葉節點不可能落在任兩個終端點之間的路徑上，所以 Steiner tree 永遠不會
+    # 把它們當中介表收進來 —— 成本高低對繞路完全沒有影響。
+    # （這也正是 #40／#62 漏 products 時 KMB 補不回來的同一個性質，見 §7.2。）
+    "product_profiles", "order_profiles", "employee_profiles",
+    "store_profiles", "supplier_profiles", "campaign_profiles",
 })
 
 
