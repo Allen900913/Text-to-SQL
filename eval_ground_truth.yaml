@@ -2651,3 +2651,255 @@
     SELECT s.name, COUNT(*) AS n
     FROM service_appointments a JOIN stores s ON s.id = a.store_id
     GROUP BY s.id, s.name ORDER BY s.name
+
+# ===========================================================================
+# 六張 1:1 寬表（product/order/employee/store/supplier/campaign_profiles）
+#   · multi_col  一題要多個欄位 —— 用來讓欄位裁剪的 K=4 天花板現形
+#   · discrim    條件落在寬表的非鍵欄位上，選錯表就答不出來
+#   · two_wide   兩張寬表的交集，少查一張就錯
+# 資料由 tools/add_wide_tables.py 保證式配置，判準見該檔 assert_criteria()。
+# ===========================================================================
+
+- id: 258
+  question: 列出所有已停產商品的品名、英文品名、下架時間、內容維護負責人與可退貨天數。
+  expect: rows
+  sql: |
+    SELECT p.name, pp.name_en, pp.delisted_at, pp.content_owner, pp.return_policy_days
+    FROM product_profiles pp JOIN products p ON p.id = pp.product_id
+    WHERE pp.lifecycle_stage = 'EOL'
+  alt_sql:
+    - |
+      SELECT p.name, pp.name_en, pp.delisted_at, pp.content_owner, pp.return_policy_days
+      FROM product_profiles pp JOIN products p ON p.id = pp.product_id
+      WHERE pp.delisted_at IS NOT NULL
+  note: |
+    「已停產」有兩種寫法：lifecycle_stage='EOL' 與 delisted_at IS NOT NULL。
+    本資料集兩者完全等價（各 12 筆、互斥集合皆為 0），兩式都收。
+
+- id: 259
+  question: 有些東西是不能走空運的，這類商品我想看一下它們的危險品分類、外箱長寬高跟含包裝的重量，幫我整理出來。
+  expect: rows
+  sql: |
+    SELECT hazard_class, package_length_cm, package_width_cm, package_height_cm, package_weight_g
+    FROM product_profiles WHERE is_air_restricted = 1
+  note: |
+    不放品名：題目沒指名要，而比對規則對「多回欄位」寬容、對「少回」不寬容（§5.1）。
+
+- id: 260
+  question: 有沒有商品的安全認證其實已經過期了？我怕有合規風險。
+  expect: rows
+  sql: |
+    SELECT p.name FROM product_profiles pp JOIN products p ON p.id = pp.product_id
+    WHERE pp.safety_cert_expiry < '2026-08-15'
+  alt_sql:
+    - |
+      SELECT COUNT(*) FROM product_profiles WHERE safety_cert_expiry < '2026-08-15'
+  note: |
+    「有沒有」可以回名單也可以回筆數，兩式都收。
+    過期基準用資料錨點 2026-08-15，不用 CURDATE()。
+
+- id: 261
+  question: 內容完整度低於 60% 的商品，內容檔案上登記的圖片張數、是否有影片、是否附說明書與翻譯狀態各是什麼？
+  expect: rows
+  sql: |
+    SELECT image_count, has_video, has_manual_pdf, translation_status
+    FROM product_profiles WHERE content_completeness < 60
+  note: |
+    原本問「各自的圖片張數」，模型 8/8 都去 COUNT(product_images) —— 那是同一個概念
+    的另一份資料，而且值不一樣（快照 2 vs 實際 3）。這是加寬表造成的真實歧義，
+    照 §7.3 用**改問句**消歧（「內容檔案上登記的」），同時把快照語意寫進
+    image_count 的欄位註解，與 customer_profiles 的既有寫法一致。
+
+- id: 262
+  question: 列出所有以行動應用下單的訂單，含裝置類型、作業系統、應用版本與結帳耗時秒數。
+  expect: rows
+  sql: |
+    SELECT order_id, device_type, os_name, app_version, checkout_seconds
+    FROM order_profiles WHERE channel = 'APP'
+
+- id: 263
+  question: 那些被系統擋下來說要人工看過的單子，最後審的結果是什麼？誰審的、什麼時候審的、客人有沒有抱怨？
+  expect: rows
+  sql: |
+    SELECT order_id, fraud_review_result, reviewed_by, reviewed_at, has_complaint
+    FROM order_profiles WHERE fraud_review_required = 1
+
+- id: 264
+  question: 有多少客人下單的時候有特別交代說送到之前要先打電話給他？
+  expect: rows
+  sql: |
+    SELECT COUNT(DISTINCT o.customer_id)
+    FROM order_profiles op JOIN orders o ON o.id = op.order_id
+    WHERE op.contact_before_delivery = 1
+  alt_sql:
+    - |
+      SELECT COUNT(*) FROM order_profiles WHERE contact_before_delivery = 1
+  note: |
+    「有多少客人」字面是客戶數（32），但問的其實是訂單上的註記，讀成訂單數（47）也合理，兩式都收。
+
+- id: 265
+  question: 訪客結帳的訂單，其流量來源、媒介、導流網域與落地頁分別是什麼？
+  expect: rows
+  sql: |
+    SELECT order_id, utm_source, utm_medium, referrer_domain, landing_page
+    FROM order_profiles WHERE is_guest_checkout = 1
+
+- id: 266
+  question: 我想知道哪些同事是完全在家上班的，順便看一下他們一週可以遠端幾天、人在哪個城市、時區跟聘僱方式。
+  expect: rows
+  sql: |
+    SELECT e.name, ep.remote_days_per_week, ep.work_city, ep.timezone, ep.employment_type
+    FROM employee_profiles ep JOIN employees e ON e.id = ep.employee_id
+    WHERE ep.remote_policy = 'REMOTE'
+  note: |
+    全遠端的 7 位都還在職，加不加 is_active 結果相同，不需要 alt_sql。
+
+- id: 267
+  question: 今年教育訓練時數還沒補齊的同仁有哪些？我要看他們上了幾小時、規定要幾小時、上次上課是什麼時候，還有職安訓練什麼時候到期。
+  expect: rows
+  sql: |
+    SELECT e.name, ep.training_hours_ytd, ep.training_required_hours,
+           ep.last_training_at, ep.safety_training_expiry
+    FROM employee_profiles ep JOIN employees e ON e.id = ep.employee_id
+    WHERE ep.training_hours_ytd < ep.training_required_hours
+
+- id: 268
+  question: 最近一次年度考核等第是 A 的員工有哪些？
+  expect: rows
+  sql: |
+    SELECT e.name FROM employee_profiles ep JOIN employees e ON e.id = ep.employee_id
+    WHERE ep.review_grade_last = 'A'
+  note: |
+    6 位考核 A 全部在職，所以「要不要排除離職者」這個歧義在本資料集不存在，
+    不需要 alt_sql。兩位離職者的等第分別是 C 與 B。
+
+- id: 269
+  question: 禮拜天不開的店有哪些？順便告訴我它們在哪一區、店多大、離最近的捷運站走路要幾分鐘。
+  expect: rows
+  sql: |
+    SELECT s.name, sp.district, sp.floor_area_ping, sp.walk_minutes_from_mrt
+    FROM store_profiles sp JOIN stores s ON s.id = sp.store_id
+    WHERE sp.sun_open = 'CLOSED'
+  note: |
+    週日公休的三家都還在營業（唯一一家 stores.is_active=0 的門市週日有開），
+    所以加不加 is_active 都是同一組答案。#270、#271 同理。
+
+- id: 270
+  question: 我想找那種維修、安裝、舊機換購三種服務都有做的門市，這些店的服務櫃檯有幾個？有沒有無障礙？
+  expect: rows
+  sql: |
+    SELECT s.name, sp.service_counter_count, sp.wheelchair_accessible
+    FROM store_profiles sp JOIN stores s ON s.id = sp.store_id
+    WHERE sp.offers_repair = 1 AND sp.offers_installation = 1 AND sp.offers_trade_in = 1
+
+- id: 271
+  question: 有沒有哪幾家店的消防安檢快到期了？今年年底前會過期的那種。
+  expect: rows
+  sql: |
+    SELECT s.name FROM store_profiles sp JOIN stores s ON s.id = sp.store_id
+    WHERE sp.fire_cert_expiry <= '2026-12-31'
+  alt_sql:
+    - |
+      SELECT s.name FROM store_profiles sp JOIN stores s ON s.id = sp.store_id
+      WHERE sp.fire_cert_expiry BETWEEN '2026-08-15' AND '2026-12-31'
+  note: |
+    沒有任何一家已經過期，所以加不加下界都是同一組門市。
+
+- id: 272
+  question: 列出準時交貨率低於 90% 的供應商，含不良品率、品質等第、承諾交期天數與尚未結案的稽核缺失數。
+  expect: rows
+  sql: |
+    SELECT s.name, sp.defect_rate_ppm, sp.quality_grade,
+           sp.lead_time_committed_days, sp.audit_findings_open
+    FROM supplier_profiles sp JOIN suppliers s ON s.id = sp.supplier_id
+    WHERE sp.on_time_delivery_pct < 90
+
+- id: 273
+  question: 我們現在有跟哪幾家廠商停止往來嗎？為什麼停？
+  expect: rows
+  sql: |
+    SELECT s.name, sp.suspend_reason
+    FROM supplier_profiles sp JOIN suppliers s ON s.id = sp.supplier_id
+    WHERE sp.suspended_at IS NOT NULL
+
+- id: 274
+  question: 列出每一檔活動的總預算、實際花費、花費進度、曝光數、點擊數與點擊率。
+  expect: rows
+  sql: |
+    SELECT budget_total, spend_total, spend_pacing_pct, impressions, clicks, ctr_pct
+    FROM campaign_profiles
+  note: |
+    不放活動名稱：campaigns.name 有重複（10 檔只有 4 種名字），
+    放進 GT 等於把「同名不同檔」的風險帶進比對（§5.1）。
+
+- id: 275
+  question: 有哪幾檔廣告後來被停掉了？為什麼停、當初是誰核准的、什麼時候核的、已經花掉多少錢？
+  expect: rows
+  sql: |
+    SELECT paused_reason, approved_by, approved_at, spend_total
+    FROM campaign_profiles WHERE is_paused = 1
+  note: |
+    同 #274，活動名稱有重複所以不入 GT。
+
+- id: 276
+  question: 已經停止往來的那些供應商，他們供的貨裡面還有哪些是現在架上還在賣的？我想看商品的英文品名跟那家廠商的品質等第。
+  expect: rows
+  sql: |
+    SELECT pp.name_en, sp.quality_grade
+    FROM supplier_profiles sp
+    JOIN product_suppliers ps ON ps.supplier_id = sp.supplier_id
+    JOIN product_profiles pp ON pp.product_id = ps.product_id
+    WHERE sp.suspended_at IS NOT NULL AND pp.delisted_at IS NULL
+  alt_sql:
+    - |
+      SELECT pp.name_en, sp.quality_grade
+      FROM supplier_profiles sp
+      JOIN product_suppliers ps ON ps.supplier_id = sp.supplier_id
+      JOIN product_profiles pp ON pp.product_id = ps.product_id
+      WHERE sp.suspended_at IS NOT NULL AND pp.lifecycle_stage <> 'EOL'
+    - |
+      SELECT DISTINCT pp.name_en, sp.quality_grade
+      FROM supplier_profiles sp
+      JOIN product_suppliers ps ON ps.supplier_id = sp.supplier_id
+      JOIN product_profiles pp ON pp.product_id = ps.product_id
+      WHERE sp.suspended_at IS NOT NULL AND pp.delisted_at IS NULL
+  note: |
+    有一項商品同時由兩家暫停往來的供應商供貨，而且兩家品質等第相同，
+    所以「一組供貨關係一列」是 15 列、「一項商品一列」是 14 列 —— 兩種讀法都收。
+    「在架」用 delisted_at IS NULL，與 lifecycle_stage <> 'EOL' 在本資料集等價。
+
+- id: 277
+  question: 以行動應用下單、而且客戶會員等級是 GOLD 的訂單有幾張？
+  expect: rows
+  sql: |
+    SELECT COUNT(*) FROM order_profiles op
+    JOIN orders o ON o.id = op.order_id
+    JOIN customer_profiles cp ON cp.customer_id = o.customer_id
+    WHERE op.channel = 'APP' AND cp.tier = 'GOLD'
+
+- id: 278
+  question: 我想找那些有提供維修服務的門市，而且裡面有配置「全遠端」工作的員工，有哪些店？
+  expect: rows
+  sql: |
+    SELECT DISTINCT s.name FROM store_profiles sp
+    JOIN stores s ON s.id = sp.store_id
+    JOIN store_staff ss ON ss.store_id = sp.store_id
+    JOIN employee_profiles ep ON ep.employee_id = ss.employee_id
+    WHERE sp.offers_repair = 1 AND ep.remote_policy = 'REMOTE'
+  note: |
+    兩個條件都會改變答案：維修門市 6 家、有全遠端員工的門市 3 家、交集 2 家 ——
+    少查任何一張表都答不對，這正是雙寬表題要測的。
+    六家維修門市全部都還在營業，所以加不加 stores.is_active 沒有差別。
+
+- id: 279
+  question: 點擊率最高的那一檔活動，歸因到它的訂單有幾張？總金額多少？
+  expect: rows
+  sql: |
+    SELECT COUNT(*) AS order_count, SUM(o.total_amount) AS amount
+    FROM campaign_profiles cp
+    JOIN order_profiles op ON op.utm_campaign = CONCAT('CMP-', LPAD(cp.campaign_id, 2, '0'))
+    JOIN orders o ON o.id = op.order_id
+    WHERE cp.ctr_pct = (SELECT MAX(ctr_pct) FROM campaign_profiles)
+  note: |
+    極值用 MAX 子查詢，不用 ORDER BY LIMIT（§5.1 交叉驗證）。
+    訂單數 20 有三檔活動並列，所以題目多問總金額 —— 十檔的歸因金額兩兩相異，選錯活動不可能蒙對。
