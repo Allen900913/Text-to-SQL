@@ -234,7 +234,12 @@ def main() -> int:
         if luck:
             lucky.append(f"#{qid:<4} {luck}")
 
-    total = sum(tally.values())
+    # 分母只能數「判決」—— defence_ok / defence_leak 是疊在 verdict 上的
+    # 標記（一題防禦題同時是 correct 又是 defence_ok），拿 sum(tally.values())
+    # 當分母會把防禦題數重複加進去，分母 257 → 261、正確率被低報 1.5pp。
+    # 這個 bug 讓 §11.13 記下了一個錯的「253/261」。
+    VERDICTS = ("correct", "wrong", "no_sql", "missing")
+    total = sum(tally[k] for k in VERDICTS)
     correct = tally["correct"]
     print(f"{'=' * 70}")
     if failures:

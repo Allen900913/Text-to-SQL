@@ -69,12 +69,18 @@ def load_cases(known):
     for e in gt:
         if e.get("expect") == "schema_unsupported" or not e.get("sql"):
             continue
-        try:
-            need, _ = required_schema(e["sql"], known)
-        except Exception:
-            continue
-        if need:
-            out.append((e["id"], e["question"], need))
+        # alt_sql 的寫法用的表不一樣，任一相符即通過（同 eval_score.judge()）。
+        # 只解主 SQL 會把「走了另一條被 GT 認可的路」判成檢索失敗 —— 那是低報。
+        needs = []
+        for sql in [e["sql"]] + list(e.get("alt_sql") or []):
+            try:
+                need, _ = required_schema(sql, known)
+            except Exception:
+                continue
+            if need and need not in needs:
+                needs.append(need)
+        if needs:
+            out.append((e["id"], e["question"], needs))
     return out
 
 
@@ -166,9 +172,11 @@ def column_owner_scores(qvec, colvecs, top_m: int) -> dict[str, float]:
 def evaluate(name: str, rankings: list[list[str]], cases, distractors) -> dict:
     rec = {}
     for k in KS:
-        ok = sum(1 for (_, _, need), r in zip(cases, rankings) if need <= set(r[:k]))
+        ok = sum(1 for (_, _, needs), r in zip(cases, rankings)
+                 if any(nd <= set(r[:k]) for nd in needs))
         rec[k] = ok / len(cases) * 100
-    top1 = sum(1 for (_, _, need), r in zip(cases, rankings) if r[0] in need)
+    top1 = sum(1 for (_, _, needs), r in zip(cases, rankings)
+               if any(r[0] in nd for nd in needs))
     dist1 = sum(1 for r in rankings if r[0] in distractors)
     return {"name": name, "recall": rec,
             "top1": top1 / len(cases) * 100, "dist1": dist1}

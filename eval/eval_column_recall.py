@@ -108,28 +108,52 @@ def prune(table, qvec, keys, cols_of, vecs, k: int, w: int) -> set[str]:
     return {c for c in cols if f"{table}.{c}" in keys} | set(nonkey[:k])
 
 
+def _eval_one(qid, question, tabs, need, qvec, keys, cols_of, vecs, k, w, verbose):
+    """單一條可接受解的評估結果。"""
+    ok = True
+    got = tot = kept = allc = 0
+    misses = []
+    for t in tabs:
+        if t not in cols_of:
+            continue
+        keep = prune(t, qvec, keys, cols_of, vecs, k, w)
+        kept += len(keep)
+        allc += len(cols_of[t])
+        for nc in (c for c in need if c.startswith(f"{t}.")):
+            tot += 1
+            if nc.split(".", 1)[1] in keep:
+                got += 1
+                continue
+            ok = False
+            if verbose:
+                misses.append(f"  #{qid:<4} 漏 {nc}"
+                              f"{'  [JOIN鍵]' if nc in keys else ''}"
+                              f"  {question[:30]}")
+    return ok, got, tot, kept, allc, misses
+
+
 def evaluate(cases, qvecs, keys, cols_of, vecs, k, w, verbose=False):
+    """每題取「表現最好的那一條可接受解」計分。
+
+    題目有 alt_sql 時那些寫法用的欄位不一樣，而 GT 認定任一相符即通過
+    （`eval_score.judge()` 就是這樣判的）。拿主 SQL 那條當唯一標準，
+    會把「走了另一條被認可的路」判成漏欄位 —— 那是低報，不是嚴格。
+    """
     full = got = tot = kept = allc = 0
     misses = []
-    for (qid, question, tabs, need), qvec in zip(cases, qvecs):
-        ok = True
-        for t in tabs:
-            if t not in cols_of:
-                continue
-            keep = prune(t, qvec, keys, cols_of, vecs, k, w)
-            kept += len(keep)
-            allc += len(cols_of[t])
-            for nc in (c for c in need if c.startswith(f"{t}.")):
-                tot += 1
-                if nc.split(".", 1)[1] in keep:
-                    got += 1
-                    continue
-                ok = False
-                if verbose:
-                    misses.append(f"  #{qid:<4} 漏 {nc}"
-                                  f"{'  [JOIN鍵]' if nc in keys else ''}"
-                                  f"  {question[:30]}")
+    for (qid, question, alts), qvec in zip(cases, qvecs):
+        best = max(
+            (_eval_one(qid, question, tabs, need, qvec, keys, cols_of, vecs, k, w, verbose)
+             for tabs, need in alts),
+            key=lambda r: (r[0], r[1] / r[2] if r[2] else 1.0, -r[4]))
+        ok, g, t_, kp, ac, ms = best
         full += ok
+        got += g
+        tot += t_
+        kept += kp
+        allc += ac
+        if not ok:
+            misses.extend(ms)
     saved = (allc - kept) * CHARS_PER_COL / len(cases)
     return full / len(cases), got / tot, 1 - kept / allc, saved, misses
 
@@ -141,12 +165,16 @@ def load_cases(known):
     for e in gt:
         if not e.get("sql"):
             continue
-        try:
-            tabs, cols = required_schema(e["sql"], known)
-        except Exception:
-            continue
-        if tabs and cols:
-            cases.append((e["id"], e["question"], tabs, cols))
+        alts = []
+        for sql in [e["sql"]] + list(e.get("alt_sql") or []):
+            try:
+                tabs, cols = required_schema(sql, known)
+            except Exception:
+                continue
+            if tabs and cols and (tabs, cols) not in alts:
+                alts.append((tabs, cols))
+        if alts:
+            cases.append((e["id"], e["question"], alts))
     return cases
 
 
@@ -161,7 +189,7 @@ def main() -> int:
     keys, comments, cols_of = load_meta()
     cases = load_cases(get_table_columns())
     vecs = column_vectors(comments, cols_of)
-    qvecs = _embed([q for _, q, _, _ in cases], "query")
+    qvecs = _embed([q for _, q, _ in cases], "query")
 
     total_cols = sum(len(v) for v in cols_of.values())
     print(f"可評估 {len(cases)} 題｜全庫 {len(cols_of)} 張表 / {total_cols} 欄，"
