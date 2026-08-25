@@ -599,7 +599,7 @@ questions:
   - tables: [promotion_profiles, order_profiles]
     roles: [multi_col, two_wide]
     phrasing: spoken
-    q: 掛在首頁橫幅、而且結帳時自動套用的檔期有哪幾檔？各自的最低訂單門檻與單筆折抵上限是多少？用到這些檔期的訂單，又分別是從哪些流量來源進來的？
+    q: 掛在首頁橫幅、而且結帳時自動套用的檔期有哪幾檔？各自的最低訂單門檻與單筆折抵上限是多少？用到這些檔期的訂單，各自來自哪些流量來源、各有幾張？
 
   # ---- return_profiles ----
   - table: return_profiles

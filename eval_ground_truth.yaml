@@ -2937,6 +2937,19 @@
 
     修法是把問句寫清楚（主詞改成「哪幾筆出貨」），不是把 GT 放寬去迎合模型答案。
 
+
+    2026-08-25 實測：改寫後 0/8，但**原因不在問句**。模型把「標成易碎品」讀成
+
+    `product_tags`（行銷用自由標籤，例如「熱銷」「新品」），而資料裡沒有「易碎」這個
+
+    標籤，於是回 0 列；`product_profiles` 根本沒被選進候選。
+
+    易碎是物理屬性不是行銷標籤，**這個讀法產出空集合，是錯的讀法，不是另一種合法讀法**，
+
+    所以不再改問句。這題與 #282 / #287 / #292 / #308 同族：
+
+    **選表層挑了字面更像的舊窄表**，是路線 ② 要修的靶，不是 GT 缺陷。
+
     '
 - id: 285
   question: 列出被隱藏的評價，其隱藏原因、檢舉次數、主要檢舉事由、審核狀態與審核人員。
@@ -3163,53 +3176,38 @@
 
     '
 - id: 305
-  question: 掛在首頁橫幅、而且結帳時自動套用的檔期有哪幾檔？各自的最低訂單門檻與單筆折抵上限是多少？用到這些檔期的訂單，又分別是從哪些流量來源進來的？
+  question: 掛在首頁橫幅、而且結帳時自動套用的檔期有哪幾檔？各自的最低訂單門檻與單筆折抵上限是多少？用到這些檔期的訂單，各自來自哪些流量來源、各有幾張？
   expect: rows
-  sql: 'SELECT DISTINCT p.name, pp.min_order_amount, pp.max_discount_amount, op.utm_source
-
-    FROM promotion_profiles pp
-
-    JOIN promotions p ON p.id = pp.promotion_id
-
-    JOIN order_promotions o2p ON o2p.promotion_id = pp.promotion_id
-
-    JOIN orders o ON o.id = o2p.order_id
-
-    JOIN order_profiles op ON op.order_id = o.id
-
-    WHERE pp.display_slot = ''HOME_TOP'' AND pp.is_auto_applied = 1
-
-    '
+  sql: "SELECT p.name, pp.min_order_amount, pp.max_discount_amount, op.utm_source,\n       COUNT(DISTINCT\
+    \ o.id) AS order_count\nFROM promotion_profiles pp\nJOIN promotions p ON p.id = pp.promotion_id\n\
+    JOIN order_promotions o2p ON o2p.promotion_id = pp.promotion_id\nJOIN orders o ON o.id = o2p.order_id\n\
+    JOIN order_profiles op ON op.order_id = o.id\nWHERE pp.display_slot = 'HOME_TOP' AND pp.is_auto_applied\
+    \ = 1\nGROUP BY p.name, pp.min_order_amount, pp.max_discount_amount, op.utm_source\n"
   note: '雙寬表題，走 order_promotions 這條真實外鍵路徑（promotions 與 campaigns 之間沒有外鍵，所以不用「同期」那種日期比對）。
 
 
-    2026-08-25 改寫問句與 GT，修掉一個**僥倖漏洞**：
+    2026-08-25 第一次改寫，修掉**僥倖漏洞**：原 GT 是 DISTINCT(utm_source, 門檻, 上限)，只有 5 列；
 
-    原 GT 是 SELECT DISTINCT utm_source, min_order_amount, max_discount_amount，只有 5 列。
+    但符合條件的兩檔（春季購物節、滿額折抵）門檻完全相同（500/200）、流量來源集合也完全相同 ——
 
-    但符合條件的兩檔活動（春季購物節、滿額折抵）門檻**完全相同**（500/200），流量來源集合也完全相同 ——
+    **模型只查到其中一檔，會拿到一模一樣的 5 列而過關。**加上活動名稱後變 10 列，實測少查一檔掉到 5 列，一定被抓到。
 
-    **模型只查到其中一檔，會拿到一模一樣的 5 列而答對。**
 
-    加上活動名稱之後變成 10 列，少查一檔就少 5 列，一定會被抓到。
+    2026-08-25 第二次改寫，修掉**形狀歧義**：只問「來自哪些流量來源」時，「每個來源一列」與
 
-    promotions.name 在本資料集唯一（8/8），可以安全當識別欄位；用 promotion_id 的寫法補進 alt_sql。
+    「每檔一列、來源用逗號併起來」都是合法答案（實測 8 次裡有 4 次用 GROUP_CONCAT）。
+
+    加問「各有幾張」之後，逐格指標把粒度釘死 —— **這是問句層的修正，不是把 GT 放寬去迎合模型輸出。**
+
+    promotions.name 在本資料集唯一（8/8），可安全當識別欄位。
 
     '
   alt_sql:
-  - 'SELECT DISTINCT pp.promotion_id, pp.min_order_amount, pp.max_discount_amount, op.utm_source
-
-    FROM promotion_profiles pp
-
-    JOIN order_promotions o2p ON o2p.promotion_id = pp.promotion_id
-
-    JOIN orders o ON o.id = o2p.order_id
-
-    JOIN order_profiles op ON op.order_id = o.id
-
-    WHERE pp.display_slot = ''HOME_TOP'' AND pp.is_auto_applied = 1
-
-    '
+  - "SELECT pp.promotion_id, pp.min_order_amount, pp.max_discount_amount, op.utm_source,\n       COUNT(DISTINCT\
+    \ o.id) AS order_count\nFROM promotion_profiles pp\nJOIN order_promotions o2p ON o2p.promotion_id\
+    \ = pp.promotion_id\nJOIN orders o ON o.id = o2p.order_id\nJOIN order_profiles op ON op.order_id =\
+    \ o.id\nWHERE pp.display_slot = 'HOME_TOP' AND pp.is_auto_applied = 1\nGROUP BY pp.promotion_id, pp.min_order_amount,\
+    \ pp.max_discount_amount, op.utm_source\n"
 - id: 306
   question: 列出檢驗結果不符合退貨條件的退貨單，其退貨主因、檢驗人員、包裝狀況、缺少的配件與後續處置方式。
   expect: rows
