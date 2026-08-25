@@ -2957,32 +2957,40 @@
 - id: 285
   question: 列出被隱藏的評價，其隱藏原因、檢舉次數、主要檢舉事由、審核狀態與審核人員。
   expect: rows
-  sql: 'SELECT hidden_reason, report_count, report_reason, moderation_status, moderator FROM review_profiles
-    WHERE is_hidden = 1
+  sql: 'SELECT p.hidden_reason, p.report_count, p.report_reason, p.moderation_status, p.moderator FROM review_profiles p JOIN reviews r ON r.id = p.review_id WHERE p.is_hidden = 1 AND r.is_deleted = 0
 
     '
-  note: '誘餌題：reviews.is_deleted 也有 9 則，與 is_hidden 的 8 則**零重疊**，模型選錯欄位一定答錯。
+  note: '誘餌題：reviews.is_deleted 也有 9 則，與 is_hidden 的 8 則**零重疊**，模型選錯欄位一定答錯（濾掉已刪除之後仍是 8 列，誘餌不受影響）。
+
+    2026-08-25 統一慣例：review_profiles 的題目一律 JOIN 回 reviews 並濾 is_deleted = 0。
+    走母表進來的六題（#142 #143 #144 #145 #188 #189）本來就全部這樣寫，
+    走檔案表進來的四題（#285~#288）卻全部沒濾 —— 模型 join 回母表套用了題庫自己的
+    多數慣例然後被判錯（#287 八次全部如此）。影響：#286 −1 列、#287 −2 列、#285/#288 不變。
 
     '
 - id: 286
   question: 那些拿了回饋才寫的評價，是給什麼回饋、附幾張照片、被按幾次有幫助、情緒標記是什麼？
   expect: rows
-  sql: 'SELECT incentive_type, photo_count, helpful_votes, sentiment_label FROM review_profiles WHERE
-    is_incentivized = 1
+  sql: 'SELECT p.incentive_type, p.photo_count, p.helpful_votes, p.sentiment_label FROM review_profiles p JOIN reviews r ON r.id = p.review_id WHERE p.is_incentivized = 1 AND r.is_deleted = 0
 
     '
   note: '「拿了回饋才寫」= is_incentivized = 1。incentive_type 在沒回饋時是 ''NONE''，所以不能用 incentive_type <> ''NONE''
     以外的寫法當主條件（結果相同，但語意上主詞是 is_incentivized）。
 
+    2026-08-25 統一慣例：review_profiles 的題目一律 JOIN 回 reviews 並濾 is_deleted = 0。
+    走母表進來的六題（#142 #143 #144 #145 #188 #189）本來就全部這樣寫，
+    走檔案表進來的四題（#285~#288）卻全部沒濾 —— 模型 join 回母表套用了題庫自己的
+    多數慣例然後被判錯（#287 八次全部如此）。影響：#286 −1 列、#287 −2 列、#285/#288 不變。
+
     '
 - id: 287
   question: 有沒有評價，在評價內容檔案上登記的「到貨後天數」超過三十天？
   expect: rows
-  sql: 'SELECT review_id, days_after_delivery FROM review_profiles WHERE days_after_delivery > 30
+  sql: 'SELECT p.review_id, p.days_after_delivery FROM review_profiles p JOIN reviews r ON r.id = p.review_id WHERE p.days_after_delivery > 30 AND r.is_deleted = 0
 
     '
   alt_sql:
-  - 'SELECT COUNT(*) FROM review_profiles WHERE days_after_delivery > 30
+  - 'SELECT COUNT(*) FROM review_profiles p JOIN reviews r ON r.id = p.review_id WHERE p.days_after_delivery > 30 AND r.is_deleted = 0
 
     '
   note: '「有沒有」可以答成清單也可以答成筆數，兩種都合法，補 alt_sql。嚴格大於 30 —— 「超過三十天」不含第 30 天。
@@ -2990,15 +2998,24 @@
     134 則裡 97 則連得上，其中 10 則連到 2~3 個不同到貨日（取最早 22 列、取最晚 19 列）。
     母表算不出唯一答案，所以 profile 欄位就是真相來源，只是原問句沒說。
 
+    2026-08-25 統一慣例：review_profiles 的題目一律 JOIN 回 reviews 並濾 is_deleted = 0。
+    走母表進來的六題（#142 #143 #144 #145 #188 #189）本來就全部這樣寫，
+    走檔案表進來的四題（#285~#288）卻全部沒濾 —— 模型 join 回母表套用了題庫自己的
+    多數慣例然後被判錯（#287 八次全部如此）。影響：#286 −1 列、#287 −2 列、#285/#288 不變。
+
     '
 - id: 288
   question: 被選為精選的評價，其標題、內文字數、張貼裝置、評價語言與是否已驗證購買各是什麼？
   expect: rows
-  sql: 'SELECT title, body_length, device_type, language_code, is_verified_purchase FROM review_profiles
-    WHERE is_featured = 1
+  sql: 'SELECT p.title, p.body_length, p.device_type, p.language_code, p.is_verified_purchase FROM review_profiles p JOIN reviews r ON r.id = p.review_id WHERE p.is_featured = 1 AND r.is_deleted = 0
 
     '
   note: 'is_featured 與 is_pinned 是不同概念（精選 vs 置頂），別選錯。
+
+    2026-08-25 統一慣例：review_profiles 的題目一律 JOIN 回 reviews 並濾 is_deleted = 0。
+    走母表進來的六題（#142 #143 #144 #145 #188 #189）本來就全部這樣寫，
+    走檔案表進來的四題（#285~#288）卻全部沒濾 —— 模型 join 回母表套用了題庫自己的
+    多數慣例然後被判錯（#287 八次全部如此）。影響：#286 −1 列、#287 −2 列、#285/#288 不變。
 
     '
 - id: 289
@@ -3191,6 +3208,11 @@
     \ = 1\nGROUP BY p.name, pp.min_order_amount, pp.max_discount_amount, op.utm_source\n"
   note: '雙寬表題，走 order_promotions 這條真實外鍵路徑（promotions 與 campaigns 之間沒有外鍵，所以不用「同期」那種日期比對）。
 
+    2026-08-25 補 alt_sql：稽核把「模型只用 4 張表、沒用 orders」標成僥倖候選，實測**不是僥倖**——
+    order_promotions.order_id 與 order_profiles.order_id 都指向 orders.id，且 order_promotions
+    沒有孤兒列（0 筆），所以 orders 在這一題純屬穿透，直接接起來輸出完全相同（兩式都 10 列、逐列相同）。
+    鑑別力也不受影響：只查到其中一檔仍然只有 5 列。**這是承認一條等價的較短路徑，不是放寬 GT。**
+
 
     2026-08-25 第一次改寫，修掉**僥倖漏洞**：原 GT 是 DISTINCT(utm_source, 門檻, 上限)，只有 5 列；
 
@@ -3209,6 +3231,15 @@
 
     '
   alt_sql:
+  - 'SELECT p.name, pp.min_order_amount, pp.max_discount_amount, op.utm_source,
+    COUNT(DISTINCT o2p.order_id) AS order_count FROM promotion_profiles pp
+    JOIN promotions p ON p.id = pp.promotion_id
+    JOIN order_promotions o2p ON o2p.promotion_id = pp.promotion_id
+    JOIN order_profiles op ON op.order_id = o2p.order_id
+    WHERE pp.display_slot = ''HOME_TOP'' AND pp.is_auto_applied = 1
+    GROUP BY p.name, pp.min_order_amount, pp.max_discount_amount, op.utm_source
+
+    '
   - "SELECT pp.promotion_id, pp.min_order_amount, pp.max_discount_amount, op.utm_source,\n       COUNT(DISTINCT\
     \ o.id) AS order_count\nFROM promotion_profiles pp\nJOIN order_promotions o2p ON o2p.promotion_id\
     \ = pp.promotion_id\nJOIN orders o ON o.id = o2p.order_id\nJOIN order_profiles op ON op.order_id =\
