@@ -475,6 +475,30 @@ PARENT_EXTRA = {
 # 保證式配置
 # ===========================================================================
 
+def derive_from_parents(conn, data: dict[str, list[dict]]) -> list[str]:
+    """母表能唯一決定的欄位，一律從母表算，不用亂數（2026-08-25，見 §7.9）。
+
+    `image_count` 原本是 `R.randint(1, 12)`，合計 236 而 product_images 只有 123 列，
+    40 個商品裡 37 個對不上。後果不是數字難看，是同一個量有兩個來源且值不同。
+
+    刻意寫成 post-pass：`R.randint(1, 12)` 那一行**必須留在原地**，
+    少抽一次整條亂數序列就平移，22 題 GT 全毀。這裡只覆寫產生出來的值。
+
+    campaign_profiles 的 impressions / clicks / ctr_pct **不在這裡**：
+    那是廣告平台尺度（clicks 合計 134,911），campaign_clicks 表是站內點擊記錄
+    （418 列），兩者本來就是不同的量，對齊會毀掉語意。#279 改的是問句。
+    """
+    rows = {r["product_id"]: r for r in data["product_profiles"]}
+    real = dict(conn.execute(text(
+        "SELECT pr.id, COUNT(pi.id) FROM products pr "
+        "LEFT JOIN product_images pi ON pi.product_id = pr.id GROUP BY pr.id")).fetchall())
+    moved = sum(1 for k, r in rows.items() if r["image_count"] != real.get(k, 0))
+    for k, r in rows.items():
+        r["image_count"] = real.get(k, 0)
+    return [f"product_profiles.image_count：{moved} 列改為 product_images 實數，"
+            f"合計 {sum(real.values())}"]
+
+
 def guarantee(conn, data: dict[str, list[dict]]) -> list[str]:
     """把「題目要問的條件」從**機率**改成**保證**。
 
@@ -851,6 +875,11 @@ def main() -> int:
                         f"多 {sorted(extra_c)}。宣告檔是唯一來源（§8 ①）")
                 payload.append(row)
             data[name] = payload
+
+        # ---- 從母表推導（在保證式配置之前）--------------------------------
+        print("\n從母表推導（母表能唯一決定的欄位不用亂數）：")
+        for line in derive_from_parents(conn, data):
+            print(f"  · {line}")
 
         # ---- 保證式配置（在寫入之前）--------------------------------------
         print("\n保證式配置（小表不能靠機率）：")

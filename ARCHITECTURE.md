@@ -31,10 +31,16 @@ schema   93 張表 / 1071 欄位｜全庫 DDL 77,474 字元
 GT       309 題｜11 張宣告 never_answered｜防禦題 4 題｜alt_sql 50 題
 prompt   few-shot 24 則 / 12,472 字元｜business_rules 10 條 / 6,221 字元
 基準     單輪 298/309 = 96.4%｜防禦題 4/4（86 張時是 277/279 = 99.3%）
-         穩定錯 5：#279 #284 #287 #292 #308
+         穩定錯 5：#279 #284 #287 #292 #308  ← 其中三題已診斷為資料矛盾，見 §7.9
          擲硬幣 5：#184 1/8、#249 7/8、#282 1/8、#286 3/8、#305 1/8
 閘門     八項全綠（KMB 成本已為七張新表做過決定）
+         第 [9] 項衍生量一致性：一致 17｜已宣告 4｜黃燈 9｜紅燈 0
 ```
+
+> ⚠️ **上面的 96.4% 是 2026-08-25 修正衍生量矛盾之前的數字。**
+> `#279 #287 #308` 三題當時在量一個沒有唯一答案的東西（§7.9），
+> 已對齊 4 個欄位、收窄 2 題問句，**尚未重跑 e2e**。
+> 重跑指令：`.venv/Scripts/python.exe eval/test_runner.py`（309 題）。
 
 **這一輪買到的答案：擴表的代價 100% 落在 LLM 選表層。**
 
@@ -1620,6 +1626,108 @@ GT 以每筆出貨），改寫後變成 0/8 —— 但原因不在問句：模�
 `return_profiles.compensation_note` 寫死「已補償折價券」，
 但 `compensation_type` 有 `POINTS` / `GIFT_CARD` —— 文字與代碼打架。
 人看得出來，模型只會照抄。
+
+### 7.9 五題穩定錯裡有三題不是選表問題（2026-08-25）
+
+前七輪都把 `#279 #284 #287 #292 #308` 當成同一族「模型挑了字面更像的窄表」，
+方向是往註解上加東西。路線 ② 的三臂探針（93 張表全標概念群、8 票）量到的是：
+
+```
+誘餌 9 題   A 23/72   C 26/72   D 32/72      目錄 3,382 → 5,341 → 6,128 字元
+對照 6 題   A 46/48   C 48/48   D 48/48
+D vs A：變好 [258 264 282 292 152]、退步 [284 308]
+```
+
+D 最好，但**淨賺 9 票、打死 2 題、目錄 +81%**，而且 `#279 #287` 三臂全是 0/8。
+「加文字」加到目錄快兩倍還打不動的題，值得懷疑的是**題目本身**，不是模型。
+
+#### 掃描：profile 欄位與母表算出來的值對得上嗎
+
+30 項純 SQL 檢查（`tools/check_derived_consistency.py`）。**先報兩個自傷** ——
+§8 ④「對照組與檢查工具本身也要驗」在同一支腳本上中了兩次：
+
+| 我以為的缺陷 | 真相 |
+|---|---|
+| `customer_profiles.order_count/total_spent` 23/50 | **刻意的**。`seed_customer_profiles` docstring 寫明快照落後 30 天、「實測 27 位對不上」，掃描量到的正是 27 |
+| `return_profiles.total_days` 0/10 | **檢查式錯了**兩次。先寫成 `transit+approval`（建表是 `completed−requested`），改對之後仍 9/10 —— 建表用 Python `timedelta.days`（滿 24 小時），我寫 `DATEDIFF`（日曆天）。統一成 `TIMESTAMPDIFF(DAY,…)` 後 10/10 |
+
+扣掉這兩項，真正的矛盾長這樣 —— 全是 `R.randint(...)` 冒充衍生量：
+
+```
+review_profiles.days_after_delivery      1/97     _pick([1,2,…,45])
+promotion_profiles.used_count            0/8      randint(3,80)  合計 359 vs 實際 41
+product_profiles.image_count             3/40     randint(1,12)  合計 236 vs 實際 123
+shipment_profiles.attempt_count         58/143    合計 294 vs delivery_attempts 193
+return_profiles.is_over_policy_window   13/18     常數 0 再由 guarantee() 硬寫兩列為 1
+```
+
+#### 危險的不是欄位不一致，是**篩選條件在母表也算得出來而且答案不同**
+
+`#261`（`content_completeness<60`）、`#274`、`#280`（`exception_code<>'NONE'`）、
+`#303`（`is_budget_exhausted=1`）的篩選條件母表都沒有，模型沒有第二條路可走 —— **不痛**。
+真正壞掉的是這三題：
+
+| 題 | 走 profile | 走母表 | 結果 |
+|---|---|---|---|
+| `#279` 點擊率最高 | 第 3 檔 | `COUNT(campaign_clicks)` → 第 6 檔 | **不同活動** |
+| `#287` 到貨超過 30 天 | 36 列 | `DATEDIFF` → 19 列（取最早則 22） | **不同列數** |
+| `#308` 超期退貨 | 2 列 | 日期推導 → 4 列 | **不同列數** |
+
+`#279` 的 0/8 不是選錯表 —— 是**同一個問題有兩個都對的答案**，GT 只認一個。
+剩下 `#282`（`is_redirected` 全庫只有一處）、`#284`（`product_tags` 空集合）
+才是真正的字面吸引，也才是 C/D 打的靶。**九題誘餌裡有三題根本不在測選表。**
+
+#### 這不是本專案獨有的坑
+
+[AmbiQT](https://arxiv.org/abs/2310.13659)（EMNLP 2023）建 3000+ 題歧義 benchmark，
+注入手法之一就是「**加入聚合欄位，與 GROUP BY 現算並存**」—— 也就是我不小心做的事。
+差別在它有兩份 gold answer，我只有一份。
+[CIDR '26](https://arxiv.org/abs/2601.08778) 量到 BIRD mini-dev **32%** 的題目帶標註錯誤
+（金融領域 49%），四類錯誤裡的 E4 就是「T 本身有歧義」。
+
+業界的解法分三層，而**第一選擇不是讓模型選對**：
+① 資料端 —— 指定真相來源 + 排程對帳（dbt tests / dbt-expectations / Soda 的典型斷言是
+「staging 的 revenue 總和必須等於來源，容差 0.01%」）；
+② 語意端 —— semantic layer（Cube / dbt Semantic Layer / LookML）讓指標只定義一次；
+③ 題目端 —— BIRD 的 per-question evidence 句。
+
+#### 處置：路徑唯一就改資料，路徑不唯一就改問句
+
+| 欄位 / 題 | 處置 | 為什麼 |
+|---|---|---|
+| `is_over_policy_window` `attempt_count` `image_count` `used_count` | **對齊資料** | 母表唯一決定（FK 一對一、`requested_at` 與母表 18/18 相同） |
+| `#287` `days_after_delivery` | **收窄問句** | `reviews` 沒有 `order_id`：134 則裡 97 則連得上，其中 10 則連到 2~3 個不同到貨日。**母表算不出唯一答案，所以 profile 欄位就是真相來源** |
+| `#279` `ctr_pct` | **收窄問句** | `clicks` 合計 134,911（廣告平台尺度）vs `campaign_clicks` 418 列（站內記錄）——**兩個量本來就不同**，對齊會毀掉語意 |
+| `order_count` `total_spent` | **宣告不動** | 快照落後是刻意設計 |
+
+`tools/fix_derived_consistency.py` 只下 `UPDATE`，不重跑 `init_db.py`。
+實測：4 張表指紋變動、**其餘 89 張完全相同**、309 題 GT 全部可執行且無空集合、
+兩支建表腳本的 `assert_criteria` 全數通過、`#308` 由 2 列變 4 列
+（超期 7、已核准 10、交集 4，涵蓋率 22%，兩個條件都有作用）。
+
+**建表腳本一起改了，否則重跑會洗掉修正**（memory「Schema 來源要接上產生鏈」的同族）。
+刻意寫成 post-pass `derive_from_parents()` 而不是改 `gen_*` 裡那一行 ——
+`R.randint(...)` 必須留在原地，**少抽一次整條亂數序列就平移，GT 全毀**。
+
+#### 閘門第 [9] 項：衍生量一致性
+
+> **冗餘可以，矛盾不行。**
+> 兩張表記同一件事、**值相同** = 好的檢索測試（93 張表的設計目的）。
+> 兩張表記同一件事、**值不同** = 壞掉的 benchmark，因為「對」沒有定義。
+
+`tools/check_derived_consistency.py` 三種燈號：
+**紅**（exit 1）不一致 + 有 GT 引用 + 未宣告；
+**黃**不一致 + 無 GT 引用 + 未宣告（地雷，下次配題問到就變紅）；
+**綠**一致或已在 `DECLARED` 寫明理由。今天是 **一致 17｜已宣告 4｜黃 9｜紅 0**。
+
+黃燈那 9 欄（`last_login_at` 0/50、`total_items_bought` 2/50、
+`reviewer_review_count` 15/134、`cart_abandon_count` 6/50、`coupon_used_count` 7/50、
+`prior_ticket_count` 6/36、`reply_count` 63/134、`has_merchant_reply` 74/134、
+`return_count` 28/50）目前沒有題目引用，所以今天不扣分 ——
+**但下一批配題只要問到就會變紅燈**，這正是這個閘門要擋的東西。
+
+這條界線同時回答了「反向指標算不算作弊」：
+**讓模型選對表的提示是作弊，讓兩張表講同一句話是資料衛生。**
 
 ## 8. 反覆咬人的四個失敗形狀
 

@@ -2854,7 +2854,7 @@
 
     '
 - id: 279
-  question: 點擊率最高的那一檔活動，歸因到它的訂單有幾張？總金額多少？
+  question: 行銷活動檔案上點擊率最高的那一檔活動，歸因到它的訂單有幾張？總金額多少？
   expect: rows
   sql: 'SELECT COUNT(*) AS order_count, SUM(o.total_amount) AS amount
 
@@ -2870,6 +2870,9 @@
   note: '極值用 MAX 子查詢，不用 ORDER BY LIMIT（§5.1 交叉驗證）。
 
     訂單數 20 有三檔活動並列，所以題目多問總金額 —— 十檔的歸因金額兩兩相異，選錯活動不可能蒙對。
+    2026-08-25 問句加「行銷活動檔案上」：campaign_profiles.clicks 是廣告平台尺度（合計 134,911），
+    campaign_clicks 表是站內點擊記錄（418 列），兩條路選到的活動不同（第 3 檔 vs 第 6 檔）。
+    這是指標定義衝突不是資料漂移，對齊會毀掉語意，所以收窄問句而不改資料。
 
     '
 - id: 280
@@ -2973,7 +2976,7 @@
 
     '
 - id: 287
-  question: 有沒有評價是收到貨超過三十天才寫的？
+  question: 有沒有評價，在評價內容檔案上登記的「到貨後天數」超過三十天？
   expect: rows
   sql: 'SELECT review_id, days_after_delivery FROM review_profiles WHERE days_after_delivery > 30
 
@@ -2983,6 +2986,9 @@
 
     '
   note: '「有沒有」可以答成清單也可以答成筆數，兩種都合法，補 alt_sql。嚴格大於 30 —— 「超過三十天」不含第 30 天。
+    2026-08-25 問句加「評價內容檔案上登記的」：reviews 沒有 order_id，評價對到哪一次到貨無法還原 ——
+    134 則裡 97 則連得上，其中 10 則連到 2~3 個不同到貨日（取最早 22 列、取最晚 19 列）。
+    母表算不出唯一答案，所以 profile 欄位就是真相來源，只是原問句沒說。
 
     '
 - id: 288

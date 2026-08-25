@@ -583,6 +583,57 @@ FK_OF = {t: yaml_fk for t, yaml_fk in [
 CEIL = 0.75
 
 
+def derive_from_parents(conn, data: dict[str, list[dict]]) -> list[str]:
+    """母表能唯一決定的欄位，一律從母表算，不用亂數（2026-08-25，見 §7.9）。
+
+    這三欄原本是 R.randint(...)，值域看起來合理但與母表無關：
+    attempt_count 合計 294 而 delivery_attempts 只有 193 列、
+    used_count 合計 359 而 order_promotions 只有 41 列。
+    後果不是「數字不好看」，是**同一個問題有兩個都說得通的答案**，
+    模型走哪條路都可能被判錯，分數量不到任何東西（AmbiQT 拿這個當歧義注入手法）。
+
+    刻意寫成 post-pass 而不是改 gen_* 裡的那一行：那些 R.randint 呼叫
+    **必須留在原地**，少抽一次整條亂數序列就會平移，30 題 GT 全毀。
+    這裡覆寫的是產生出來的值，抽樣次數一次都沒變。
+
+    只收「母表唯一決定」的欄位。review_profiles.days_after_delivery 不在這裡 ——
+    reviews 沒有 order_id，評價對到哪一次到貨無法還原，母表算不出唯一答案，
+    所以那一欄就是真相來源，改的是 #287 的問句（收窄到「評價內容檔案上登記的」）。
+    """
+    idx = {t: {r[FK_OF[t]]: r for r in rows} for t, rows in data.items()}
+    out = []
+
+    def q(sql):
+        return conn.execute(text(sql)).fetchall()
+
+    for table, col, sql in (
+        ("shipment_profiles", "attempt_count",
+         "SELECT s.id, COUNT(da.id) FROM shipments s "
+         "LEFT JOIN delivery_attempts da ON da.shipment_id = s.id GROUP BY s.id"),
+        ("promotion_profiles", "used_count",
+         "SELECT pr.id, COUNT(op.id) FROM promotions pr "
+         "LEFT JOIN order_promotions op ON op.promotion_id = pr.id GROUP BY pr.id"),
+    ):
+        real = dict(q(sql))
+        moved = sum(1 for k, r in idx[table].items() if r[col] != real.get(k, 0))
+        for k, r in idx[table].items():
+            r[col] = real.get(k, 0)
+        out.append(f"{table}.{col}：{moved} 列改為母表實數，合計 {sum(real.values())}")
+
+    # 退貨超期：requested_at 與母表完全相同、return→order 一對一，路徑唯一。
+    order_date = dict(q("SELECT orr.id, o.order_date FROM order_returns orr "
+                        "JOIN orders o ON o.id = orr.order_id"))
+    moved = 0
+    for rid, r in idx["return_profiles"].items():
+        want = int((_as_dt(r["requested_at"]) - _as_dt(order_date[rid])).days
+                   > r["policy_window_days"])
+        moved += r["is_over_policy_window"] != want
+        r["is_over_policy_window"] = want
+    n = sum(r["is_over_policy_window"] for r in idx["return_profiles"].values())
+    out.append(f"return_profiles.is_over_policy_window：{moved} 列改為日期推導，超期 {n} 筆")
+    return out
+
+
 def guarantee(conn, data: dict[str, list[dict]]) -> list[str]:
     out = []
     idx = {t: {r[FK_OF[t]]: r for r in rows} for t, rows in data.items()}
@@ -848,11 +899,16 @@ def guarantee(conn, data: dict[str, list[dict]]) -> list[str]:
                 "POINTS": "已補償會員點數作為換貨等待的補償",
                 "GIFT_CARD": "已補償禮物卡作為換貨等待的補償",
             }[r["compensation_type"]]
-    # 超過可退期限但仍放行 —— 只能挑已核准的，否則問題問不出東西
-    ok = [r for r in rids if idx["return_profiles"][r]["approved_at"]]
+    # 超過可退期限但仍放行 —— 旗標本身由 derive_from_parents() 從日期推出來，
+    # 這裡**只**補人工處置的欄位。2026-08-25 之前這裡是直接把旗標寫成 1，
+    # 於是旗標與 requested_at/order_date/policy_window_days 打架（18 筆裡 5 筆），
+    # #308 的模型走日期路線算出 4 列、GT 的旗標路線只有 2 列，兩條路都「對」。
+    ok = [r for r in rids
+          if idx["return_profiles"][r]["approved_at"]
+          and idx["return_profiles"][r]["is_over_policy_window"]]
+    assert ok, "沒有『超期限但已核准』的退貨，#308 會變空集合"
     for rid in ok[:2]:
         r = idx["return_profiles"][rid]
-        r["is_over_policy_window"] = 1
         r["is_goodwill"] = 1
         r["handling_note"] = "已超過可退期限，經主管同意以專案方式通融受理"
     _r = lambda pred: sum(1 for x in rids if pred(idx["return_profiles"][x]))
@@ -1092,6 +1148,12 @@ def main() -> int:
                         f"{sorted(set(row) - declared)}。宣告檔是唯一來源（§8 ①）")
                 payload.append(row)
             data[name] = payload
+
+        # 先對齊母表再做保證式配置 —— guarantee() 會讀 is_over_policy_window
+        # 來挑「超期限但已核准」的那幾筆，順序反過來就挑到還沒推導的舊值。
+        print("\n從母表推導（母表能唯一決定的欄位不用亂數）：")
+        for line in derive_from_parents(conn, data):
+            print(f"  · {line}")
 
         print("\n保證式配置（小表不能靠機率）：")
         for line in guarantee(conn, data):
