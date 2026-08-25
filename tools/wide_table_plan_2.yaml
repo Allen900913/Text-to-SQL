@@ -593,10 +593,13 @@ questions:
     roles: [multi_col]
     phrasing: terse
     q: 需要輸入代碼才生效的檔期，其主標文案、副標文案、呈現版位、角標文字與活動頁網址是什麼？
-  - tables: [promotion_profiles, campaign_profiles]
+  # promotions 與 campaigns 之間沒有外鍵，「同期」只能靠日期區間比對，GT 會很脆。
+  # 改走 order_promotions 這條真實路徑，順便讓它同時吃到 order_profiles 的行銷歸因 ——
+  # 那正是「檔期怎麼呈現」與「訂單怎麼來的」兩個概念在搶同一題。
+  - tables: [promotion_profiles, order_profiles]
     roles: [multi_col, two_wide]
     phrasing: spoken
-    q: 掛在首頁橫幅的檔期活動，跟同期的廣告投放比一比：檔期的最低訂單門檻跟折抵上限是多少，廣告那邊的受眾名稱跟版位設定又是什麼？
+    q: 那些掛在首頁橫幅、而且結帳時自動套用的檔期，實際被用掉的訂單是從哪些流量來源進來的？順便告訴我檔期的最低訂單門檻與單筆折抵上限。
 
   # ---- return_profiles ----
   - table: return_profiles
