@@ -1842,11 +1842,22 @@
     ORDER BY o.id
 
     '
-  note: '三表路徑。一張訂單可能有多筆歷程，要去重。
+  - 'SELECT DISTINCT o.id AS order_id, c.name
 
-    同 #172，order_cancellations 是等價的另一條路，補進 alt_sql。
+    FROM orders o
+
+    JOIN customers c ON c.id = o.customer_id
+
+    WHERE o.status = ''CANCELLED''
+
+    ORDER BY o.id
 
     '
+  note: "三表路徑。一張訂單可能有多筆歷程，要去重。\n同 #172，order_cancellations 與 orders.status 都是等價的另一條路。\n\n2026-08-25 補第三條：僥倖偵測標了這題（模型走\
+    \ orders.status），但實測三個集合**完全相同，各 17 筆**：\n  曾經被取消（order_status_history.to_status）= 現在是 CANCELLED（orders.status）=\
+    \ 有取消紀錄（order_cancellations）\n差集兩邊都是空的 —— 本資料集沒有取消後又復原的訂單。\n所以模型那條路**不是僥倖，是對的**，是 GT 寫得過窄。\n#172 早就接受了\
+    \ orders.status，#173 卻沒有，同一組概念寬嚴不一致。\n\n⚠️ 這個等價**依賴資料**：哪天有訂單取消後又復原，orders.status 那條就會變成錯的答案。\n要真的考出「曾經\
+    \ vs 現在」的差別，得有一張取消後復原的訂單 —— 而那要改既有表，會毀掉指紋與其他 GT，所以現在不做。\n"
 - id: 174
   question: 2026 年 8 月 13 日這天，庫存最少的商品是哪一個？庫存剩多少？
   expect: rows
