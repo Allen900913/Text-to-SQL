@@ -2917,7 +2917,7 @@
 
     '
 - id: 284
-  question: 商品本身標成易碎品的，實際出貨的時候外箱有沒有貼易碎標籤、用什麼緩衝材、封箱方式是什麼？
+  question: 有哪幾筆出貨裡面含有標成易碎品的商品？這些出貨的外箱有沒有貼易碎標籤、用什麼緩衝材、封箱方式是什麼？
   expect: rows
   sql: 'SELECT sp.shipment_id, sp.has_fragile_label, sp.packing_material, sp.seal_type FROM shipment_profiles
     sp JOIN shipments s ON s.id = sp.shipment_id JOIN order_items oi ON oi.order_id = s.order_id JOIN
@@ -2925,14 +2925,17 @@
     sp.has_fragile_label, sp.packing_material, sp.seal_type
 
     '
-  alt_sql:
-  - 'SELECT DISTINCT sp.has_fragile_label, sp.packing_material, sp.seal_type FROM shipment_profiles sp
-    JOIN shipments s ON s.id = sp.shipment_id JOIN order_items oi ON oi.order_id = s.order_id JOIN product_profiles
-    pp ON pp.product_id = oi.product_id WHERE pp.is_fragile = 1
+  note: '雙寬表題。易碎是**商品**屬性（product_profiles），貼標籤是**出貨**屬性 —— 兩者刻意互不蘊含（易碎出貨 73 筆、貼標籤 63 筆、交集 51），所以只查 has_fragile_label
+    = 1 會得到不同答案。
 
-    '
-  note: '雙寬表題。主 SQL 逐筆出貨（一張出貨可能含多件易碎品，所以要 GROUP BY 去重）；alt_sql 是「只看有哪幾種組合」的讀法。易碎是**商品**屬性（product_profiles），貼標籤是**出貨**屬性
-    —— 兩者刻意互不蘊含（易碎出貨 73 筆、貼標籤 63 筆、交集 51），所以只查 has_fragile_label = 1 會得到不同答案。
+    一張出貨可能含多件易碎品，所以要 GROUP BY 去重。
+
+
+    2026-08-25 改寫問句：原本寫「商品本身標成易碎品的……」，主詞讀起來是**商品**，模型就以每項商品為粒度回答（78 列），而 GT 是每筆出貨（73 列）。
+
+    **粒度沒講清楚的題目，答案是任意的** —— 這是 §5.1「平手題不能用」的近親。
+
+    修法是把問句寫清楚（主詞改成「哪幾筆出貨」），不是把 GT 放寬去迎合模型答案。
 
     '
 - id: 285
@@ -3160,14 +3163,51 @@
 
     '
 - id: 305
-  question: 那些掛在首頁橫幅、而且結帳時自動套用的檔期，實際被用掉的訂單是從哪些流量來源進來的？順便告訴我檔期的最低訂單門檻與單筆折抵上限。
+  question: 掛在首頁橫幅、而且結帳時自動套用的檔期有哪幾檔？各自的最低訂單門檻與單筆折抵上限是多少？用到這些檔期的訂單，又分別是從哪些流量來源進來的？
   expect: rows
-  sql: 'SELECT DISTINCT op.utm_source, pp.min_order_amount, pp.max_discount_amount FROM promotion_profiles
-    pp JOIN order_promotions o2p ON o2p.promotion_id = pp.promotion_id JOIN order_profiles op ON op.order_id
-    = o2p.order_id WHERE pp.display_slot = ''HOME_TOP'' AND pp.is_auto_applied = 1
+  sql: 'SELECT DISTINCT p.name, pp.min_order_amount, pp.max_discount_amount, op.utm_source
+
+    FROM promotion_profiles pp
+
+    JOIN promotions p ON p.id = pp.promotion_id
+
+    JOIN order_promotions o2p ON o2p.promotion_id = pp.promotion_id
+
+    JOIN orders o ON o.id = o2p.order_id
+
+    JOIN order_profiles op ON op.order_id = o.id
+
+    WHERE pp.display_slot = ''HOME_TOP'' AND pp.is_auto_applied = 1
 
     '
   note: '雙寬表題，走 order_promotions 這條真實外鍵路徑（promotions 與 campaigns 之間沒有外鍵，所以不用「同期」那種日期比對）。
+
+
+    2026-08-25 改寫問句與 GT，修掉一個**僥倖漏洞**：
+
+    原 GT 是 SELECT DISTINCT utm_source, min_order_amount, max_discount_amount，只有 5 列。
+
+    但符合條件的兩檔活動（春季購物節、滿額折抵）門檻**完全相同**（500/200），流量來源集合也完全相同 ——
+
+    **模型只查到其中一檔，會拿到一模一樣的 5 列而答對。**
+
+    加上活動名稱之後變成 10 列，少查一檔就少 5 列，一定會被抓到。
+
+    promotions.name 在本資料集唯一（8/8），可以安全當識別欄位；用 promotion_id 的寫法補進 alt_sql。
+
+    '
+  alt_sql:
+  - 'SELECT DISTINCT pp.promotion_id, pp.min_order_amount, pp.max_discount_amount, op.utm_source
+
+    FROM promotion_profiles pp
+
+    JOIN order_promotions o2p ON o2p.promotion_id = pp.promotion_id
+
+    JOIN orders o ON o.id = o2p.order_id
+
+    JOIN order_profiles op ON op.order_id = o.id
+
+    WHERE pp.display_slot = ''HOME_TOP'' AND pp.is_auto_applied = 1
 
     '
 - id: 306

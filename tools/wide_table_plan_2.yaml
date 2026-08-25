@@ -502,7 +502,7 @@ questions:
   - tables: [shipment_profiles, product_profiles]
     roles: [multi_col, two_wide, discrim]
     phrasing: spoken
-    q: 商品本身標成易碎品的，實際出貨的時候外箱有沒有貼易碎標籤、用什麼緩衝材、封箱方式是什麼？
+    q: 有哪幾筆出貨裡面含有標成易碎品的商品？這些出貨的外箱有沒有貼易碎標籤、用什麼緩衝材、封箱方式是什麼？
 
   # ---- review_profiles ----
   - table: review_profiles
@@ -599,7 +599,7 @@ questions:
   - tables: [promotion_profiles, order_profiles]
     roles: [multi_col, two_wide]
     phrasing: spoken
-    q: 那些掛在首頁橫幅、而且結帳時自動套用的檔期，實際被用掉的訂單是從哪些流量來源進來的？順便告訴我檔期的最低訂單門檻與單筆折抵上限。
+    q: 掛在首頁橫幅、而且結帳時自動套用的檔期有哪幾檔？各自的最低訂單門檻與單筆折抵上限是多少？用到這些檔期的訂單，又分別是從哪些流量來源進來的？
 
   # ---- return_profiles ----
   - table: return_profiles
