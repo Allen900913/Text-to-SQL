@@ -1,2905 +1,3210 @@
-# =============================================================================
-# Ground Truth — eval_questions_v2.json 的預期答案
-# =============================================================================
-# 為什麼需要這份檔案：
-#   完成率（ok / schema_unsupported / error_end）量的是「有沒有跑出東西」，
-#   不是「答得對不對」。實測過 95% 完成率的那一輪裡，#25 回了 6 個城市而
-#   正確答案是 0 —— retry=0、語法合法、AST 與 EXPLAIN 全部放行的靜默錯答。
-#   沒有這份檔案，那種錯誤唯一的發現方式是人工重算，擴表之後就不可能了。
-#
-# 撰寫原則：
-#   1. 刻意走不同的實作路徑。極值題一律用 MIN/MAX 子查詢，而系統偏好
-#      DENSE_RANK —— 兩條路徑得到同一個結果才算交叉驗證，照抄系統的寫法
-#      只是把它的錯誤複製一遍。
-#   2. 金額口徑依「粒度」決定：訂單 / 客戶 / 城市層級用 orders.total_amount；
-#      商品 / 類別 / 供應商層級 total_amount 無法拆分到單一維度（200 張訂單有
-#      151 張橫跨多個類別，硬算會讓同一張訂單在每個類別各記一次全額），
-#      改用 SUM(oi.quantity * oi.unit_price)。
-#      （本資料集 200/200 張訂單的 total_amount 與明細加總完全一致，
-#        兩式在全庫加總下相等 —— 只有往訂單以下切才發散。）
-#      這個口徑原本只有前半句寫在 business_rules，導致 #98 在兩式間擺盪；
-#      已改由 semantic_layer 的「各商品類別的總營收」few-shot 完整表達。
-#   3. 不排除 CANCELLED 訂單，除非題目明講。規則裡沒有這條約定。
-#   4. 相對時間一律以資料錨點 2026-08-15 為基準，不用 NOW() / CURDATE()。
-#      理由見 langgraph_sql/data_anchor.py。
-#
-# 欄位說明：
-#   expect: rows                → 預期有結果
-#           empty               → 預期 0 筆。包含兩種：刻意設計的「查無資料」
-#                                 陷阱題（#73-76），以及正確答案剛好就是空集合
-#                                 的一般題（#25）。對系統來說要求相同：誠實回
-#                                 報 0 筆，不可硬湊出東西，也不可觸發防禦暗號。
-#           schema_unsupported  → schema 根本沒有這個概念，預期觸發防禦暗號
-#   sql     主要的預期答案
-#   alt_sql 題目本身語意有歧義時，同樣可接受的其他解讀（列表，任一相符即通過）
-#   note    記錄該題的解讀決定，或這題在測什麼
-#
-# ⚠️ 這份檔案綁定 DATA_RANDOM_SEED=20260815 與 DATA_ANCHOR_DATE=2026-08-15。
-#    換種子等於換一份資料，所有涉及具體數值的預期答案都要重跑驗證。
-#    題目本身也不可硬編資料相依的值 —— 原本 #78 寫「林宜蓁」，那是舊種子
-#    隨機生出來的名字，換種子後該客戶就不存在，題目會靜默變成查無資料。
-# =============================================================================
-
 - id: 1
   question: 找出名字最後一個字是「華」的客戶有哪些？
   expect: rows
-  sql: |
-    SELECT name FROM customers WHERE name LIKE '%華' ORDER BY name
+  sql: 'SELECT name FROM customers WHERE name LIKE ''%華'' ORDER BY name
 
+    '
 - id: 2
   question: 「運動鞋」總共賣出多少雙？
   expect: rows
-  sql: |
-    SELECT SUM(oi.quantity) AS qty
-    FROM order_items oi JOIN products p ON oi.product_id = p.id
-    WHERE p.name = '運動鞋'
+  sql: 'SELECT SUM(oi.quantity) AS qty
 
+    FROM order_items oi JOIN products p ON oi.product_id = p.id
+
+    WHERE p.name = ''運動鞋''
+
+    '
 - id: 3
   question: 「三體」這本書總共賣出幾本？
   expect: rows
-  sql: |
-    SELECT SUM(oi.quantity) AS qty
-    FROM order_items oi JOIN products p ON oi.product_id = p.id
-    WHERE p.name = '三體'
+  sql: 'SELECT SUM(oi.quantity) AS qty
 
+    FROM order_items oi JOIN products p ON oi.product_id = p.id
+
+    WHERE p.name = ''三體''
+
+    '
 - id: 4
   question: 新北市的客戶，平均每個人下了幾張訂單？
   expect: rows
-  note: 分母取「該市全部客戶」（含 0 張訂單者），故用 LEFT JOIN。
-        alt 是只算「有下過訂單的客戶」。
-  sql: |
-    SELECT COUNT(o.id) / COUNT(DISTINCT c.id) AS avg_orders
-    FROM customers c LEFT JOIN orders o ON c.id = o.customer_id
-    WHERE c.city = '新北市'
-  alt_sql:
-    - |
-      SELECT COUNT(o.id) / COUNT(DISTINCT c.id) AS avg_orders
-      FROM customers c JOIN orders o ON c.id = o.customer_id
-      WHERE c.city = '新北市'
+  note: 分母取「該市全部客戶」（含 0 張訂單者），故用 LEFT JOIN。 alt 是只算「有下過訂單的客戶」。
+  sql: 'SELECT COUNT(o.id) / COUNT(DISTINCT c.id) AS avg_orders
 
+    FROM customers c LEFT JOIN orders o ON c.id = o.customer_id
+
+    WHERE c.city = ''新北市''
+
+    '
+  alt_sql:
+  - 'SELECT COUNT(o.id) / COUNT(DISTINCT c.id) AS avg_orders
+
+    FROM customers c JOIN orders o ON c.id = o.customer_id
+
+    WHERE c.city = ''新北市''
+
+    '
 - id: 5
   question: 高雄市的客戶總共消費了多少錢？
   expect: rows
-  sql: |
-    SELECT SUM(o.total_amount) AS total
-    FROM customers c JOIN orders o ON c.id = o.customer_id
-    WHERE c.city = '高雄市'
+  sql: 'SELECT SUM(o.total_amount) AS total
 
+    FROM customers c JOIN orders o ON c.id = o.customer_id
+
+    WHERE c.city = ''高雄市''
+
+    '
 - id: 6
   question: 哪一個商品的總營收最低？總共只賺了多少錢？
   expect: rows
-  note: 本資料集 40 項商品全部有銷售紀錄，不存在「營收 0」的未售商品，
-        因此含不含未售商品沒有差別。
-  sql: |
-    WITH rev AS (
-      SELECT p.name AS n, SUM(oi.quantity * oi.unit_price) AS r
-      FROM products p JOIN order_items oi ON p.id = oi.product_id
-      GROUP BY p.id, p.name)
-    SELECT n, r FROM rev WHERE r = (SELECT MIN(r) FROM rev)
-
+  note: 本資料集 40 項商品全部有銷售紀錄，不存在「營收 0」的未售商品， 因此含不含未售商品沒有差別。
+  sql: "WITH rev AS (\n  SELECT p.name AS n, SUM(oi.quantity * oi.unit_price) AS r\n  FROM products p\
+    \ JOIN order_items oi ON p.id = oi.product_id\n  GROUP BY p.id, p.name)\nSELECT n, r FROM rev WHERE\
+    \ r = (SELECT MIN(r) FROM rev)\n"
 - id: 7
   question: 哪一個商品類別的總營收最高？
   expect: rows
-  sql: |
-    WITH c AS (
-      SELECT p.category AS ct, SUM(oi.quantity * oi.unit_price) AS r
-      FROM order_items oi JOIN products p ON oi.product_id = p.id
-      GROUP BY p.category)
-    SELECT ct, r FROM c WHERE r = (SELECT MAX(r) FROM c)
-
+  sql: "WITH c AS (\n  SELECT p.category AS ct, SUM(oi.quantity * oi.unit_price) AS r\n  FROM order_items\
+    \ oi JOIN products p ON oi.product_id = p.id\n  GROUP BY p.category)\nSELECT ct, r FROM c WHERE r\
+    \ = (SELECT MAX(r) FROM c)\n"
 - id: 8
   question: 哪一個月份的訂單數量最多？
   expect: rows
-  sql: |
-    WITH m AS (
-      SELECT DATE_FORMAT(order_date, '%Y-%m') AS mo, COUNT(*) AS n
-      FROM orders GROUP BY 1)
-    SELECT mo, n FROM m WHERE n = (SELECT MAX(n) FROM m)
-
+  sql: "WITH m AS (\n  SELECT DATE_FORMAT(order_date, '%Y-%m') AS mo, COUNT(*) AS n\n  FROM orders GROUP\
+    \ BY 1)\nSELECT mo, n FROM m WHERE n = (SELECT MAX(n) FROM m)\n"
 - id: 9
   question: 有多少張訂單的狀態是 PAID？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM orders WHERE status = 'PAID'
+  sql: 'SELECT COUNT(*) AS n FROM orders WHERE status = ''PAID''
 
+    '
 - id: 10
   question: 有多少張訂單的狀態不是 CANCELLED？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM orders WHERE status <> 'CANCELLED'
+  sql: 'SELECT COUNT(*) AS n FROM orders WHERE status <> ''CANCELLED''
 
+    '
 - id: 11
   question: 找出從來沒有出現在 PENDING 訂單裡的商品名稱。
   expect: rows
   note: 否定存在量詞。用 NOT IN 排除「曾經出現在 PENDING 訂單」的商品。
-  sql: |
-    SELECT name FROM products WHERE id NOT IN (
-      SELECT oi.product_id FROM order_items oi
-      JOIN orders o ON oi.order_id = o.id WHERE o.status = 'PENDING')
-    ORDER BY name
-
+  sql: "SELECT name FROM products WHERE id NOT IN (\n  SELECT oi.product_id FROM order_items oi\n  JOIN\
+    \ orders o ON oi.order_id = o.id WHERE o.status = 'PENDING')\nORDER BY name\n"
 - id: 12
   question: 單筆訂單總金額低於 500 元的訂單有哪些？是哪些客戶下的？
   expect: rows
-  sql: |
-    SELECT o.id, c.name FROM orders o JOIN customers c ON o.customer_id = c.id
+  sql: 'SELECT o.id, c.name FROM orders o JOIN customers c ON o.customer_id = c.id
+
     WHERE o.total_amount < 500 ORDER BY o.id
 
+    '
 - id: 13
   question: 最早註冊的客戶是誰？他註冊的日期是哪天？
   expect: rows
-  sql: |
-    SELECT name, created_at FROM customers
+  sql: 'SELECT name, created_at FROM customers
+
     WHERE created_at = (SELECT MIN(created_at) FROM customers)
 
+    '
 - id: 14
   question: 庫存量介於 30 到 70 之間的商品有哪些？
   expect: rows
-  sql: |
-    SELECT name FROM products WHERE stock BETWEEN 30 AND 70 ORDER BY name
+  sql: 'SELECT name FROM products WHERE stock BETWEEN 30 AND 70 ORDER BY name
 
+    '
 - id: 15
   question: 單價高於 20000 元的商品有哪些？
   expect: rows
-  sql: |
-    SELECT name FROM products WHERE price > 20000 ORDER BY name
+  sql: 'SELECT name FROM products WHERE price > 20000 ORDER BY name
 
+    '
 - id: 16
   question: 平均每張訂單的商品總件數是多少？
   expect: rows
   note: 件數 = SUM(quantity)，分母為有明細的訂單數。
-  sql: |
-    SELECT SUM(quantity) / COUNT(DISTINCT order_id) AS avg_items FROM order_items
+  sql: 'SELECT SUM(quantity) / COUNT(DISTINCT order_id) AS avg_items FROM order_items
 
+    '
 - id: 17
   question: 請先算出所有商品的平均單價，再從單價高於該平均值的商品中，找出庫存最少的是哪一個？
   expect: rows
-  note: 極值 + 前置過濾 + 非聚合欄位。系統慣性會寫 ORDER BY stock LIMIT 1，
-        會被 AST 的極值截斷檢查攔下並重試。
-  sql: |
-    SELECT name, stock FROM products
-    WHERE price > (SELECT AVG(price) FROM products)
-      AND stock = (SELECT MIN(stock) FROM products
-                   WHERE price > (SELECT AVG(price) FROM products))
-    ORDER BY name
-
+  note: 極值 + 前置過濾 + 非聚合欄位。系統慣性會寫 ORDER BY stock LIMIT 1， 會被 AST 的極值截斷檢查攔下並重試。
+  sql: "SELECT name, stock FROM products\nWHERE price > (SELECT AVG(price) FROM products)\n  AND stock\
+    \ = (SELECT MIN(stock) FROM products\n               WHERE price > (SELECT AVG(price) FROM products))\n\
+    ORDER BY name\n"
 - id: 18
   question: 最近 3 個月以內註冊的客戶有幾位？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM customers
-    WHERE created_at >= DATE_SUB('2026-08-15', INTERVAL 3 MONTH)
+  sql: 'SELECT COUNT(*) AS n FROM customers
 
+    WHERE created_at >= DATE_SUB(''2026-08-15'', INTERVAL 3 MONTH)
+
+    '
 - id: 19
   question: 最近 30 天以內，總共有幾位客戶下過訂單？
   expect: rows
-  sql: |
-    SELECT COUNT(DISTINCT customer_id) AS n FROM orders
-    WHERE order_date >= DATE_SUB('2026-08-15', INTERVAL 30 DAY)
+  sql: 'SELECT COUNT(DISTINCT customer_id) AS n FROM orders
 
+    WHERE order_date >= DATE_SUB(''2026-08-15'', INTERVAL 30 DAY)
+
+    '
 - id: 20
   question: 找出每一張訂單都是 COMPLETED 狀態的客戶。
   expect: rows
-  note: 全稱量詞。解讀為「至少下過一張訂單，且全部都是 COMPLETED」——
-        沒下過訂單的客戶雖然空真，但不符合自然語意。
-  sql: |
-    SELECT c.name FROM customers c JOIN orders o ON c.id = o.customer_id
+  note: 全稱量詞。解讀為「至少下過一張訂單，且全部都是 COMPLETED」—— 沒下過訂單的客戶雖然空真，但不符合自然語意。
+  sql: 'SELECT c.name FROM customers c JOIN orders o ON c.id = o.customer_id
+
     GROUP BY c.id, c.name
-    HAVING SUM(CASE WHEN o.status <> 'COMPLETED' THEN 1 ELSE 0 END) = 0
+
+    HAVING SUM(CASE WHEN o.status <> ''COMPLETED'' THEN 1 ELSE 0 END) = 0
+
     ORDER BY c.name
 
+    '
 - id: 21
   question: 從來沒有買過「原子習慣」這本書的客戶有誰？
   expect: rows
   note: 含完全沒下過訂單的客戶。
-  sql: |
-    SELECT name FROM customers WHERE id NOT IN (
-      SELECT o.customer_id FROM orders o
-      JOIN order_items oi ON o.id = oi.order_id
-      JOIN products p ON oi.product_id = p.id
-      WHERE p.name = '原子習慣')
-    ORDER BY name
-
+  sql: "SELECT name FROM customers WHERE id NOT IN (\n  SELECT o.customer_id FROM orders o\n  JOIN order_items\
+    \ oi ON o.id = oi.order_id\n  JOIN products p ON oi.product_id = p.id\n  WHERE p.name = '原子習慣')\n\
+    ORDER BY name\n"
 - id: 22
   question: 有哪些客戶從來沒有下過 CANCELLED 的訂單？
   expect: rows
-  sql: |
-    SELECT name FROM customers WHERE id NOT IN (
-      SELECT customer_id FROM orders WHERE status = 'CANCELLED')
-    ORDER BY name
-
+  sql: "SELECT name FROM customers WHERE id NOT IN (\n  SELECT customer_id FROM orders WHERE status =\
+    \ 'CANCELLED')\nORDER BY name\n"
 - id: 23
   question: 哪些商品從來沒有出現在 CANCELLED 的訂單裡？
   expect: rows
-  sql: |
-    SELECT name FROM products WHERE id NOT IN (
-      SELECT oi.product_id FROM order_items oi
-      JOIN orders o ON oi.order_id = o.id WHERE o.status = 'CANCELLED')
-    ORDER BY name
-
+  sql: "SELECT name FROM products WHERE id NOT IN (\n  SELECT oi.product_id FROM order_items oi\n  JOIN\
+    \ orders o ON oi.order_id = o.id WHERE o.status = 'CANCELLED')\nORDER BY name\n"
 - id: 24
   question: 列出從未購買過任何「3C數位」類別商品的客戶姓名。
   expect: rows
-  sql: |
-    SELECT name FROM customers WHERE id NOT IN (
-      SELECT o.customer_id FROM orders o
-      JOIN order_items oi ON o.id = oi.order_id
-      JOIN products p ON oi.product_id = p.id
-      WHERE p.category = '3C數位')
-    ORDER BY name
-
+  sql: "SELECT name FROM customers WHERE id NOT IN (\n  SELECT o.customer_id FROM orders o\n  JOIN order_items\
+    \ oi ON o.id = oi.order_id\n  JOIN products p ON oi.product_id = p.id\n  WHERE p.category = '3C數位')\n\
+    ORDER BY name\n"
 - id: 25
   question: 有哪些城市的客戶從來沒有買過「家電」類商品？
   expect: empty
-  note: 群組全稱量詞。主體是「城市」，條件要求該市『全部』客戶都沒買過。
-        寫成對單一客戶 NOT EXISTS 再 DISTINCT city，得到的是「該市有某位
-        客戶沒買過」，語意完全相反。
-        正確答案是 0 筆（8 個城市每一個都至少有一位家電買家），這不是陷阱題，
-        是這題的真實答案。實測錯誤寫法會回 6 個城市 —— 恰好是「買過家電的
-        人數 < 該市總人數」的那幾個，語法完全合法、retry=0，
-        AST 與 EXPLAIN 都攔不到。這題是整份 GT 存在的理由。
-  sql: |
-    SELECT DISTINCT city FROM customers WHERE city NOT IN (
-      SELECT c.city FROM customers c
-      JOIN orders o ON c.id = o.customer_id
-      JOIN order_items oi ON o.id = oi.order_id
-      JOIN products p ON oi.product_id = p.id
-      WHERE p.category = '家電')
-    ORDER BY city
-
+  note: 群組全稱量詞。主體是「城市」，條件要求該市『全部』客戶都沒買過。 寫成對單一客戶 NOT EXISTS 再 DISTINCT city，得到的是「該市有某位 客戶沒買過」，語意完全相反。
+    正確答案是 0 筆（8 個城市每一個都至少有一位家電買家），這不是陷阱題， 是這題的真實答案。實測錯誤寫法會回 6 個城市 —— 恰好是「買過家電的 人數 < 該市總人數」的那幾個，語法完全合法、retry=0，
+    AST 與 EXPLAIN 都攔不到。這題是整份 GT 存在的理由。
+  sql: "SELECT DISTINCT city FROM customers WHERE city NOT IN (\n  SELECT c.city FROM customers c\n  JOIN\
+    \ orders o ON c.id = o.customer_id\n  JOIN order_items oi ON o.id = oi.order_id\n  JOIN products p\
+    \ ON oi.product_id = p.id\n  WHERE p.category = '家電')\nORDER BY city\n"
 - id: 26
   question: 哪一位客戶的訂單張數最多？
   expect: rows
-  sql: |
-    WITH t AS (
-      SELECT c.name AS n, COUNT(o.id) AS k FROM customers c
-      JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name)
-    SELECT n, k FROM t WHERE k = (SELECT MAX(k) FROM t) ORDER BY n
-
+  sql: "WITH t AS (\n  SELECT c.name AS n, COUNT(o.id) AS k FROM customers c\n  JOIN orders o ON c.id\
+    \ = o.customer_id GROUP BY c.id, c.name)\nSELECT n, k FROM t WHERE k = (SELECT MAX(k) FROM t) ORDER\
+    \ BY n\n"
 - id: 27
   question: 哪一個商品類別的庫存總量最少？
   expect: rows
-  sql: |
-    WITH t AS (SELECT category AS ct, SUM(stock) AS s FROM products GROUP BY category)
+  sql: 'WITH t AS (SELECT category AS ct, SUM(stock) AS s FROM products GROUP BY category)
+
     SELECT ct, s FROM t WHERE s = (SELECT MIN(s) FROM t)
 
+    '
 - id: 28
   question: 單筆金額最高的訂單是哪一位客戶下的？金額多少？
   expect: rows
-  sql: |
-    SELECT c.name, o.total_amount FROM orders o
+  sql: 'SELECT c.name, o.total_amount FROM orders o
+
     JOIN customers c ON o.customer_id = c.id
+
     WHERE o.total_amount = (SELECT MAX(total_amount) FROM orders)
 
+    '
 - id: 29
   question: 哪一天的營業額最高？當天總共賣了多少錢？
   expect: rows
-  sql: |
-    WITH d AS (SELECT DATE(order_date) AS dd, SUM(total_amount) AS s
-               FROM orders GROUP BY 1)
-    SELECT dd, s FROM d WHERE s = (SELECT MAX(s) FROM d)
-
+  sql: "WITH d AS (SELECT DATE(order_date) AS dd, SUM(total_amount) AS s\n           FROM orders GROUP\
+    \ BY 1)\nSELECT dd, s FROM d WHERE s = (SELECT MAX(s) FROM d)\n"
 - id: 30
   question: 哪一個城市的客戶平均消費金額最高？
   expect: rows
-  note: 主解讀 =「每位客戶的總消費，再對城市取平均」。
-        alt =「該城市的平均單筆訂單金額」，兩種都是常見讀法。
-  sql: |
-    WITH per_cust AS (
-      SELECT c.city AS ct, c.id AS cid, SUM(o.total_amount) AS spent
-      FROM customers c JOIN orders o ON c.id = o.customer_id
-      GROUP BY c.city, c.id),
-    per_city AS (SELECT ct, AVG(spent) AS a FROM per_cust GROUP BY ct)
-    SELECT ct, a FROM per_city WHERE a = (SELECT MAX(a) FROM per_city)
+  note: 主解讀 =「每位客戶的總消費，再對城市取平均」。 alt =「該城市的平均單筆訂單金額」，兩種都是常見讀法。
+  sql: "WITH per_cust AS (\n  SELECT c.city AS ct, c.id AS cid, SUM(o.total_amount) AS spent\n  FROM customers\
+    \ c JOIN orders o ON c.id = o.customer_id\n  GROUP BY c.city, c.id),\nper_city AS (SELECT ct, AVG(spent)\
+    \ AS a FROM per_cust GROUP BY ct)\nSELECT ct, a FROM per_city WHERE a = (SELECT MAX(a) FROM per_city)\n"
   alt_sql:
-    - |
-      WITH t AS (SELECT c.city AS ct, AVG(o.total_amount) AS a FROM customers c
-                 JOIN orders o ON c.id = o.customer_id GROUP BY c.city)
-      SELECT ct, a FROM t WHERE a = (SELECT MAX(a) FROM t)
-
+  - "WITH t AS (SELECT c.city AS ct, AVG(o.total_amount) AS a FROM customers c\n           JOIN orders\
+    \ o ON c.id = o.customer_id GROUP BY c.city)\nSELECT ct, a FROM t WHERE a = (SELECT MAX(a) FROM t)\n"
 - id: 31
   question: 庫存量最少的商品是哪一個？
   expect: rows
-  sql: |
-    SELECT name FROM products
+  sql: 'SELECT name FROM products
+
     WHERE stock = (SELECT MIN(stock) FROM products) ORDER BY name
 
+    '
 - id: 32
   question: 2026 年 5 月的總營收是多少？
   expect: rows
-  sql: |
-    SELECT SUM(total_amount) AS rev FROM orders
-    WHERE order_date >= '2026-05-01' AND order_date < '2026-06-01'
+  sql: 'SELECT SUM(total_amount) AS rev FROM orders
 
+    WHERE order_date >= ''2026-05-01'' AND order_date < ''2026-06-01''
+
+    '
 - id: 33
   question: 2026 年 2 月到 4 月之間總共有幾張訂單？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM orders
-    WHERE order_date >= '2026-02-01' AND order_date < '2026-05-01'
+  sql: 'SELECT COUNT(*) AS n FROM orders
 
+    WHERE order_date >= ''2026-02-01'' AND order_date < ''2026-05-01''
+
+    '
 - id: 34
   question: 比較 2026 年 7 月和 8 月的訂單數量，哪個月比較多？各有幾張？
   expect: rows
-  sql: |
-    SELECT DATE_FORMAT(order_date, '%Y-%m') AS mo, COUNT(*) AS n FROM orders
-    WHERE order_date >= '2026-07-01' AND order_date < '2026-09-01'
-    GROUP BY 1 ORDER BY 1
-  alt_sql:
-    - |
-      SELECT MONTH(order_date) AS mo, COUNT(*) AS n FROM orders
-      WHERE order_date >= '2026-07-01' AND order_date < '2026-09-01'
-      GROUP BY 1 ORDER BY 1
+  sql: 'SELECT DATE_FORMAT(order_date, ''%Y-%m'') AS mo, COUNT(*) AS n FROM orders
 
+    WHERE order_date >= ''2026-07-01'' AND order_date < ''2026-09-01''
+
+    GROUP BY 1 ORDER BY 1
+
+    '
+  alt_sql:
+  - 'SELECT MONTH(order_date) AS mo, COUNT(*) AS n FROM orders
+
+    WHERE order_date >= ''2026-07-01'' AND order_date < ''2026-09-01''
+
+    GROUP BY 1 ORDER BY 1
+
+    '
 - id: 35
   question: 找出在 2026 年 3 月之後才註冊的客戶有哪些？
   expect: rows
-  sql: |
-    SELECT name FROM customers
-    WHERE created_at >= '2026-03-01' ORDER BY name
-  alt_sql:
-    - |
-      SELECT name FROM customers
-      WHERE created_at >= '2026-04-01' ORDER BY name
+  sql: 'SELECT name FROM customers
 
+    WHERE created_at >= ''2026-03-01'' ORDER BY name
+
+    '
+  alt_sql:
+  - 'SELECT name FROM customers
+
+    WHERE created_at >= ''2026-04-01'' ORDER BY name
+
+    '
 - id: 36
   question: 每個月的平均訂單金額分別是多少？
   expect: rows
-  sql: |
-    SELECT DATE_FORMAT(order_date, '%Y-%m') AS mo, AVG(total_amount) AS a
-    FROM orders GROUP BY 1 ORDER BY 1
-  # 題目沒有指定月份要用什麼格式表示，'2026-02' 與 (2026, 2) 一樣明確。
-  # GT 原本只收前者，等於在考格式而不是考語意 —— 屬於 GT 過度指定。
-  alt_sql:
-    - |
-      SELECT YEAR(order_date) AS y, MONTH(order_date) AS m, AVG(total_amount) AS a
-      FROM orders GROUP BY 1, 2 ORDER BY 1, 2
+  sql: 'SELECT DATE_FORMAT(order_date, ''%Y-%m'') AS mo, AVG(total_amount) AS a
 
+    FROM orders GROUP BY 1 ORDER BY 1
+
+    '
+  alt_sql:
+  - 'SELECT YEAR(order_date) AS y, MONTH(order_date) AS m, AVG(total_amount) AS a
+
+    FROM orders GROUP BY 1, 2 ORDER BY 1, 2
+
+    '
 - id: 37
   question: 註冊超過 6 個月的客戶有幾位？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM customers
-    WHERE created_at < DATE_SUB('2026-08-15', INTERVAL 6 MONTH)
+  sql: 'SELECT COUNT(*) AS n FROM customers
 
+    WHERE created_at < DATE_SUB(''2026-08-15'', INTERVAL 6 MONTH)
+
+    '
 - id: 38
   question: 訂單日期落在週末（週六、週日）的訂單有幾張？
   expect: rows
   note: MySQL DAYOFWEEK：1=週日、7=週六。
-  sql: |
-    SELECT COUNT(*) AS n FROM orders WHERE DAYOFWEEK(order_date) IN (1, 7)
+  sql: 'SELECT COUNT(*) AS n FROM orders WHERE DAYOFWEEK(order_date) IN (1, 7)
 
+    '
 - id: 39
   question: 找出同時買過「iPhone 15」和「AirPods」的客戶。
   expect: rows
   note: 兩個存在量詞的交集，不是同一張訂單內。
-  sql: |
-    SELECT c.name FROM customers c WHERE c.id IN (
-      SELECT o.customer_id FROM orders o JOIN order_items oi ON o.id = oi.order_id
-      JOIN products p ON oi.product_id = p.id WHERE p.name = 'iPhone 15')
-    AND c.id IN (
-      SELECT o.customer_id FROM orders o JOIN order_items oi ON o.id = oi.order_id
-      JOIN products p ON oi.product_id = p.id WHERE p.name = 'AirPods')
-    ORDER BY c.name
-
+  sql: "SELECT c.name FROM customers c WHERE c.id IN (\n  SELECT o.customer_id FROM orders o JOIN order_items\
+    \ oi ON o.id = oi.order_id\n  JOIN products p ON oi.product_id = p.id WHERE p.name = 'iPhone 15')\n\
+    AND c.id IN (\n  SELECT o.customer_id FROM orders o JOIN order_items oi ON o.id = oi.order_id\n  JOIN\
+    \ products p ON oi.product_id = p.id WHERE p.name = 'AirPods')\nORDER BY c.name\n"
 - id: 40
   question: 找出買過「iPhone 15」但沒有買過「AirPods」的客戶。
   expect: rows
-  sql: |
-    SELECT c.name FROM customers c WHERE c.id IN (
-      SELECT o.customer_id FROM orders o JOIN order_items oi ON o.id = oi.order_id
-      JOIN products p ON oi.product_id = p.id WHERE p.name = 'iPhone 15')
-    AND c.id NOT IN (
-      SELECT o.customer_id FROM orders o JOIN order_items oi ON o.id = oi.order_id
-      JOIN products p ON oi.product_id = p.id WHERE p.name = 'AirPods')
-    ORDER BY c.name
-
+  sql: "SELECT c.name FROM customers c WHERE c.id IN (\n  SELECT o.customer_id FROM orders o JOIN order_items\
+    \ oi ON o.id = oi.order_id\n  JOIN products p ON oi.product_id = p.id WHERE p.name = 'iPhone 15')\n\
+    AND c.id NOT IN (\n  SELECT o.customer_id FROM orders o JOIN order_items oi ON o.id = oi.order_id\n\
+    \  JOIN products p ON oi.product_id = p.id WHERE p.name = 'AirPods')\nORDER BY c.name\n"
 - id: 41
   question: 有哪些客戶買過全部 6 個商品類別的商品？
   expect: rows
   note: 關聯除法（relational division）。
-  sql: |
-    SELECT c.name FROM customers c
+  sql: 'SELECT c.name FROM customers c
+
     JOIN orders o ON c.id = o.customer_id
+
     JOIN order_items oi ON o.id = oi.order_id
+
     JOIN products p ON oi.product_id = p.id
+
     GROUP BY c.id, c.name
+
     HAVING COUNT(DISTINCT p.category) = (SELECT COUNT(DISTINCT category) FROM products)
+
     ORDER BY c.name
 
+    '
 - id: 42
   question: 找出至少買過 3 種不同商品類別的客戶。
   expect: rows
-  sql: |
-    SELECT c.name FROM customers c
+  sql: 'SELECT c.name FROM customers c
+
     JOIN orders o ON c.id = o.customer_id
+
     JOIN order_items oi ON o.id = oi.order_id
+
     JOIN products p ON oi.product_id = p.id
+
     GROUP BY c.id, c.name HAVING COUNT(DISTINCT p.category) >= 3
+
     ORDER BY c.name
 
+    '
 - id: 43
   question: 有哪些客戶的每一張訂單金額都低於 10000 元？
   expect: rows
   note: 全稱量詞，客戶分組形狀 → HAVING MAX(total_amount) < 10000。
-  sql: |
-    SELECT c.name FROM customers c JOIN orders o ON c.id = o.customer_id
+  sql: 'SELECT c.name FROM customers c JOIN orders o ON c.id = o.customer_id
+
     GROUP BY c.id, c.name HAVING MAX(o.total_amount) < 10000
+
     ORDER BY c.name
 
+    '
 - id: 44
   question: 找出只下過一張訂單的客戶有哪些？
   expect: rows
-  sql: |
-    SELECT c.name FROM customers c JOIN orders o ON c.id = o.customer_id
+  sql: 'SELECT c.name FROM customers c JOIN orders o ON c.id = o.customer_id
+
     GROUP BY c.id, c.name HAVING COUNT(o.id) = 1 ORDER BY c.name
 
+    '
 - id: 45
   question: 每個城市的客戶平均下了幾張訂單？
   expect: rows
   note: 分母含該市沒下過訂單的客戶（LEFT JOIN）。
-  sql: |
-    SELECT c.city, COUNT(o.id) / COUNT(DISTINCT c.id) AS avg_orders
-    FROM customers c LEFT JOIN orders o ON c.id = o.customer_id
-    GROUP BY c.city ORDER BY c.city
-  alt_sql:
-    - |
-      SELECT c.city, COUNT(o.id) / COUNT(DISTINCT c.id) AS avg_orders
-      FROM customers c JOIN orders o ON c.id = o.customer_id
-      GROUP BY c.city ORDER BY c.city
+  sql: 'SELECT c.city, COUNT(o.id) / COUNT(DISTINCT c.id) AS avg_orders
 
+    FROM customers c LEFT JOIN orders o ON c.id = o.customer_id
+
+    GROUP BY c.city ORDER BY c.city
+
+    '
+  alt_sql:
+  - 'SELECT c.city, COUNT(o.id) / COUNT(DISTINCT c.id) AS avg_orders
+
+    FROM customers c JOIN orders o ON c.id = o.customer_id
+
+    GROUP BY c.city ORDER BY c.city
+
+    '
 - id: 46
   question: 平均每位客戶的總消費金額是多少？
   expect: rows
   note: 分母為有消費的客戶。alt 為全部客戶（未消費者計 0）。
-  sql: |
-    SELECT AVG(t) AS a FROM (
-      SELECT customer_id, SUM(total_amount) AS t FROM orders GROUP BY customer_id) x
+  sql: "SELECT AVG(t) AS a FROM (\n  SELECT customer_id, SUM(total_amount) AS t FROM orders GROUP BY customer_id)\
+    \ x\n"
   alt_sql:
-    - |
-      SELECT SUM(o.total_amount) / COUNT(DISTINCT c.id) AS a
-      FROM customers c LEFT JOIN orders o ON c.id = o.customer_id
+  - 'SELECT SUM(o.total_amount) / COUNT(DISTINCT c.id) AS a
 
+    FROM customers c LEFT JOIN orders o ON c.id = o.customer_id
+
+    '
 - id: 47
   question: 各商品類別各賣出多少件？請由多到少排序。
   expect: rows
   ordered: true
-  sql: |
-    SELECT p.category, SUM(oi.quantity) AS qty
+  sql: 'SELECT p.category, SUM(oi.quantity) AS qty
+
     FROM order_items oi JOIN products p ON oi.product_id = p.id
+
     GROUP BY p.category ORDER BY qty DESC
 
+    '
 - id: 48
   question: 訂單金額高於整體平均的訂單有幾張？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM orders
+  sql: 'SELECT COUNT(*) AS n FROM orders
+
     WHERE total_amount > (SELECT AVG(total_amount) FROM orders)
 
+    '
 - id: 49
   question: 每位客戶的最大單筆訂單金額分別是多少？請列出前 10 名。
   expect: rows
   ordered: true
-  sql: |
-    SELECT c.name, MAX(o.total_amount) AS mx
+  sql: 'SELECT c.name, MAX(o.total_amount) AS mx
+
     FROM customers c JOIN orders o ON c.id = o.customer_id
+
     GROUP BY c.id, c.name ORDER BY mx DESC LIMIT 10
 
+    '
 - id: 50
   question: 統計每個城市的 COMPLETED 與 CANCELLED 訂單各有幾張。
   expect: rows
-  sql: |
-    SELECT c.city,
-           SUM(CASE WHEN o.status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_n,
-           SUM(CASE WHEN o.status = 'CANCELLED' THEN 1 ELSE 0 END) AS cancelled_n
-    FROM customers c JOIN orders o ON c.id = o.customer_id
-    GROUP BY c.city ORDER BY c.city
-
+  sql: "SELECT c.city,\n       SUM(CASE WHEN o.status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_n,\n\
+    \       SUM(CASE WHEN o.status = 'CANCELLED' THEN 1 ELSE 0 END) AS cancelled_n\nFROM customers c JOIN\
+    \ orders o ON c.id = o.customer_id\nGROUP BY c.city ORDER BY c.city\n"
 - id: 51
   question: 把商品依單價分成「1000 元以下」「1000 到 10000 元」「10000 元以上」三組，各有幾種商品？
   expect: rows
-  note: 邊界解讀：< 1000 / 1000~10000（含端點）/ > 10000。
-        ⚠️ GT 只比三組的「數量」不比分組標籤 —— 系統會寫「1000以下」而題目
-        寫「1000 元以下」，那是排版差異不是錯誤。代價是這題不再驗證
-        「標籤與數量的對應」是否正確，只驗證分組邊界切得對。
-  sql: |
-    SELECT COUNT(*) AS n FROM products
+  note: 邊界解讀：< 1000 / 1000~10000（含端點）/ > 10000。 ⚠️ GT 只比三組的「數量」不比分組標籤 —— 系統會寫「1000以下」而題目 寫「1000 元以下」，那是排版差異不是錯誤。代價是這題不再驗證
+    「標籤與數量的對應」是否正確，只驗證分組邊界切得對。
+  sql: 'SELECT COUNT(*) AS n FROM products
+
     GROUP BY CASE WHEN price < 1000 THEN 1 WHEN price <= 10000 THEN 2 ELSE 3 END
+
     ORDER BY MIN(price)
 
+    '
 - id: 52
   question: 各種訂單狀態的金額分別佔總營收的百分之幾？
   expect: rows
-  sql: |
-    SELECT status,
-           SUM(total_amount) * 100.0 / (SELECT SUM(total_amount) FROM orders) AS pct
-    FROM orders GROUP BY status ORDER BY status
+  sql: "SELECT status,\n       SUM(total_amount) * 100.0 / (SELECT SUM(total_amount) FROM orders) AS pct\n\
+    FROM orders GROUP BY status ORDER BY status\n"
   alt_sql:
-    - |
-      SELECT status,
-             SUM(total_amount) / (SELECT SUM(total_amount) FROM orders) AS ratio
-      FROM orders GROUP BY status ORDER BY status
-
+  - "SELECT status,\n       SUM(total_amount) / (SELECT SUM(total_amount) FROM orders) AS ratio\nFROM\
+    \ orders GROUP BY status ORDER BY status\n"
 - id: 53
   question: 統計每個月 COMPLETED 訂單佔當月訂單的比例。
   expect: rows
-  sql: |
-    SELECT DATE_FORMAT(order_date, '%Y-%m') AS mo,
-           SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS pct
-    FROM orders GROUP BY 1 ORDER BY 1
+  sql: "SELECT DATE_FORMAT(order_date, '%Y-%m') AS mo,\n       SUM(CASE WHEN status = 'COMPLETED' THEN\
+    \ 1 ELSE 0 END) * 100.0 / COUNT(*) AS pct\nFROM orders GROUP BY 1 ORDER BY 1\n"
   alt_sql:
-    - |
-      SELECT DATE_FORMAT(order_date, '%Y-%m') AS mo,
-             SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) / COUNT(*) AS ratio
-      FROM orders GROUP BY 1 ORDER BY 1
-
+  - "SELECT DATE_FORMAT(order_date, '%Y-%m') AS mo,\n       SUM(CASE WHEN status = 'COMPLETED' THEN 1\
+    \ ELSE 0 END) / COUNT(*) AS ratio\nFROM orders GROUP BY 1 ORDER BY 1\n"
 - id: 54
   question: CANCELLED 訂單佔全部訂單的百分之幾？
   expect: rows
-  sql: |
-    SELECT SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS pct
-    FROM orders
-  alt_sql:
-    - |
-      SELECT SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END) / COUNT(*) AS ratio
-      FROM orders
+  sql: 'SELECT SUM(CASE WHEN status = ''CANCELLED'' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS pct
 
+    FROM orders
+
+    '
+  alt_sql:
+  - 'SELECT SUM(CASE WHEN status = ''CANCELLED'' THEN 1 ELSE 0 END) / COUNT(*) AS ratio
+
+    FROM orders
+
+    '
 - id: 55
   question: 「3C數位」類別的營收佔總營收的百分之幾？
   expect: rows
   note: 類別層級營收用明細加總。
-  sql: |
-    SELECT SUM(CASE WHEN p.category = '3C數位' THEN oi.quantity * oi.unit_price ELSE 0 END)
-           * 100.0 / SUM(oi.quantity * oi.unit_price) AS pct
-    FROM order_items oi JOIN products p ON oi.product_id = p.id
+  sql: "SELECT SUM(CASE WHEN p.category = '3C數位' THEN oi.quantity * oi.unit_price ELSE 0 END)\n      \
+    \ * 100.0 / SUM(oi.quantity * oi.unit_price) AS pct\nFROM order_items oi JOIN products p ON oi.product_id\
+    \ = p.id\n"
   alt_sql:
-    - |
-      SELECT SUM(CASE WHEN p.category = '3C數位' THEN oi.quantity * oi.unit_price ELSE 0 END)
-             / SUM(oi.quantity * oi.unit_price) AS ratio
-      FROM order_items oi JOIN products p ON oi.product_id = p.id
-
+  - "SELECT SUM(CASE WHEN p.category = '3C數位' THEN oi.quantity * oi.unit_price ELSE 0 END)\n       / SUM(oi.quantity\
+    \ * oi.unit_price) AS ratio\nFROM order_items oi JOIN products p ON oi.product_id = p.id\n"
 - id: 56
   question: 有下過訂單的客戶佔全部客戶的比例是多少？
   expect: rows
-  sql: |
-    SELECT (SELECT COUNT(DISTINCT customer_id) FROM orders) * 100.0
-           / (SELECT COUNT(*) FROM customers) AS pct
+  sql: "SELECT (SELECT COUNT(DISTINCT customer_id) FROM orders) * 100.0\n       / (SELECT COUNT(*) FROM\
+    \ customers) AS pct\n"
   alt_sql:
-    - |
-      SELECT (SELECT COUNT(DISTINCT customer_id) FROM orders) * 1.0
-             / (SELECT COUNT(*) FROM customers) AS ratio
-
+  - "SELECT (SELECT COUNT(DISTINCT customer_id) FROM orders) * 1.0\n       / (SELECT COUNT(*) FROM customers)\
+    \ AS ratio\n"
 - id: 57
   question: 列出營收前 5 名的商品，並顯示各自的營收金額。
   expect: rows
   ordered: true
-  sql: |
-    SELECT p.name, SUM(oi.quantity * oi.unit_price) AS rev
+  sql: 'SELECT p.name, SUM(oi.quantity * oi.unit_price) AS rev
+
     FROM order_items oi JOIN products p ON oi.product_id = p.id
+
     GROUP BY p.id, p.name ORDER BY rev DESC LIMIT 5
 
+    '
 - id: 58
   question: 列出總消費金額前 3 名的客戶。
   expect: rows
   ordered: true
-  sql: |
-    SELECT c.name, SUM(o.total_amount) AS total
+  sql: 'SELECT c.name, SUM(o.total_amount) AS total
+
     FROM customers c JOIN orders o ON c.id = o.customer_id
+
     GROUP BY c.id, c.name ORDER BY total DESC LIMIT 3
 
+    '
 - id: 59
   question: 每個商品類別中，賣得最好的商品分別是哪一個？
   expect: rows
   note: 「賣得最好」主解讀為銷售件數；alt 為營收。分組內極值，必須含並列。
-  sql: |
-    WITH s AS (
-      SELECT p.category AS ct, p.name AS n, SUM(oi.quantity) AS q
-      FROM order_items oi JOIN products p ON oi.product_id = p.id
-      GROUP BY p.category, p.name),
-    m AS (SELECT ct, MAX(q) AS mq FROM s GROUP BY ct)
-    SELECT s.ct, s.n, s.q FROM s JOIN m ON s.ct = m.ct AND s.q = m.mq
-    ORDER BY s.ct, s.n
+  sql: "WITH s AS (\n  SELECT p.category AS ct, p.name AS n, SUM(oi.quantity) AS q\n  FROM order_items\
+    \ oi JOIN products p ON oi.product_id = p.id\n  GROUP BY p.category, p.name),\nm AS (SELECT ct, MAX(q)\
+    \ AS mq FROM s GROUP BY ct)\nSELECT s.ct, s.n, s.q FROM s JOIN m ON s.ct = m.ct AND s.q = m.mq\nORDER\
+    \ BY s.ct, s.n\n"
   alt_sql:
-    - |
-      WITH s AS (
-        SELECT p.category AS ct, p.name AS n, SUM(oi.quantity * oi.unit_price) AS q
-        FROM order_items oi JOIN products p ON oi.product_id = p.id
-        GROUP BY p.category, p.name),
-      m AS (SELECT ct, MAX(q) AS mq FROM s GROUP BY ct)
-      SELECT s.ct, s.n, s.q FROM s JOIN m ON s.ct = m.ct AND s.q = m.mq
-      ORDER BY s.ct, s.n
-
+  - "WITH s AS (\n  SELECT p.category AS ct, p.name AS n, SUM(oi.quantity * oi.unit_price) AS q\n  FROM\
+    \ order_items oi JOIN products p ON oi.product_id = p.id\n  GROUP BY p.category, p.name),\nm AS (SELECT\
+    \ ct, MAX(q) AS mq FROM s GROUP BY ct)\nSELECT s.ct, s.n, s.q FROM s JOIN m ON s.ct = m.ct AND s.q\
+    \ = m.mq\nORDER BY s.ct, s.n\n"
 - id: 60
   question: 每個城市消費金額最高的客戶分別是誰？
   expect: rows
-  sql: |
-    WITH t AS (
-      SELECT c.city AS ct, c.name AS n, SUM(o.total_amount) AS s
-      FROM customers c JOIN orders o ON c.id = o.customer_id
-      GROUP BY c.id, c.city, c.name),
-    m AS (SELECT ct, MAX(s) AS ms FROM t GROUP BY ct)
-    SELECT t.ct, t.n, t.s FROM t JOIN m ON t.ct = m.ct AND t.s = m.ms
-    ORDER BY t.ct, t.n
-
+  sql: "WITH t AS (\n  SELECT c.city AS ct, c.name AS n, SUM(o.total_amount) AS s\n  FROM customers c\
+    \ JOIN orders o ON c.id = o.customer_id\n  GROUP BY c.id, c.city, c.name),\nm AS (SELECT ct, MAX(s)\
+    \ AS ms FROM t GROUP BY ct)\nSELECT t.ct, t.n, t.s FROM t JOIN m ON t.ct = m.ct AND t.s = m.ms\nORDER\
+    \ BY t.ct, t.n\n"
 - id: 61
   question: 買過「掃地機器人」的客戶，平均每人還買了幾種其他商品？
   expect: rows
   note: 「其他商品」= 排除掃地機器人本身，計不重複商品數。
-  sql: |
-    SELECT AVG(k) AS a FROM (
-      SELECT o.customer_id, COUNT(DISTINCT oi.product_id) AS k
-      FROM orders o JOIN order_items oi ON o.id = oi.order_id
-      JOIN products p ON oi.product_id = p.id
-      WHERE p.name <> '掃地機器人'
-        AND o.customer_id IN (
-          SELECT o2.customer_id FROM orders o2
-          JOIN order_items oi2 ON o2.id = oi2.order_id
-          JOIN products p2 ON oi2.product_id = p2.id
-          WHERE p2.name = '掃地機器人')
-      GROUP BY o.customer_id) x
-
+  sql: "SELECT AVG(k) AS a FROM (\n  SELECT o.customer_id, COUNT(DISTINCT oi.product_id) AS k\n  FROM\
+    \ orders o JOIN order_items oi ON o.id = oi.order_id\n  JOIN products p ON oi.product_id = p.id\n\
+    \  WHERE p.name <> '掃地機器人'\n    AND o.customer_id IN (\n      SELECT o2.customer_id FROM orders o2\n\
+    \      JOIN order_items oi2 ON o2.id = oi2.order_id\n      JOIN products p2 ON oi2.product_id = p2.id\n\
+    \      WHERE p2.name = '掃地機器人')\n  GROUP BY o.customer_id) x\n"
 - id: 62
   question: 列出所有購買過單價超過 30000 元商品的客戶。
   expect: rows
   note: 「單價」取 products.price（商品定價）。
-  sql: |
-    SELECT c.name FROM customers c
+  sql: 'SELECT c.name FROM customers c
+
     JOIN orders o ON c.id = o.customer_id
+
     JOIN order_items oi ON o.id = oi.order_id
+
     JOIN products p ON oi.product_id = p.id
+
     WHERE p.price > 30000 GROUP BY c.id, c.name ORDER BY c.name
 
+    '
 - id: 63
   question: 哪些客戶的同一張訂單裡同時出現過「食品」和「書籍」類商品？
   expect: rows
   note: 同一張訂單內共現，必須以 orders.id 為分組單位。
-  sql: |
-    SELECT c.name FROM customers c
-    JOIN orders o ON c.id = o.customer_id
-    WHERE o.id IN (
-      SELECT oi.order_id FROM order_items oi
-      JOIN products p ON oi.product_id = p.id
-      WHERE p.category IN ('食品', '書籍')
-      GROUP BY oi.order_id HAVING COUNT(DISTINCT p.category) = 2)
-    GROUP BY c.id, c.name ORDER BY c.name
-
+  sql: "SELECT c.name FROM customers c\nJOIN orders o ON c.id = o.customer_id\nWHERE o.id IN (\n  SELECT\
+    \ oi.order_id FROM order_items oi\n  JOIN products p ON oi.product_id = p.id\n  WHERE p.category IN\
+    \ ('食品', '書籍')\n  GROUP BY oi.order_id HAVING COUNT(DISTINCT p.category) = 2)\nGROUP BY c.id, c.name\
+    \ ORDER BY c.name\n"
 - id: 64
   question: 找出商品種類數最多的那張訂單，裡面有幾種商品？
   expect: rows
-  note: ⚠️ 題目語意有歧義。「商品種類數」可讀成「不同商品數」（主解讀，
-        呼應後半句「幾種商品」），也可讀成「商品類別數」（products.category，
-        DDL 註解正是「商品分類」）。兩種讀法在本資料集的最大值都剛好是 5，
-        但訂單集合完全不同：不同商品 34 張並列，類別 7 張並列。
-        兩種都接受。若要用這題測「精確讀取語意」的能力，得先把題目改寫成
-        無歧義的說法，否則它測不出任何東西。
-  sql: |
-    WITH t AS (SELECT order_id AS oid, COUNT(DISTINCT product_id) AS k
-               FROM order_items GROUP BY order_id)
-    SELECT oid, k FROM t WHERE k = (SELECT MAX(k) FROM t) ORDER BY oid
+  note: ⚠️ 題目語意有歧義。「商品種類數」可讀成「不同商品數」（主解讀， 呼應後半句「幾種商品」），也可讀成「商品類別數」（products.category， DDL 註解正是「商品分類」）。兩種讀法在本資料集的最大值都剛好是
+    5， 但訂單集合完全不同：不同商品 34 張並列，類別 7 張並列。 兩種都接受。若要用這題測「精確讀取語意」的能力，得先把題目改寫成 無歧義的說法，否則它測不出任何東西。
+  sql: "WITH t AS (SELECT order_id AS oid, COUNT(DISTINCT product_id) AS k\n           FROM order_items\
+    \ GROUP BY order_id)\nSELECT oid, k FROM t WHERE k = (SELECT MAX(k) FROM t) ORDER BY oid\n"
   alt_sql:
-    - |
-      WITH t AS (SELECT oi.order_id AS oid, COUNT(DISTINCT p.category) AS k
-                 FROM order_items oi JOIN products p ON oi.product_id = p.id
-                 GROUP BY oi.order_id)
-      SELECT oid, k FROM t WHERE k = (SELECT MAX(k) FROM t) ORDER BY oid
-
+  - "WITH t AS (SELECT oi.order_id AS oid, COUNT(DISTINCT p.category) AS k\n           FROM order_items\
+    \ oi JOIN products p ON oi.product_id = p.id\n           GROUP BY oi.order_id)\nSELECT oid, k FROM\
+    \ t WHERE k = (SELECT MAX(k) FROM t) ORDER BY oid\n"
 - id: 65
   question: 有哪些訂單的商品總件數超過 10 件？
   expect: rows
   note: 單次購買規則：以 orders.id 分組後 HAVING SUM(quantity)。
-  sql: |
-    SELECT order_id FROM order_items GROUP BY order_id
+  sql: 'SELECT order_id FROM order_items GROUP BY order_id
+
     HAVING SUM(quantity) > 10 ORDER BY order_id
 
+    '
 - id: 66
   question: 請列出所有單次購買過大於 5 件商品的客戶電子郵件。
   expect: rows
-  sql: |
-    SELECT DISTINCT c.email FROM customers c
-    JOIN orders o ON c.id = o.customer_id
-    WHERE o.id IN (SELECT order_id FROM order_items GROUP BY order_id
-                   HAVING SUM(quantity) > 5)
-    ORDER BY c.email
-
+  sql: "SELECT DISTINCT c.email FROM customers c\nJOIN orders o ON c.id = o.customer_id\nWHERE o.id IN\
+    \ (SELECT order_id FROM order_items GROUP BY order_id\n               HAVING SUM(quantity) > 5)\n\
+    ORDER BY c.email\n"
 - id: 67
   question: 哪一張訂單包含的商品件數最多？共幾件？
   expect: rows
-  sql: |
-    WITH t AS (SELECT order_id AS oid, SUM(quantity) AS q FROM order_items GROUP BY order_id)
+  sql: 'WITH t AS (SELECT order_id AS oid, SUM(quantity) AS q FROM order_items GROUP BY order_id)
+
     SELECT oid, q FROM t WHERE q = (SELECT MAX(q) FROM t) ORDER BY oid
 
+    '
 - id: 68
   question: 每張訂單的運費是多少？
   expect: schema_unsupported
   note: schema 沒有運費欄位，也沒有任何規則定義運費公式。防禦題。
   absent:
-    - concept: 運費
-      probes: [運費, freight, shipping_fee, 郵資, 配送費, 物流費]
-    - concept: 訂單層級的費用欄位
-      probes: [手續費, fee_rate]
-      acknowledged: |
-        payment_methods.fee_rate 是金流手續費率，不是運費，也不掛在訂單上。
-        依 §8.8 判準：資料存在但那是另一個概念，維持防禦。
+  - concept: 運費
+    probes:
+    - 運費
+    - freight
+    - shipping_fee
+    - 郵資
+    - 配送費
+    - 物流費
+  - concept: 訂單層級的費用欄位
+    probes:
+    - 手續費
+    - fee_rate
+    acknowledged: 'payment_methods.fee_rate 是金流手續費率，不是運費，也不掛在訂單上。
 
+      依 §8.8 判準：資料存在但那是另一個概念，維持防禦。
+
+      '
 - id: 69
   question: 客戶的年齡分布大概是怎樣？
   expect: rows
-  sql: |
-    SELECT (2026 - birth_year) AS age, COUNT(*) AS n
+  sql: 'SELECT (2026 - birth_year) AS age, COUNT(*) AS n
+
     FROM customer_profiles GROUP BY age ORDER BY age
+
+    '
   alt_sql:
-    - |
-      SELECT FLOOR((2026 - birth_year) / 10) * 10 AS age_group, COUNT(*) AS n
-      FROM customer_profiles GROUP BY age_group ORDER BY age_group
-  note: |
-    ⚠️ 這題本來是防禦題（「customers 沒有生日欄位」）。2026-08-18 加了
+  - 'SELECT FLOOR((2026 - birth_year) / 10) * 10 AS age_group, COUNT(*) AS n
+
+    FROM customer_profiles GROUP BY age_group ORDER BY age_group
+
+    '
+  note: '⚠️ 這題本來是防禦題（「customers 沒有生日欄位」）。2026-08-18 加了
+
     customer_profiles.birth_year 之後這個概念就存在了，防禦答案變成錯的。
 
+
     與 #70 的差別是關鍵：#70 資料出現了但「利潤率」的業務公式仍未定義，
+
     所以繼續防禦；這題「年齡 = 2026 − birth_year」沒有任何未定義的公式，
+
     所以真的變成可回答。判準是「業務定義在不在」，不是「欄位在不在」。
 
+
     「分布」有歧義，逐歲與十歲一組都是合理解讀，兩者都收（見 alt_sql）。
+
     防禦題會被加表 silently 作廢 —— 教訓見 ARCHITECTURE.md §8.8。
 
+    '
 - id: 70
   question: 哪一個商品的利潤率最高？
   expect: schema_unsupported
-  note: ⚠️ schema 擴充後 product_suppliers.supply_price（進貨價）出現了，
-        資料上「售價 - 進貨價」算得出來 —— 但這題的答案沒有變。
-        原因有二：(a) 一個商品可以有多個供應商、多個進貨價，該取哪一個
-        沒有定義；(b) 利潤率的計算公式不在 business_rules 裡。
-        Prompt 的防禦條款講的正是這種情況：「概念沒有定義在 rules_text 中，
-        絕對不可自行推導或猜測計算公式」。
-        資料存在但業務定義不存在，仍然該觸發防禦 —— 擴充之後這題反而
-        變成更好的測試：它區分「查不到欄位」與「查得到欄位但算法未定義」。
+  note: ⚠️ schema 擴充後 product_suppliers.supply_price（進貨價）出現了， 資料上「售價 - 進貨價」算得出來 —— 但這題的答案沒有變。 原因有二：(a)
+    一個商品可以有多個供應商、多個進貨價，該取哪一個 沒有定義；(b) 利潤率的計算公式不在 business_rules 裡。 Prompt 的防禦條款講的正是這種情況：「概念沒有定義在 rules_text
+    中， 絕對不可自行推導或猜測計算公式」。 資料存在但業務定義不存在，仍然該觸發防禦 —— 擴充之後這題反而 變成更好的測試：它區分「查不到欄位」與「查得到欄位但算法未定義」。
   absent:
-    - concept: 利潤率的業務定義
-      probes: [利潤, 毛利, profit, margin]
-    - concept: 進貨成本
-      probes: [進貨價, supply_price, 成本]
-      acknowledged: |
-        product_suppliers.supply_price 已存在 —— 資料有了，業務定義沒有：
-        一個商品可以有多個供應商、多個進貨價，該取哪一個未定義，
-        利潤率公式也不在 business_rules 裡。依 §8.8 判準維持防禦。
+  - concept: 利潤率的業務定義
+    probes:
+    - 利潤
+    - 毛利
+    - profit
+    - margin
+  - concept: 進貨成本
+    probes:
+    - 進貨價
+    - supply_price
+    - 成本
+    acknowledged: 'product_suppliers.supply_price 已存在 —— 資料有了，業務定義沒有：
 
+      一個商品可以有多個供應商、多個進貨價，該取哪一個未定義，
+
+      利潤率公式也不在 business_rules 裡。依 §8.8 判準維持防禦。
+
+      '
 - id: 71
   question: 請問客戶的性別比例是多少？
   expect: rows
-  sql: |
-    SELECT gender, COUNT(*) AS n,
-           COUNT(*) * 100.0 / (SELECT COUNT(*) FROM customer_profiles) AS pct
-    FROM customer_profiles GROUP BY gender ORDER BY gender
+  sql: "SELECT gender, COUNT(*) AS n,\n       COUNT(*) * 100.0 / (SELECT COUNT(*) FROM customer_profiles)\
+    \ AS pct\nFROM customer_profiles GROUP BY gender ORDER BY gender\n"
   alt_sql:
-    - |
-      SELECT gender, COUNT(*) * 100.0 / (SELECT COUNT(*) FROM customer_profiles) AS pct
-      FROM customer_profiles GROUP BY gender ORDER BY gender
-  note: |
-    ⚠️ 同 #69，原本是防禦題，customer_profiles.gender 出現後失效。
-    比例就是 count / total，沒有未定義的業務公式，所以確實可回答。
+  - 'SELECT gender, COUNT(*) * 100.0 / (SELECT COUNT(*) FROM customer_profiles) AS pct
 
-    2026-08-19 補 alt_sql：**這是 GT 的缺陷不是模型的**。題目問「比例是多少」，
-    只回百分比就已經完整回答了問題；主 SQL 多帶 COUNT(*) 是我寫寬了，
-    而比對規則允許系統**多**帶欄位、不允許**少**帶 —— 於是一個正確答案被判錯。
-    兩種讀法都對，所以補 alt_sql 而不是改主 SQL。
-    （這一題另外有一個真的錯法：把分母寫成群組數而不是總人數，
-      算出 633.33% / 600% / 433.33%。那個是模型錯，n=8 出現 1 次。）
+    FROM customer_profiles GROUP BY gender ORDER BY gender
 
+    '
+  note: "⚠️ 同 #69，原本是防禦題，customer_profiles.gender 出現後失效。\n比例就是 count / total，沒有未定義的業務公式，所以確實可回答。\n\n2026-08-19\
+    \ 補 alt_sql：**這是 GT 的缺陷不是模型的**。題目問「比例是多少」，\n只回百分比就已經完整回答了問題；主 SQL 多帶 COUNT(*) 是我寫寬了，\n而比對規則允許系統**多**帶欄位、不允許**少**帶\
+    \ —— 於是一個正確答案被判錯。\n兩種讀法都對，所以補 alt_sql 而不是改主 SQL。\n（這一題另外有一個真的錯法：把分母寫成群組數而不是總人數，\n  算出 633.33% / 600%\
+    \ / 433.33%。那個是模型錯，n=8 出現 1 次。）\n"
 - id: 72
   question: 有哪些訂單套用了促銷活動的折扣？折扣金額是多少？
   expect: rows
-  note: ⚠️ 這題原本是防禦題（舊 schema 沒有任何折扣欄位）。schema 擴充加入
-        promotions 與 order_promotions 之後，它變成一題可以誠實回答的問題，
-        系統也確實答對了。
-        這是 ground truth 腐化的第三種形式：不是資料變了、也不是題目硬編的
-        值消失了，而是「schema 變了，舊題目的語意跟著變」。
-        擴充 schema 時必須逐題重新檢視防禦題，否則會把正確行為判成錯誤。
-  sql: |
-    SELECT o.id AS order_id, SUM(op.discount_amount) AS total_discount
-    FROM orders o JOIN order_promotions op ON o.id = op.order_id
-    GROUP BY o.id ORDER BY o.id
-  alt_sql:
-    - |
-      SELECT op.order_id, op.discount_amount
-      FROM order_promotions op ORDER BY op.order_id
+  note: ⚠️ 這題原本是防禦題（舊 schema 沒有任何折扣欄位）。schema 擴充加入 promotions 與 order_promotions 之後，它變成一題可以誠實回答的問題， 系統也確實答對了。
+    這是 ground truth 腐化的第三種形式：不是資料變了、也不是題目硬編的 值消失了，而是「schema 變了，舊題目的語意跟著變」。 擴充 schema 時必須逐題重新檢視防禦題，否則會把正確行為判成錯誤。
+  sql: 'SELECT o.id AS order_id, SUM(op.discount_amount) AS total_discount
 
+    FROM orders o JOIN order_promotions op ON o.id = op.order_id
+
+    GROUP BY o.id ORDER BY o.id
+
+    '
+  alt_sql:
+  - 'SELECT op.order_id, op.discount_amount
+
+    FROM order_promotions op ORDER BY op.order_id
+
+    '
 - id: 73
   question: 有哪些商品的庫存是 0？
   expect: empty
-  note: 查得到欄位但沒有符合的資料 —— 與 schema_unsupported 是不同的失敗模式，
-        正確行為是誠實回報 0 筆，而不是觸發防禦暗號。
-  sql: |
-    SELECT name FROM products WHERE stock = 0
+  note: 查得到欄位但沒有符合的資料 —— 與 schema_unsupported 是不同的失敗模式， 正確行為是誠實回報 0 筆，而不是觸發防禦暗號。
+  sql: 'SELECT name FROM products WHERE stock = 0
 
+    '
 - id: 74
   question: 有沒有客戶下過超過 20 張訂單？
   expect: empty
-  sql: |
-    SELECT customer_id FROM orders GROUP BY customer_id HAVING COUNT(*) > 20
+  sql: 'SELECT customer_id FROM orders GROUP BY customer_id HAVING COUNT(*) > 20
 
+    '
 - id: 75
   question: 找出訂單金額超過 200000 元的訂單。
   expect: empty
-  sql: |
-    SELECT id, total_amount FROM orders WHERE total_amount > 200000
+  sql: 'SELECT id, total_amount FROM orders WHERE total_amount > 200000
 
+    '
 - id: 76
   question: 有哪些客戶沒有填寫電話號碼？
   expect: empty
-  sql: |
-    SELECT name FROM customers WHERE phone IS NULL OR phone = ''
+  sql: 'SELECT name FROM customers WHERE phone IS NULL OR phone = ''''
 
+    '
 - id: 77
   question: 「無線滑鼠」目前的庫存還剩下多少？
   expect: rows
-  sql: |
-    SELECT stock FROM products WHERE name = '無線滑鼠'
+  sql: 'SELECT stock FROM products WHERE name = ''無線滑鼠''
 
+    '
 - id: 78
   question: 客戶「王宗憲」總共買過哪些商品？
   expect: rows
   note: 姓名在本資料集有重複的情形（如「李家豪」出現兩次），「王宗憲」已確認唯一。
-  sql: |
-    SELECT DISTINCT p.name FROM customers c
-    JOIN orders o ON c.id = o.customer_id
-    JOIN order_items oi ON o.id = oi.order_id
-    JOIN products p ON oi.product_id = p.id
-    WHERE c.name = '王宗憲' ORDER BY p.name
+  sql: 'SELECT DISTINCT p.name FROM customers c
 
+    JOIN orders o ON c.id = o.customer_id
+
+    JOIN order_items oi ON o.id = oi.order_id
+
+    JOIN products p ON oi.product_id = p.id
+
+    WHERE c.name = ''王宗憲'' ORDER BY p.name
+
+    '
 - id: 79
   question: 訂單編號 100 的明細內容是什麼？包含哪些商品？
   expect: rows
-  sql: |
-    SELECT p.name, oi.quantity, oi.unit_price FROM order_items oi
+  sql: 'SELECT p.name, oi.quantity, oi.unit_price FROM order_items oi
+
     JOIN products p ON oi.product_id = p.id
+
     WHERE oi.order_id = 100 ORDER BY p.name
 
+    '
 - id: 80
   question: 「書籍」類別的商品平均單價是多少？
   expect: rows
   note: 商品定價的平均，非成交均價。
-  sql: |
-    SELECT AVG(price) AS a FROM products WHERE category = '書籍'
+  sql: 'SELECT AVG(price) AS a FROM products WHERE category = ''書籍''
 
+    '
 - id: 81
   question: 哪兩個商品最常被一起購買？
   expect: rows
   note: 同一張訂單內共現次數。自連接以 a.product_id < b.product_id 避免重複配對。
-  sql: |
-    WITH p AS (
-      SELECT a.product_id AS p1, b.product_id AS p2, COUNT(DISTINCT a.order_id) AS k
-      FROM order_items a JOIN order_items b
-        ON a.order_id = b.order_id AND a.product_id < b.product_id
-      GROUP BY 1, 2)
-    SELECT x.name AS n1, y.name AS n2, p.k FROM p
-    JOIN products x ON p.p1 = x.id JOIN products y ON p.p2 = y.id
-    WHERE p.k = (SELECT MAX(k) FROM p) ORDER BY x.name, y.name
-
+  sql: "WITH p AS (\n  SELECT a.product_id AS p1, b.product_id AS p2, COUNT(DISTINCT a.order_id) AS k\n\
+    \  FROM order_items a JOIN order_items b\n    ON a.order_id = b.order_id AND a.product_id < b.product_id\n\
+    \  GROUP BY 1, 2)\nSELECT x.name AS n1, y.name AS n2, p.k FROM p\nJOIN products x ON p.p1 = x.id JOIN\
+    \ products y ON p.p2 = y.id\nWHERE p.k = (SELECT MAX(k) FROM p) ORDER BY x.name, y.name\n"
 - id: 82
   question: 每位客戶第一次下訂單是什麼時候？
   expect: rows
-  sql: |
-    SELECT c.name, MIN(o.order_date) AS first_order
-    FROM customers c JOIN orders o ON c.id = o.customer_id
-    GROUP BY c.id, c.name ORDER BY c.name
-  alt_sql:
-    - |
-      SELECT c.name, MIN(o.order_date) AS first_order
-      FROM customers c LEFT JOIN orders o ON c.id = o.customer_id
-      GROUP BY c.id, c.name ORDER BY c.name
+  sql: 'SELECT c.name, MIN(o.order_date) AS first_order
 
+    FROM customers c JOIN orders o ON c.id = o.customer_id
+
+    GROUP BY c.id, c.name ORDER BY c.name
+
+    '
+  alt_sql:
+  - 'SELECT c.name, MIN(o.order_date) AS first_order
+
+    FROM customers c LEFT JOIN orders o ON c.id = o.customer_id
+
+    GROUP BY c.id, c.name ORDER BY c.name
+
+    '
 - id: 83
   question: 客戶從註冊到第一次下單，平均間隔多久？
   expect: rows
-  note: 單位為天。只計算有下過訂單的客戶。
-        ⚠️ 本資料集 49 位有訂單的客戶裡，有 20 位的首單早於註冊時間
-        （seed 時 created_at 與 order_date 是獨立亂數，沒有先後約束）。
-        負值區間 DATEDIFF 與 TIMESTAMPDIFF(DAY) 的截斷方向不同，
-        20/49 ≈ 0.41 天，恰好就是兩者的差（22.08 vs 22.47），兩種都接受。
-        真正該修的是資料而不是 GT —— 擴充 schema 時應讓 order_date
-        必定晚於 created_at，這題才測得出東西。
-  sql: |
-    SELECT AVG(DATEDIFF(f.first_order, c.created_at)) AS avg_days
-    FROM customers c JOIN (
-      SELECT customer_id, MIN(order_date) AS first_order FROM orders GROUP BY customer_id
-    ) f ON c.id = f.customer_id
+  note: 單位為天。只計算有下過訂單的客戶。 ⚠️ 本資料集 49 位有訂單的客戶裡，有 20 位的首單早於註冊時間 （seed 時 created_at 與 order_date 是獨立亂數，沒有先後約束）。
+    負值區間 DATEDIFF 與 TIMESTAMPDIFF(DAY) 的截斷方向不同， 20/49 ≈ 0.41 天，恰好就是兩者的差（22.08 vs 22.47），兩種都接受。 真正該修的是資料而不是
+    GT —— 擴充 schema 時應讓 order_date 必定晚於 created_at，這題才測得出東西。
+  sql: "SELECT AVG(DATEDIFF(f.first_order, c.created_at)) AS avg_days\nFROM customers c JOIN (\n  SELECT\
+    \ customer_id, MIN(order_date) AS first_order FROM orders GROUP BY customer_id\n) f ON c.id = f.customer_id\n"
   alt_sql:
-    - |
-      SELECT AVG(TIMESTAMPDIFF(DAY, c.created_at, f.first_order)) AS avg_days
-      FROM customers c JOIN (
-        SELECT customer_id, MIN(order_date) AS first_order FROM orders GROUP BY customer_id
-      ) f ON c.id = f.customer_id
-
+  - "SELECT AVG(TIMESTAMPDIFF(DAY, c.created_at, f.first_order)) AS avg_days\nFROM customers c JOIN (\n\
+    \  SELECT customer_id, MIN(order_date) AS first_order FROM orders GROUP BY customer_id\n) f ON c.id\
+    \ = f.customer_id\n"
 - id: 84
   question: 有哪些客戶在同一天下過超過一張訂單？
   expect: rows
-  sql: |
-    SELECT c.name FROM customers c
-    JOIN orders o ON c.id = o.customer_id
-    GROUP BY c.id, c.name
-    HAVING COUNT(*) > COUNT(DISTINCT DATE(o.order_date))
-    ORDER BY c.name
-  alt_sql:
-    - |
-      SELECT c.name, DATE(o.order_date) AS d FROM customers c
-      JOIN orders o ON c.id = o.customer_id
-      GROUP BY c.id, c.name, DATE(o.order_date)
-      HAVING COUNT(*) > 1 ORDER BY c.name, d
+  sql: 'SELECT c.name FROM customers c
 
+    JOIN orders o ON c.id = o.customer_id
+
+    GROUP BY c.id, c.name
+
+    HAVING COUNT(*) > COUNT(DISTINCT DATE(o.order_date))
+
+    ORDER BY c.name
+
+    '
+  alt_sql:
+  - 'SELECT c.name, DATE(o.order_date) AS d FROM customers c
+
+    JOIN orders o ON c.id = o.customer_id
+
+    GROUP BY c.id, c.name, DATE(o.order_date)
+
+    HAVING COUNT(*) > 1 ORDER BY c.name, d
+
+    '
 - id: 85
   question: 列出每個月新註冊的客戶數量。
   expect: rows
-  sql: |
-    SELECT DATE_FORMAT(created_at, '%Y-%m') AS mo, COUNT(*) AS n
+  sql: 'SELECT DATE_FORMAT(created_at, ''%Y-%m'') AS mo, COUNT(*) AS n
+
     FROM customers GROUP BY 1 ORDER BY 1
 
+    '
 - id: 86
   question: 「家電」類別中，有哪些商品的庫存低於該類別的平均庫存？
   expect: rows
-  sql: |
-    SELECT name FROM products
-    WHERE category = '家電'
-      AND stock < (SELECT AVG(stock) FROM products WHERE category = '家電')
-    ORDER BY name
-
+  sql: "SELECT name FROM products\nWHERE category = '家電'\n  AND stock < (SELECT AVG(stock) FROM products\
+    \ WHERE category = '家電')\nORDER BY name\n"
 - id: 87
   question: 找出單價高於所在類別平均單價的商品有哪些？
   expect: rows
   note: 相關子查詢／視窗函數皆可。
-  sql: |
-    SELECT p.name FROM products p
+  sql: 'SELECT p.name FROM products p
+
     WHERE p.price > (SELECT AVG(p2.price) FROM products p2 WHERE p2.category = p.category)
+
     ORDER BY p.name
 
+    '
 - id: 88
   question: 有哪些訂單只買了一種商品（明細只有一列）？共有幾張？
   expect: rows
   note: 題目同時要清單與張數。主解讀給清單，alt 給張數，任一相符即通過。
-  sql: |
-    SELECT order_id FROM order_items GROUP BY order_id
-    HAVING COUNT(*) = 1 ORDER BY order_id
-  alt_sql:
-    - |
-      SELECT COUNT(*) AS n FROM (
-        SELECT order_id FROM order_items GROUP BY order_id HAVING COUNT(*) = 1) t
+  sql: 'SELECT order_id FROM order_items GROUP BY order_id
 
+    HAVING COUNT(*) = 1 ORDER BY order_id
+
+    '
+  alt_sql:
+  - "SELECT COUNT(*) AS n FROM (\n  SELECT order_id FROM order_items GROUP BY order_id HAVING COUNT(*)\
+    \ = 1) t\n"
 - id: 89
   question: 訂單張數最多的前 5 位客戶，各自的訂單狀態分布是什麼？
   expect: rows
-  note: 原本寫「列出前 5 位客戶」但沒說依什麼排序，實測系統每輪的解讀都不同
-        （52 列的長格式、16 列的樞紐格式），題目本身測不出東西，已改寫成
-        明確以訂單張數排序。
-        MySQL 不支援 IN 子查詢帶 LIMIT（error 1235），故改用衍生表 JOIN。
-  sql: |
-    SELECT c.name, o.status, COUNT(*) AS n
-    FROM customers c
-    JOIN orders o ON c.id = o.customer_id
-    JOIN (SELECT customer_id FROM orders GROUP BY customer_id
-          ORDER BY COUNT(*) DESC, customer_id LIMIT 5) top
-      ON top.customer_id = c.id
-    GROUP BY c.id, c.name, o.status ORDER BY c.name, o.status
+  note: 原本寫「列出前 5 位客戶」但沒說依什麼排序，實測系統每輪的解讀都不同 （52 列的長格式、16 列的樞紐格式），題目本身測不出東西，已改寫成 明確以訂單張數排序。 MySQL 不支援 IN
+    子查詢帶 LIMIT（error 1235），故改用衍生表 JOIN。
+  sql: "SELECT c.name, o.status, COUNT(*) AS n\nFROM customers c\nJOIN orders o ON c.id = o.customer_id\n\
+    JOIN (SELECT customer_id FROM orders GROUP BY customer_id\n      ORDER BY COUNT(*) DESC, customer_id\
+    \ LIMIT 5) top\n  ON top.customer_id = c.id\nGROUP BY c.id, c.name, o.status ORDER BY c.name, o.status\n"
   alt_sql:
-    - |
-      SELECT c.name,
-             SUM(o.status = 'PENDING')   AS pending_n,
-             SUM(o.status = 'PAID')      AS paid_n,
-             SUM(o.status = 'SHIPPED')   AS shipped_n,
-             SUM(o.status = 'COMPLETED') AS completed_n,
-             SUM(o.status = 'CANCELLED') AS cancelled_n
-      FROM customers c
-      JOIN orders o ON c.id = o.customer_id
-      JOIN (SELECT customer_id FROM orders GROUP BY customer_id
-            ORDER BY COUNT(*) DESC, customer_id LIMIT 5) top
-        ON top.customer_id = c.id
-      GROUP BY c.id, c.name ORDER BY c.name
-
+  - "SELECT c.name,\n       SUM(o.status = 'PENDING')   AS pending_n,\n       SUM(o.status = 'PAID') \
+    \     AS paid_n,\n       SUM(o.status = 'SHIPPED')   AS shipped_n,\n       SUM(o.status = 'COMPLETED')\
+    \ AS completed_n,\n       SUM(o.status = 'CANCELLED') AS cancelled_n\nFROM customers c\nJOIN orders\
+    \ o ON c.id = o.customer_id\nJOIN (SELECT customer_id FROM orders GROUP BY customer_id\n      ORDER\
+    \ BY COUNT(*) DESC, customer_id LIMIT 5) top\n  ON top.customer_id = c.id\nGROUP BY c.id, c.name ORDER\
+    \ BY c.name\n"
 - id: 90
   question: 目前的總庫存價值（庫存數量乘上單價）是多少？
   expect: rows
-  sql: |
-    SELECT SUM(stock * price) AS v FROM products
+  sql: 'SELECT SUM(stock * price) AS v FROM products
 
+    '
 - id: 91
   question: 哪一個類別的商品種類數最多？有幾種？
   expect: rows
-  sql: |
-    WITH t AS (SELECT category AS ct, COUNT(*) AS k FROM products GROUP BY category)
+  sql: 'WITH t AS (SELECT category AS ct, COUNT(*) AS k FROM products GROUP BY category)
+
     SELECT ct, k FROM t WHERE k = (SELECT MAX(k) FROM t) ORDER BY ct
 
+    '
 - id: 92
   question: 有哪些商品被超過 15 位不同的客戶買過？
   expect: rows
-  sql: |
-    SELECT p.name FROM products p
+  sql: 'SELECT p.name FROM products p
+
     JOIN order_items oi ON p.id = oi.product_id
+
     JOIN orders o ON oi.order_id = o.id
+
     GROUP BY p.id, p.name
+
     HAVING COUNT(DISTINCT o.customer_id) > 15 ORDER BY p.name
 
+    '
 - id: 93
   question: 客戶總消費金額的中位數大約是多少？
   expect: rows
-  note: 偶數筆時取中間兩筆的平均。MySQL 沒有 MEDIAN()。
-        題目沒說「客戶」是指有消費的客戶、還是全部客戶（有 1 位從未下單，
-        其消費額為 0）。兩種讀法都成立，因此主解讀取有消費者，alt_sql 收全體。
-  sql: |
-    WITH t AS (SELECT SUM(total_amount) AS s FROM orders GROUP BY customer_id),
-    r AS (SELECT s, ROW_NUMBER() OVER (ORDER BY s) AS rn, COUNT(*) OVER () AS c FROM t)
-    SELECT AVG(s) AS median FROM r WHERE rn IN (FLOOR((c + 1) / 2), FLOOR((c + 2) / 2))
-  alt_sql:
-    - |
-      WITH t AS (SELECT c.id, COALESCE(SUM(o.total_amount), 0) AS s
-                 FROM customers c LEFT JOIN orders o ON c.id = o.customer_id
-                 GROUP BY c.id),
-      r AS (SELECT s, ROW_NUMBER() OVER (ORDER BY s) AS rn, COUNT(*) OVER () AS c FROM t)
-      SELECT AVG(s) AS median FROM r WHERE rn IN (FLOOR((c + 1) / 2), FLOOR((c + 2) / 2))
+  note: 偶數筆時取中間兩筆的平均。MySQL 沒有 MEDIAN()。 題目沒說「客戶」是指有消費的客戶、還是全部客戶（有 1 位從未下單， 其消費額為 0）。兩種讀法都成立，因此主解讀取有消費者，alt_sql
+    收全體。
+  sql: 'WITH t AS (SELECT SUM(total_amount) AS s FROM orders GROUP BY customer_id),
 
+    r AS (SELECT s, ROW_NUMBER() OVER (ORDER BY s) AS rn, COUNT(*) OVER () AS c FROM t)
+
+    SELECT AVG(s) AS median FROM r WHERE rn IN (FLOOR((c + 1) / 2), FLOOR((c + 2) / 2))
+
+    '
+  alt_sql:
+  - "WITH t AS (SELECT c.id, COALESCE(SUM(o.total_amount), 0) AS s\n           FROM customers c LEFT JOIN\
+    \ orders o ON c.id = o.customer_id\n           GROUP BY c.id),\nr AS (SELECT s, ROW_NUMBER() OVER\
+    \ (ORDER BY s) AS rn, COUNT(*) OVER () AS c FROM t)\nSELECT AVG(s) AS median FROM r WHERE rn IN (FLOOR((c\
+    \ + 1) / 2), FLOOR((c + 2) / 2))\n"
 - id: 94
   question: 找出消費金額高於所在城市平均消費的客戶。
   expect: rows
-  note: 城市平均 = 該市每位客戶總消費的平均，與 #30 主解讀一致。
-  sql: |
-    WITH ct AS (SELECT customer_id AS cid, SUM(total_amount) AS t FROM orders GROUP BY 1),
-    ca AS (SELECT c.city AS ci, AVG(ct.t) AS a FROM ct
-           JOIN customers c ON c.id = ct.cid GROUP BY c.city)
-    SELECT c.name FROM ct JOIN customers c ON c.id = ct.cid
-    JOIN ca ON c.city = ca.ci WHERE ct.t > ca.a ORDER BY c.name
-
+  note: 城市平均 = 該市每位客戶總消費的平均，與
+  sql: "WITH ct AS (SELECT customer_id AS cid, SUM(total_amount) AS t FROM orders GROUP BY 1),\nca AS\
+    \ (SELECT c.city AS ci, AVG(ct.t) AS a FROM ct\n       JOIN customers c ON c.id = ct.cid GROUP BY\
+    \ c.city)\nSELECT c.name FROM ct JOIN customers c ON c.id = ct.cid\nJOIN ca ON c.city = ca.ci WHERE\
+    \ ct.t > ca.a ORDER BY c.name\n"
 - id: 95
   question: 「食品」類商品的總銷售件數是多少？
   expect: rows
-  sql: |
-    SELECT SUM(oi.quantity) AS qty FROM order_items oi
-    JOIN products p ON oi.product_id = p.id WHERE p.category = '食品'
+  sql: 'SELECT SUM(oi.quantity) AS qty FROM order_items oi
 
+    JOIN products p ON oi.product_id = p.id WHERE p.category = ''食品''
+
+    '
 - id: 96
   question: 有哪些客戶只買過一種商品類別？
   expect: rows
-  sql: |
-    SELECT c.name FROM customers c
+  sql: 'SELECT c.name FROM customers c
+
     JOIN orders o ON c.id = o.customer_id
+
     JOIN order_items oi ON o.id = oi.order_id
+
     JOIN products p ON oi.product_id = p.id
+
     GROUP BY c.id, c.name HAVING COUNT(DISTINCT p.category) = 1
+
     ORDER BY c.name
 
+    '
 - id: 97
   question: 訂單金額最高的前 10% 訂單，總共貢獻了多少營收？
   expect: rows
-  note: 200 張訂單，前 10% = 前 20 張。GT 用 LIMIT，系統偏好 NTILE(10)，
-        兩條路徑一致才算交叉驗證。
-  sql: |
-    SELECT SUM(total_amount) AS s FROM (
-      SELECT total_amount FROM orders ORDER BY total_amount DESC LIMIT 20) t
-
+  note: 200 張訂單，前 10% = 前 20 張。GT 用 LIMIT，系統偏好 NTILE(10)， 兩條路徑一致才算交叉驗證。
+  sql: "SELECT SUM(total_amount) AS s FROM (\n  SELECT total_amount FROM orders ORDER BY total_amount\
+    \ DESC LIMIT 20) t\n"
 - id: 98
   question: 比較「3C數位」與「家電」兩個類別的總營收，哪個比較高？
   expect: rows
-  sql: |
-    WITH t AS (
-      SELECT p.category AS ct, SUM(oi.quantity * oi.unit_price) AS r
-      FROM order_items oi JOIN products p ON oi.product_id = p.id
-      WHERE p.category IN ('3C數位', '家電') GROUP BY p.category)
-    SELECT ct, r FROM t WHERE r = (SELECT MAX(r) FROM t)
+  sql: "WITH t AS (\n  SELECT p.category AS ct, SUM(oi.quantity * oi.unit_price) AS r\n  FROM order_items\
+    \ oi JOIN products p ON oi.product_id = p.id\n  WHERE p.category IN ('3C數位', '家電') GROUP BY p.category)\n\
+    SELECT ct, r FROM t WHERE r = (SELECT MAX(r) FROM t)\n"
   alt_sql:
-    - |
-      SELECT p.category, SUM(oi.quantity * oi.unit_price) AS r
-      FROM order_items oi JOIN products p ON oi.product_id = p.id
-      WHERE p.category IN ('3C數位', '家電') GROUP BY p.category
-      ORDER BY r DESC
+  - 'SELECT p.category, SUM(oi.quantity * oi.unit_price) AS r
 
+    FROM order_items oi JOIN products p ON oi.product_id = p.id
+
+    WHERE p.category IN (''3C數位'', ''家電'') GROUP BY p.category
+
+    ORDER BY r DESC
+
+    '
 - id: 99
   question: 有多少客戶在註冊後 30 天內就下了第一張訂單？
   expect: rows
   note: 0 <= DATEDIFF <= 30。首單早於註冊者（seed 產生的負值）不計入。
-  sql: |
-    SELECT COUNT(*) AS n FROM customers c JOIN (
-      SELECT customer_id, MIN(order_date) AS first_order FROM orders GROUP BY customer_id
-    ) f ON c.id = f.customer_id
-    WHERE DATEDIFF(f.first_order, c.created_at) BETWEEN 0 AND 30
+  sql: "SELECT COUNT(*) AS n FROM customers c JOIN (\n  SELECT customer_id, MIN(order_date) AS first_order\
+    \ FROM orders GROUP BY customer_id\n) f ON c.id = f.customer_id\nWHERE DATEDIFF(f.first_order, c.created_at)\
+    \ BETWEEN 0 AND 30\n"
   alt_sql:
-    - |
-      SELECT COUNT(*) AS n FROM customers c JOIN (
-        SELECT customer_id, MIN(order_date) AS first_order FROM orders GROUP BY customer_id
-      ) f ON c.id = f.customer_id
-      WHERE DATEDIFF(f.first_order, c.created_at) <= 30
-
+  - "SELECT COUNT(*) AS n FROM customers c JOIN (\n  SELECT customer_id, MIN(order_date) AS first_order\
+    \ FROM orders GROUP BY customer_id\n) f ON c.id = f.customer_id\nWHERE DATEDIFF(f.first_order, c.created_at)\
+    \ <= 30\n"
 - id: 100
   question: 找出住在新北市、而且總消費金額超過 50000 元的客戶。
   expect: rows
-  sql: |
-    SELECT c.name FROM customers c JOIN orders o ON c.id = o.customer_id
-    WHERE c.city = '新北市'
+  sql: 'SELECT c.name FROM customers c JOIN orders o ON c.id = o.customer_id
+
+    WHERE c.city = ''新北市''
+
     GROUP BY c.id, c.name HAVING SUM(o.total_amount) > 50000 ORDER BY c.name
 
-# =============================================================================
-# #101-141 — 擴充 schema（17 張新表）的覆蓋題組
-# =============================================================================
-# 為什麼補這一組：
-#   #1-100 全部只需要 customers / products / orders / order_items 四張表。
-#   擴到 21 張表之後量到「正確率不掉」，但那只證明了「無關的表不會干擾」，
-#   完全沒證明「該用新表時會不會挑對」。這 41 題就是補這個缺口。
-#
-# 這組刻意壓在 init_db_ext.py 埋的陷阱上：
-#   - status 四種值域（orders / payments / shipments / refunds 意義都不同）
-#   - 時間鏈 order_date → paid_at → shipped_at → delivered_at
-#   - 語意捷徑：browse_logs 是「看過」、cart_items 是「想買」，都不是「買了」
-#   - 同名欄位：suppliers.city 不是 customers.city、addresses.city 也不是
-#   - 分類雙表示：products.category（字串）vs categories/product_categories（表）
-#   - 寬表 product_specs 的 NULL 是「不適用」不是「未知」
-# =============================================================================
-
+    '
 - id: 101
   question: 目前有幾種付款方式可以使用？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM payment_methods WHERE is_active = 1
+  sql: 'SELECT COUNT(*) AS n FROM payment_methods WHERE is_active = 1
 
+    '
 - id: 102
   question: 各種付款方式分別被使用了幾次？
   expect: rows
-  sql: |
-    SELECT pm.name, COUNT(*) AS n
+  sql: 'SELECT pm.name, COUNT(*) AS n
+
     FROM payments p JOIN payment_methods pm ON p.method_id = pm.id
+
     GROUP BY pm.id, pm.name ORDER BY n DESC
 
+    '
 - id: 103
   question: 手續費率最高的付款方式是哪一個？費率是多少？
   expect: rows
-  sql: |
-    SELECT name, fee_rate FROM payment_methods
+  sql: 'SELECT name, fee_rate FROM payment_methods
+
     WHERE fee_rate = (SELECT MAX(fee_rate) FROM payment_methods)
 
+    '
 - id: 104
   question: 列出所有付款失敗的紀錄。
   expect: empty
-  note: payments.status 的值域文件上有 FAILED，但資料裡 164 筆全是 SUCCESS。
-        考的是「欄位註解列了某個值 ≠ 資料裡真的有」——要誠實回 0 筆，
-        不可改查 orders.status='CANCELLED' 來硬湊。
-  sql: |
-    SELECT id, order_id, amount FROM payments WHERE status = 'FAILED'
+  note: payments.status 的值域文件上有 FAILED，但資料裡 164 筆全是 SUCCESS。 考的是「欄位註解列了某個值 ≠ 資料裡真的有」——要誠實回 0 筆， 不可改查 orders.status='CANCELLED'
+    來硬湊。
+  sql: 'SELECT id, order_id, amount FROM payments WHERE status = ''FAILED''
 
+    '
 - id: 105
   question: 從下單到付款完成，平均間隔幾天？
   expect: rows
-  note: order_date → paid_at 是時間鏈的第一段。DATEDIFF 與 TIMESTAMPDIFF(DAY)
-        對不滿一天的差值取整方式不同，兩種都收。
-  sql: |
-    SELECT AVG(TIMESTAMPDIFF(DAY, o.order_date, p.paid_at)) AS avg_days
-    FROM payments p JOIN orders o ON p.order_id = o.id
-  alt_sql:
-    - |
-      SELECT AVG(DATEDIFF(p.paid_at, o.order_date)) AS avg_days
-      FROM payments p JOIN orders o ON p.order_id = o.id
+  note: order_date → paid_at 是時間鏈的第一段。DATEDIFF 與 TIMESTAMPDIFF(DAY) 對不滿一天的差值取整方式不同，兩種都收。
+  sql: 'SELECT AVG(TIMESTAMPDIFF(DAY, o.order_date, p.paid_at)) AS avg_days
 
+    FROM payments p JOIN orders o ON p.order_id = o.id
+
+    '
+  alt_sql:
+  - 'SELECT AVG(DATEDIFF(p.paid_at, o.order_date)) AS avg_days
+
+    FROM payments p JOIN orders o ON p.order_id = o.id
+
+    '
 - id: 106
   question: 用信用卡付款的總金額是多少？
   expect: rows
-  sql: |
-    SELECT SUM(p.amount) AS total
-    FROM payments p JOIN payment_methods pm ON p.method_id = pm.id
-    WHERE pm.name = '信用卡'
+  sql: 'SELECT SUM(p.amount) AS total
 
+    FROM payments p JOIN payment_methods pm ON p.method_id = pm.id
+
+    WHERE pm.name = ''信用卡''
+
+    '
 - id: 107
   question: 有多少張訂單已經送達？
   expect: rows
-  note: 「已送達」可以看 orders.status='COMPLETED'，也可以看
-        shipments.status='DELIVERED'，本資料集兩者都是 105 張，故兩解皆收。
-        考的是不要誤用 payments.status 或 refunds.status —— 那兩張表也有
-        status 欄位但意義完全不同。
-  sql: |
-    SELECT COUNT(*) AS n FROM orders WHERE status = 'COMPLETED'
-  alt_sql:
-    - |
-      SELECT COUNT(*) AS n FROM shipments WHERE status = 'DELIVERED'
+  note: 「已送達」可以看 orders.status='COMPLETED'，也可以看 shipments.status='DELIVERED'，本資料集兩者都是 105 張，故兩解皆收。 考的是不要誤用
+    payments.status 或 refunds.status —— 那兩張表也有 status 欄位但意義完全不同。
+  sql: 'SELECT COUNT(*) AS n FROM orders WHERE status = ''COMPLETED''
 
+    '
+  alt_sql:
+  - 'SELECT COUNT(*) AS n FROM shipments WHERE status = ''DELIVERED''
+
+    '
 - id: 108
   question: 還在運送途中的訂單，物流追蹤號碼分別是什麼？
   expect: rows
-  note: GT 只選 tracking_no —— 題目問的是「追蹤號碼是什麼」，號碼本身已是
-        完整答案。原本 GT 連 order_id 一起選，系統只回號碼就被判錯（實測 2/6）。
-        通則：GT 只選「回答問題所需的最少欄位」，多給欄位是容忍的、多要不是。
-  sql: |
-    SELECT s.tracking_no FROM shipments s
-    WHERE s.status = 'IN_TRANSIT' ORDER BY s.order_id
+  note: GT 只選 tracking_no —— 題目問的是「追蹤號碼是什麼」，號碼本身已是 完整答案。原本 GT 連 order_id 一起選，系統只回號碼就被判錯（實測 2/6）。 通則：GT
+    只選「回答問題所需的最少欄位」，多給欄位是容忍的、多要不是。
+  sql: 'SELECT s.tracking_no FROM shipments s
 
+    WHERE s.status = ''IN_TRANSIT'' ORDER BY s.order_id
+
+    '
 - id: 109
   question: 哪一個倉庫的出貨次數最多？出了幾次？
   expect: rows
-  sql: |
-    WITH t AS (
-      SELECT w.name AS wn, COUNT(*) AS n
-      FROM shipments s JOIN warehouses w ON s.warehouse_id = w.id
-      GROUP BY w.id, w.name)
-    SELECT wn, n FROM t WHERE n = (SELECT MAX(n) FROM t)
-
+  sql: "WITH t AS (\n  SELECT w.name AS wn, COUNT(*) AS n\n  FROM shipments s JOIN warehouses w ON s.warehouse_id\
+    \ = w.id\n  GROUP BY w.id, w.name)\nSELECT wn, n FROM t WHERE n = (SELECT MAX(n) FROM t)\n"
 - id: 110
   question: 從出貨到送達，平均要花幾天？
   expect: rows
   note: 只有已送達的才有 delivered_at，未送達者為 NULL，AVG 會自動略過。
-  sql: |
-    SELECT AVG(TIMESTAMPDIFF(DAY, shipped_at, delivered_at)) AS avg_days
-    FROM shipments WHERE delivered_at IS NOT NULL
-  alt_sql:
-    - |
-      SELECT AVG(DATEDIFF(delivered_at, shipped_at)) AS avg_days
-      FROM shipments WHERE delivered_at IS NOT NULL
+  sql: 'SELECT AVG(TIMESTAMPDIFF(DAY, shipped_at, delivered_at)) AS avg_days
 
+    FROM shipments WHERE delivered_at IS NOT NULL
+
+    '
+  alt_sql:
+  - 'SELECT AVG(DATEDIFF(delivered_at, shipped_at)) AS avg_days
+
+    FROM shipments WHERE delivered_at IS NOT NULL
+
+    '
 - id: 111
   question: 有哪些訂單已經付款成功，但還沒有建立出貨單？
   expect: rows
   note: 21 張。考的是 payments 與 shipments 兩張新表的差集。
-  sql: |
-    SELECT p.order_id FROM payments p
+  sql: 'SELECT p.order_id FROM payments p
+
     LEFT JOIN shipments s ON p.order_id = s.order_id
-    WHERE p.status = 'SUCCESS' AND s.id IS NULL
+
+    WHERE p.status = ''SUCCESS'' AND s.id IS NULL
+
     ORDER BY p.order_id
 
+    '
 - id: 112
   question: 每個倉庫各出了幾次貨？
   expect: rows
-  sql: |
-    SELECT w.name, COUNT(s.id) AS n
+  sql: 'SELECT w.name, COUNT(s.id) AS n
+
     FROM warehouses w LEFT JOIN shipments s ON w.id = s.warehouse_id
+
     GROUP BY w.id, w.name ORDER BY n DESC
 
+    '
 - id: 113
   question: 目前有幾筆退款還沒有實際退款完成？
   expect: rows
   note: refunded_at IS NULL 與 status <> 'DONE' 在本資料集同為 10 筆，兩解皆收。
-  sql: |
-    SELECT COUNT(*) AS n FROM refunds WHERE refunded_at IS NULL
-  alt_sql:
-    - |
-      SELECT COUNT(*) AS n FROM refunds WHERE status <> 'DONE'
+  sql: 'SELECT COUNT(*) AS n FROM refunds WHERE refunded_at IS NULL
 
+    '
+  alt_sql:
+  - 'SELECT COUNT(*) AS n FROM refunds WHERE status <> ''DONE''
+
+    '
 - id: 114
   question: 已經實際退款完成的部分，總共退了多少錢？
   expect: rows
-  sql: |
-    SELECT SUM(amount) AS total FROM refunds WHERE status = 'DONE'
-  alt_sql:
-    - |
-      SELECT SUM(amount) AS total FROM refunds WHERE refunded_at IS NOT NULL
+  sql: 'SELECT SUM(amount) AS total FROM refunds WHERE status = ''DONE''
 
+    '
+  alt_sql:
+  - 'SELECT SUM(amount) AS total FROM refunds WHERE refunded_at IS NOT NULL
+
+    '
 - id: 115
   question: 最常見的退款原因是什麼？出現幾次？
   expect: rows
-  sql: |
-    WITH t AS (SELECT reason AS r, COUNT(*) AS n FROM refunds GROUP BY reason)
+  sql: 'WITH t AS (SELECT reason AS r, COUNT(*) AS n FROM refunds GROUP BY reason)
+
     SELECT r, n FROM t WHERE n = (SELECT MAX(n) FROM t)
 
+    '
 - id: 116
   question: 有哪些促銷活動被標記為啟用中？
   expect: rows
-  note: 原本問「目前啟用中的促銷活動有哪些」，系統加了日期區間條件回 0 筆 ——
-        那個讀法其實更正確：3 個 is_active=1 的活動全都在 2026-07-27 前結束，
-        錨點 2026-08-15 沒有任何活動真正在進行中，is_active 是過期的旗標。
-        兩種讀法都成立，故改問「被標記為」，明確指向旗標本身。
-        另外原本 GT 選了 name/discount_type/discount_value 三欄，但題目只問
-        「有哪些」——系統回 (id, name) 是對的卻被判錯。容忍度是單向的：
-        系統可以多給欄位，GT 不可以多要，故收斂成只選 name。
-  sql: |
-    SELECT name FROM promotions WHERE is_active = 1 ORDER BY id
+  note: 原本問「目前啟用中的促銷活動有哪些」，系統加了日期區間條件回 0 筆 —— 那個讀法其實更正確：3 個 is_active=1 的活動全都在 2026-07-27 前結束， 錨點 2026-08-15
+    沒有任何活動真正在進行中，is_active 是過期的旗標。 兩種讀法都成立，故改問「被標記為」，明確指向旗標本身。 另外原本 GT 選了 name/discount_type/discount_value
+    三欄，但題目只問 「有哪些」——系統回 (id, name) 是對的卻被判錯。容忍度是單向的： 系統可以多給欄位，GT 不可以多要，故收斂成只選 name。
+  sql: 'SELECT name FROM promotions WHERE is_active = 1 ORDER BY id
 
+    '
 - id: 117
   question: 哪一個促銷活動累計折抵的金額最多？折了多少？
   expect: rows
-  sql: |
-    WITH t AS (
-      SELECT pr.name AS pn, SUM(op.discount_amount) AS d
-      FROM order_promotions op JOIN promotions pr ON op.promotion_id = pr.id
-      GROUP BY pr.id, pr.name)
-    SELECT pn, d FROM t WHERE d = (SELECT MAX(d) FROM t)
-
+  sql: "WITH t AS (\n  SELECT pr.name AS pn, SUM(op.discount_amount) AS d\n  FROM order_promotions op\
+    \ JOIN promotions pr ON op.promotion_id = pr.id\n  GROUP BY pr.id, pr.name)\nSELECT pn, d FROM t WHERE\
+    \ d = (SELECT MAX(d) FROM t)\n"
 - id: 118
   question: 有使用促銷的訂單，平均每張折抵多少錢？
   expect: rows
-  note: 本資料集每張訂單最多套一個活動（41 筆對應 41 張訂單），
-        因此「每列平均」與「每訂單先加總再平均」同解。
-  sql: |
-    SELECT AVG(discount_amount) AS avg_discount FROM order_promotions
-  alt_sql:
-    - |
-      SELECT AVG(d) AS avg_discount FROM (
-        SELECT order_id, SUM(discount_amount) AS d
-        FROM order_promotions GROUP BY order_id) t
+  note: 本資料集每張訂單最多套一個活動（41 筆對應 41 張訂單）， 因此「每列平均」與「每訂單先加總再平均」同解。
+  sql: 'SELECT AVG(discount_amount) AS avg_discount FROM order_promotions
 
+    '
+  alt_sql:
+  - "SELECT AVG(d) AS avg_discount FROM (\n  SELECT order_id, SUM(discount_amount) AS d\n  FROM order_promotions\
+    \ GROUP BY order_id) t\n"
 - id: 119
   question: 百分比折扣和固定金額折抵的促銷活動，各有幾個？
   expect: rows
-  sql: |
-    SELECT discount_type, COUNT(*) AS n FROM promotions
+  sql: 'SELECT discount_type, COUNT(*) AS n FROM promotions
+
     GROUP BY discount_type ORDER BY discount_type
 
+    '
 - id: 120
   question: 哪一家供應商供應的商品品項最多？有幾項？
   expect: rows
-  note: 原本問「商品種類」，「種類」在中文裡可以是「不重複的商品數」也可以是
-        「商品類別數」，系統選了後者（大新物流與台灣通路的類別數都是 6，並列）。
-        兩種讀法都合理，改用「品項」消除歧義 —— 這題要測的是選對表，不是猜詞義。
-  sql: |
-    WITH t AS (
-      SELECT s.name AS sn, COUNT(DISTINCT ps.product_id) AS n
-      FROM product_suppliers ps JOIN suppliers s ON ps.supplier_id = s.id
-      GROUP BY s.id, s.name)
-    SELECT sn, n FROM t WHERE n = (SELECT MAX(n) FROM t)
-
+  note: 原本問「商品種類」，「種類」在中文裡可以是「不重複的商品數」也可以是 「商品類別數」，系統選了後者（大新物流與台灣通路的類別數都是 6，並列）。 兩種讀法都合理，改用「品項」消除歧義 ——
+    這題要測的是選對表，不是猜詞義。
+  sql: "WITH t AS (\n  SELECT s.name AS sn, COUNT(DISTINCT ps.product_id) AS n\n  FROM product_suppliers\
+    \ ps JOIN suppliers s ON ps.supplier_id = s.id\n  GROUP BY s.id, s.name)\nSELECT sn, n FROM t WHERE\
+    \ n = (SELECT MAX(n) FROM t)\n"
 - id: 121
   question: 備貨天數最長的是哪些商品？要幾天？
   expect: rows
-  sql: |
-    SELECT p.name, ps.lead_time_days
+  sql: 'SELECT p.name, ps.lead_time_days
+
     FROM product_suppliers ps JOIN products p ON ps.product_id = p.id
+
     WHERE ps.lead_time_days = (SELECT MAX(lead_time_days) FROM product_suppliers)
+
     ORDER BY p.name
-  note: |
-    2026-08-20 把「哪一個」改成「哪些」：實測 機械鍵盤 與 空氣清淨機
+
+    '
+  note: '2026-08-20 把「哪一個」改成「哪些」：實測 機械鍵盤 與 空氣清淨機
+
     **並列 30 天**，而單數的問法在邀請模型只回一個 —— 探針 5/8，
+
     三次失敗全是回 1 列。**問句與資料不合，是題目的問題不是模型的問題**
+
     （與 #255 我自己寫壞 ordered 同一類）。
 
+    '
 - id: 122
   question: 有哪些商品同時由兩家以上的供應商供應？
   expect: rows
-  sql: |
-    SELECT p.name FROM product_suppliers ps JOIN products p ON ps.product_id = p.id
+  sql: 'SELECT p.name FROM product_suppliers ps JOIN products p ON ps.product_id = p.id
+
     GROUP BY p.id, p.name HAVING COUNT(DISTINCT ps.supplier_id) > 1
+
     ORDER BY p.name
 
+    '
 - id: 123
   question: 供應商分布在哪些城市？每個城市各有幾家？
   expect: rows
-  note: 陷阱題。city 同時存在於 customers / suppliers / warehouses / addresses，
-        這題問的是供應商，只能用 suppliers.city。
-  sql: |
-    SELECT city, COUNT(*) AS n FROM suppliers GROUP BY city ORDER BY n DESC, city
+  note: 陷阱題。city 同時存在於 customers / suppliers / warehouses / addresses， 這題問的是供應商，只能用 suppliers.city。
+  sql: 'SELECT city, COUNT(*) AS n FROM suppliers GROUP BY city ORDER BY n DESC, city
 
+    '
 - id: 124
   question: 「電子與家電」這個大分類底下，有哪些子分類？
   expect: rows
-  sql: |
-    SELECT c.name FROM categories c
-    JOIN categories p ON c.parent_id = p.id
-    WHERE p.name = '電子與家電' ORDER BY c.sort_order, c.name
+  sql: 'SELECT c.name FROM categories c
 
+    JOIN categories p ON c.parent_id = p.id
+
+    WHERE p.name = ''電子與家電'' ORDER BY c.sort_order, c.name
+
+    '
 - id: 125
   question: 有哪些商品同時被歸在一個以上的分類底下？
   expect: rows
-  note: 分類的雙表示：products.category 是單值字串欄位，
-        product_categories 才是能表達多對多的關聯表。
-        原本問「每個商品的主要分類是什麼」，但本資料集 products.category
-        與 is_primary=1 的分類 100% 一致（0 筆不符），系統直接讀
-        products.category 就會答對 —— 那題實測零鑑別力。
-        改成問「一個以上的分類」，products.category 單值欄位表達不了，
-        只能走 product_categories，這才真的測到關聯表。
-  sql: |
-    SELECT p.name FROM product_categories pc
+  note: 分類的雙表示：products.category 是單值字串欄位， product_categories 才是能表達多對多的關聯表。 原本問「每個商品的主要分類是什麼」，但本資料集 products.category
+    與 is_primary=1 的分類 100% 一致（0 筆不符），系統直接讀 products.category 就會答對 —— 那題實測零鑑別力。 改成問「一個以上的分類」，products.category
+    單值欄位表達不了， 只能走 product_categories，這才真的測到關聯表。
+  sql: 'SELECT p.name FROM product_categories pc
+
     JOIN products p ON pc.product_id = p.id
+
     GROUP BY p.id, p.name HAVING COUNT(*) > 1
+
     ORDER BY p.name
 
+    '
 - id: 126
   question: 分類表裡總共有幾個啟用中的分類？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM categories WHERE is_active = 1
+  sql: 'SELECT COUNT(*) AS n FROM categories WHERE is_active = 1
 
+    '
 - id: 127
   question: 已經停產的商品有哪些？
   expect: rows
-  sql: |
-    SELECT p.name FROM product_specs ps JOIN products p ON ps.product_id = p.id
+  sql: 'SELECT p.name FROM product_specs ps JOIN products p ON ps.product_id = p.id
+
     WHERE ps.is_discontinued = 1 ORDER BY p.name
 
+    '
 - id: 128
   question: 有螢幕規格的商品，平均螢幕尺寸是幾吋？
   expect: rows
-  note: screen_inch 只有 3C 類有值，其餘為 NULL。這裡的 NULL 是「不適用」
-        而非「未知」，分母只能算有值的 8 筆 —— AVG 本來就會略過 NULL，
-        但不可用 COALESCE(screen_inch, 0) 把不適用當成 0 拉進來算。
-  sql: |
-    SELECT AVG(screen_inch) AS avg_inch FROM product_specs
+  note: screen_inch 只有 3C 類有值，其餘為 NULL。這裡的 NULL 是「不適用」 而非「未知」，分母只能算有值的 8 筆 —— AVG 本來就會略過 NULL， 但不可用 COALESCE(screen_inch,
+    0) 把不適用當成 0 拉進來算。
+  sql: 'SELECT AVG(screen_inch) AS avg_inch FROM product_specs
+
     WHERE screen_inch IS NOT NULL
 
+    '
 - id: 129
   question: 最重的商品是哪一個？重量幾公克？
   expect: rows
-  sql: |
-    SELECT p.name, ps.weight_g
+  sql: 'SELECT p.name, ps.weight_g
+
     FROM product_specs ps JOIN products p ON ps.product_id = p.id
+
     WHERE ps.weight_g = (SELECT MAX(weight_g) FROM product_specs)
+
     ORDER BY p.name
 
+    '
 - id: 130
   question: 保固超過 24 個月的商品有哪些？
   expect: empty
-  note: 最長保固就是 24 個月，嚴格大於的話沒有任何商品。
-        考的是不要為了「湊出東西」而把 > 偷改成 >=。
-  sql: |
-    SELECT p.name FROM product_specs ps JOIN products p ON ps.product_id = p.id
+  note: 最長保固就是 24 個月，嚴格大於的話沒有任何商品。 考的是不要為了「湊出東西」而把 > 偷改成 >=。
+  sql: 'SELECT p.name FROM product_specs ps JOIN products p ON ps.product_id = p.id
+
     WHERE ps.warranty_months > 24 ORDER BY p.name
 
+    '
 - id: 131
   question: 有多少個購物車被放棄了？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM carts WHERE is_abandoned = 1
+  sql: 'SELECT COUNT(*) AS n FROM carts WHERE is_abandoned = 1
 
+    '
 - id: 132
   question: 被放棄的購物車裡，最常出現的商品是哪一個？出現幾次？
   expect: rows
-  note: 陷阱題。cart_items 是「放進購物車」，不是成交。這題只能走
-        carts + cart_items，絕不能因為問的是「商品」就跑去 order_items。
-  sql: |
-    WITH t AS (
-      SELECT ci.product_id AS pid, COUNT(*) AS n
-      FROM cart_items ci JOIN carts c ON ci.cart_id = c.id
-      WHERE c.is_abandoned = 1 GROUP BY ci.product_id)
-    SELECT p.name, t.n FROM t JOIN products p ON t.pid = p.id
-    WHERE t.n = (SELECT MAX(n) FROM t) ORDER BY p.name
-
+  note: 陷阱題。cart_items 是「放進購物車」，不是成交。這題只能走 carts + cart_items，絕不能因為問的是「商品」就跑去 order_items。
+  sql: "WITH t AS (\n  SELECT ci.product_id AS pid, COUNT(*) AS n\n  FROM cart_items ci JOIN carts c ON\
+    \ ci.cart_id = c.id\n  WHERE c.is_abandoned = 1 GROUP BY ci.product_id)\nSELECT p.name, t.n FROM t\
+    \ JOIN products p ON t.pid = p.id\nWHERE t.n = (SELECT MAX(n) FROM t) ORDER BY p.name\n"
 - id: 133
   question: 被瀏覽次數最多的商品是哪一個？被看了幾次？
   expect: rows
-  note: 陷阱題。瀏覽次數要數 browse_logs 的列數，與銷量（order_items）無關，
-        兩者的第一名不必然是同一個商品。
-  sql: |
-    WITH t AS (SELECT product_id AS pid, COUNT(*) AS n FROM browse_logs GROUP BY product_id)
+  note: 陷阱題。瀏覽次數要數 browse_logs 的列數，與銷量（order_items）無關， 兩者的第一名不必然是同一個商品。
+  sql: 'WITH t AS (SELECT product_id AS pid, COUNT(*) AS n FROM browse_logs GROUP BY product_id)
+
     SELECT p.name, t.n FROM t JOIN products p ON t.pid = p.id
+
     WHERE t.n = (SELECT MAX(n) FROM t) ORDER BY p.name
 
+    '
 - id: 134
   question: 各個流量來源的瀏覽次數分別是多少？
   expect: rows
-  sql: |
-    SELECT source, COUNT(*) AS n FROM browse_logs GROUP BY source ORDER BY n DESC
+  sql: 'SELECT source, COUNT(*) AS n FROM browse_logs GROUP BY source ORDER BY n DESC
 
+    '
 - id: 135
   question: 平均停留時間最長的商品是哪一個？平均停留幾秒？
   expect: rows
-  sql: |
-    WITH t AS (
-      SELECT product_id AS pid, AVG(duration_sec) AS d
-      FROM browse_logs GROUP BY product_id)
-    SELECT p.name, t.d FROM t JOIN products p ON t.pid = p.id
-    WHERE t.d = (SELECT MAX(d) FROM t) ORDER BY p.name
-
+  sql: "WITH t AS (\n  SELECT product_id AS pid, AVG(duration_sec) AS d\n  FROM browse_logs GROUP BY product_id)\n\
+    SELECT p.name, t.d FROM t JOIN products p ON t.pid = p.id\nWHERE t.d = (SELECT MAX(d) FROM t) ORDER\
+    \ BY p.name\n"
 - id: 136
   question: 有哪些客戶瀏覽過商品，卻從來沒有下過任何訂單？
   expect: rows
-  sql: |
-    SELECT DISTINCT c.name FROM browse_logs b JOIN customers c ON b.customer_id = c.id
+  sql: 'SELECT DISTINCT c.name FROM browse_logs b JOIN customers c ON b.customer_id = c.id
+
     WHERE c.id NOT IN (SELECT customer_id FROM orders)
+
     ORDER BY c.name
 
+    '
 - id: 137
   question: 有幾筆收件地址的收件人不是客戶本人？
   expect: rows
   note: recipient_name 是收件人，可能是家人或同事，不必然等於 customers.name。
-  sql: |
-    SELECT COUNT(*) AS n FROM addresses a JOIN customers c ON a.customer_id = c.id
+  sql: 'SELECT COUNT(*) AS n FROM addresses a JOIN customers c ON a.customer_id = c.id
+
     WHERE a.recipient_name <> c.name
 
+    '
 - id: 138
   question: 有哪些客戶的收件地址城市和自己居住的城市不同？
   expect: rows
-  note: 陷阱題。addresses.city 是收件城市、customers.city 是居住城市，
-        兩個欄位同名但語意不同，必須各自帶表別名比較。
-        同一位客戶可能有多筆這種地址，故去重。
-        原本問「收件城市和自己居住的城市不一樣」，系統只比對預設地址
-        (is_default=1) 而回 0 筆 —— 本資料集預設地址永遠等於居住城市，
-        那個讀法必然得 0。改成「留過…的地址」，明確涵蓋全部地址。
-        ⚠️ 已知未解缺陷（重新凍結，實測 5/16）：系統多數時候回 48 列 —— 每筆符合條件的地址一列，
-        沒有對客戶收斂。加了「哪些客戶買過機械鍵盤」這個去重 few-shot 後仍是 1/6，
-        結構級的教訓沒有跨領域遷移（對照：is_deleted 那種謂詞級教訓 2/4 → 6/6）。
-      2026-08 解凍再試：補上缺口形狀「子表欄位 vs 母表欄位」的 few-shot
-      （o.order_date < c.created_at）。1/14 → 5/16，Fisher p=0.116 不顯著；
-      錯誤形狀從「未收斂 48 列」移向「收斂到姓名 29 列」。剩下的障礙是
-      「收斂鍵用 id 不用 name」，那已有專門 few-shot 教過而未生效。
-      **重新凍結**，理由見 ARCHITECTURE.md §4.1 / §6。
-        三次改寫各自失敗一種：只比對預設地址(0 列) / 逐筆列地址(48 列) /
-        用「寄到」當動詞會誤觸防禦暗號(4/6)。措辭已定稿，不再調整 ——
-        再調就是在教模型考題，而不是修能力。
-        ⚠️ 原本 GT 寫 SELECT DISTINCT c.name 得 29 列，那是錯的：符合條件的是
-        34 位客戶，但其中有同名不同人（李家豪/林柏翰/李柏翰/王建國/謝俊傑
-        各有兩位），DISTINCT name 會把他們併成一列。改用 GROUP BY c.id, c.name。
-  sql: |
-    SELECT c.name FROM addresses a JOIN customers c ON a.customer_id = c.id
+  note: 陷阱題。addresses.city 是收件城市、customers.city 是居住城市， 兩個欄位同名但語意不同，必須各自帶表別名比較。 同一位客戶可能有多筆這種地址，故去重。 原本問「收件城市和自己居住的城市不一樣」，系統只比對預設地址
+    (is_default=1) 而回 0 筆 —— 本資料集預設地址永遠等於居住城市， 那個讀法必然得 0。改成「留過…的地址」，明確涵蓋全部地址。 ⚠️ 已知未解缺陷（重新凍結，實測 5/16）：系統多數時候回
+    48 列 —— 每筆符合條件的地址一列， 沒有對客戶收斂。加了「哪些客戶買過機械鍵盤」這個去重 few-shot 後仍是 1/6， 結構級的教訓沒有跨領域遷移（對照：is_deleted 那種謂詞級教訓
+    2/4 → 6/6）。 2026-08 解凍再試：補上缺口形狀「子表欄位 vs 母表欄位」的 few-shot （o.order_date < c.created_at）。1/14 → 5/16，Fisher
+    p=0.116 不顯著； 錯誤形狀從「未收斂 48 列」移向「收斂到姓名 29 列」。剩下的障礙是 「收斂鍵用 id 不用 name」，那已有專門 few-shot 教過而未生效。 **重新凍結**，理由見
+    ARCHITECTURE.md §4.1 / §6。 三次改寫各自失敗一種：只比對預設地址(0 列) / 逐筆列地址(48 列) / 用「寄到」當動詞會誤觸防禦暗號(4/6)。措辭已定稿，不再調整
+    —— 再調就是在教模型考題，而不是修能力。 ⚠️ 原本 GT 寫 SELECT DISTINCT c.name 得 29 列，那是錯的：符合條件的是 34 位客戶，但其中有同名不同人（李家豪/林柏翰/李柏翰/王建國/謝俊傑
+    各有兩位），DISTINCT name 會把他們併成一列。改用 GROUP BY c.id, c.name。
+  sql: 'SELECT c.name FROM addresses a JOIN customers c ON a.customer_id = c.id
+
     WHERE a.city <> c.city GROUP BY c.id, c.name ORDER BY c.name
 
+    '
 - id: 139
   question: 平均每位客戶有幾個收件地址？
   expect: rows
   note: 分母取全部客戶（含沒留過地址的），alt 為只算有留地址的客戶。
-  sql: |
-    SELECT COUNT(a.id) / (SELECT COUNT(*) FROM customers) AS avg_addr FROM addresses a
-  alt_sql:
-    - |
-      SELECT COUNT(*) / COUNT(DISTINCT customer_id) AS avg_addr FROM addresses
+  sql: 'SELECT COUNT(a.id) / (SELECT COUNT(*) FROM customers) AS avg_addr FROM addresses a
 
+    '
+  alt_sql:
+  - 'SELECT COUNT(*) / COUNT(DISTINCT customer_id) AS avg_addr FROM addresses
+
+    '
 - id: 140
   question: 每個倉庫的庫存週轉率是多少？
   expect: schema_unsupported
-  note: warehouses 只有 capacity（容量上限），沒有任何「在庫數量」或
-        「期初期末存貨」欄位，週轉率無從計算。不可拿 shipments 的出貨次數
-        除以 capacity 硬湊成一個看起來像週轉率的數字。
+  note: warehouses 只有 capacity（容量上限），沒有任何「在庫數量」或 「期初期末存貨」欄位，週轉率無從計算。不可拿 shipments 的出貨次數 除以 capacity 硬湊成一個看起來像週轉率的數字。
   absent:
-    - concept: 週轉率
-      probes: [週轉, turnover]
-    - concept: 倉庫層級的在庫量／期初期末存貨
-      probes: [在庫, 期初, 期末, inventory, on_hand]
-    - concept: 庫存數量
-      probes: [庫存, stock, 容量, capacity]
-      acknowledged: |
-        products.stock 是商品層級的當下總庫存，不分倉庫；
-        warehouses.capacity 是容量上限不是在庫量。
-        兩者都算不出「每個倉庫」的週轉率，依 §8.8 判準維持防禦。
+  - concept: 週轉率
+    probes:
+    - 週轉
+    - turnover
+  - concept: 倉庫層級的在庫量／期初期末存貨
+    probes:
+    - 在庫
+    - 期初
+    - 期末
+    - inventory
+    - on_hand
+  - concept: 庫存數量
+    probes:
+    - 庫存
+    - stock
+    - 容量
+    - capacity
+    acknowledged: 'products.stock 是商品層級的當下總庫存，不分倉庫；
 
+      warehouses.capacity 是容量上限不是在庫量。
+
+      兩者都算不出「每個倉庫」的週轉率，依 §8.8 判準維持防禦。
+
+      '
 - id: 141
   question: 每位客戶的信用評分是多少？
   expect: schema_unsupported
-  note: |
-    ⚠️ 原本的理由是「21 張表裡沒有任何評分、風險或額度欄位」——
+  note: '⚠️ 原本的理由是「21 張表裡沒有任何評分、風險或額度欄位」——
+
     加了 customer_profiles 之後這句話已經不成立（credit_limit、risk_flag、
+
     churn_risk_score、ltv_score 全都在）。但這題依 §8.8 判準仍然維持防禦：
+
     在的是「額度」「流失風險」「終身價值」，沒有一個是**信用評分**，
+
     而把它們組合成信用評分的公式不在 business_rules 裡。
+
     擴表之後這題變得更難也更有價值 —— 誘餌從「無中生有」變成「就在眼前」。
+
+    '
   absent:
-    - concept: 信用評分
-      probes: [信用評分, credit_score, 信評, 徵信]
-    - concept: 相鄰但不等價的分數／額度欄位
-      probes: [credit, 額度, risk, 風險, 風控, score, 評分, 分數]
-      acknowledged: |
-        customer_profiles 有 credit_limit（信用額度）、risk_flag（風控標記）、
-        churn_risk_score（流失風險）、ltv_score、engagement_score、
-        satisfaction_score；reviews.rating 是商品評分。
-        全都不是信用評分，組合公式也未定義 —— 資料存在、業務定義不存在，
-        依 §8.8 判準維持防禦。
+  - concept: 信用評分
+    probes:
+    - 信用評分
+    - credit_score
+    - 信評
+    - 徵信
+  - concept: 相鄰但不等價的分數／額度欄位
+    probes:
+    - credit
+    - 額度
+    - risk
+    - 風險
+    - 風控
+    - score
+    - 評分
+    - 分數
+    acknowledged: 'customer_profiles 有 credit_limit（信用額度）、risk_flag（風控標記）、
 
-# --- #142-145：reviews 的軟刪除語意 -------------------------------------
-# reviews 在原始 schema 就存在，但 141 題裡沒有任何一題用到它 —— 零覆蓋。
-# 它有 is_deleted 這個軟刪除欄位：被刪除的評論仍留在表裡，查詢時必須排除，
-# 否則所有統計都會被已刪除的內容污染。本資料集 134 則評論有 9 則已刪除，
-# 排不排除會讓每一題都得到不同答案，因此這四題全部有鑑別力。
+      churn_risk_score（流失風險）、ltv_score、engagement_score、
 
+      satisfaction_score；reviews.rating 是商品評分。
+
+      全都不是信用評分，組合公式也未定義 —— 資料存在、業務定義不存在，
+
+      依 §8.8 判準維持防禦。
+
+      '
 - id: 142
   question: 目前所有評論的平均評分是多少？
   expect: rows
-  note: is_deleted = 1 的評論是「已刪除」，不應計入任何統計。
-        含刪除為 3.7388、排除為 3.7840 —— 沒排除就會答錯。
-  sql: |
-    SELECT AVG(rating) AS avg_rating FROM reviews WHERE is_deleted = 0
+  note: is_deleted = 1 的評論是「已刪除」，不應計入任何統計。 含刪除為 3.7388、排除為 3.7840 —— 沒排除就會答錯。
+  sql: 'SELECT AVG(rating) AS avg_rating FROM reviews WHERE is_deleted = 0
 
+    '
 - id: 143
   question: 目前有幾則一星負評？
   expect: rows
   note: 含已刪除是 9 則，排除後是 7 則。
-  sql: |
-    SELECT COUNT(*) AS n FROM reviews WHERE rating = 1 AND is_deleted = 0
+  sql: 'SELECT COUNT(*) AS n FROM reviews WHERE rating = 1 AND is_deleted = 0
 
+    '
 - id: 144
   question: 有哪些商品到目前為止都還沒有任何評論？
   expect: rows
-  note: 40 項商品全部都被評論過，但其中一項的評論已被刪除 ——
-        排除已刪除後它就成了「沒有評論」。不排除的話這題會變成 0 筆。
-  sql: |
-    SELECT name FROM products
+  note: 40 項商品全部都被評論過，但其中一項的評論已被刪除 —— 排除已刪除後它就成了「沒有評論」。不排除的話這題會變成 0 筆。
+  sql: 'SELECT name FROM products
+
     WHERE id NOT IN (SELECT product_id FROM reviews WHERE is_deleted = 0)
+
     ORDER BY name
 
+    '
 - id: 145
   question: 每個商品類別的平均評分分別是多少？
   expect: rows
-  sql: |
-    SELECT p.category, AVG(r.rating) AS avg_rating
+  sql: 'SELECT p.category, AVG(r.rating) AS avg_rating
+
     FROM reviews r JOIN products p ON r.product_id = p.id
+
     WHERE r.is_deleted = 0
+
     GROUP BY p.category ORDER BY p.category
 
-# ---------------------------------------------------------------------------
-# #146-159 customer_profiles（客戶檔案寬表）—— 2026-08-18 加表後補的覆蓋。
-# 這張表 57 欄，是為了壓測檢索層而加的（見 ARCHITECTURE.md §8）。
-# 重點在前四題：快照口徑與同名不同義的時間欄位，都是刻意埋的陷阱，
-# 而且資料上真的對不上（27/50、49/50）—— #62 的教訓是恆等的陷阱不存在。
-# ---------------------------------------------------------------------------
+    '
 - id: 146
   question: 根據客戶檔案的消費快照，累計消費金額最高的前 5 位客戶是誰？金額各是多少？
   expect: rows
   ordered: true
-  sql: |
-    SELECT c.name, p.total_spent
+  sql: 'SELECT c.name, p.total_spent
+
     FROM customer_profiles p JOIN customers c ON c.id = p.customer_id
+
     ORDER BY p.total_spent DESC, c.name LIMIT 5
-  note: |
-    題目明講「客戶檔案的消費快照」，要走 customer_profiles.total_spent，
+
+    '
+  note: '題目明講「客戶檔案的消費快照」，要走 customer_profiles.total_spent，
+
     不是即時 SUM(orders.total_amount)。50 位客戶有 27 位兩者不同。
 
+    '
 - id: 147
   question: 客戶檔案裡的累計消費快照，和實際訂單加總對不起來的客戶有幾位？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM customer_profiles p
-    WHERE p.total_spent <> (SELECT COALESCE(SUM(o.total_amount), 0)
-                            FROM orders o WHERE o.customer_id = p.customer_id)
-  note: |
-    這題只有同時用到兩張表才答得出來 —— 是「快照 ≠ 即時」這個陷阱的正面測試。
+  sql: "SELECT COUNT(*) AS n FROM customer_profiles p\nWHERE p.total_spent <> (SELECT COALESCE(SUM(o.total_amount),\
+    \ 0)\n                        FROM orders o WHERE o.customer_id = p.customer_id)\n"
+  note: '這題只有同時用到兩張表才答得出來 —— 是「快照 ≠ 即時」這個陷阱的正面測試。
+
     正解 27。
 
+    '
 - id: 148
   question: 客戶檔案記錄的訂單數，與實際訂單筆數不一致的客戶有哪些？請列出姓名、快照數與實際數。
   expect: rows
-  sql: |
-    SELECT c.name, p.order_count,
-           (SELECT COUNT(*) FROM orders o WHERE o.customer_id = p.customer_id) AS actual
-    FROM customer_profiles p JOIN customers c ON c.id = p.customer_id
-    WHERE p.order_count <> (SELECT COUNT(*) FROM orders o WHERE o.customer_id = p.customer_id)
-    ORDER BY c.name
-  note: |
-    同 #147，換成筆數口徑。快照有 30 天結算延遲，所以最近下單的客戶會對不上。
+  sql: "SELECT c.name, p.order_count,\n       (SELECT COUNT(*) FROM orders o WHERE o.customer_id = p.customer_id)\
+    \ AS actual\nFROM customer_profiles p JOIN customers c ON c.id = p.customer_id\nWHERE p.order_count\
+    \ <> (SELECT COUNT(*) FROM orders o WHERE o.customer_id = p.customer_id)\nORDER BY c.name\n"
+  note: '同 #147，換成筆數口徑。快照有 30 天結算延遲，所以最近下單的客戶會對不上。
 
+    '
 - id: 149
   question: 有多少位客戶的會員系統註冊時間，比交易系統的建檔時間還要早？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM customer_profiles p
+  sql: 'SELECT COUNT(*) AS n FROM customer_profiles p
+
     JOIN customers c ON c.id = p.customer_id
+
     WHERE p.registered_at < c.created_at
-  note: |
-    customer_profiles.registered_at 與 customers.created_at 是兩個系統的紀錄，
+
+    '
+  note: 'customer_profiles.registered_at 與 customers.created_at 是兩個系統的紀錄，
+
     49/50 不同。題目講「會員系統」與「交易系統」，兩張表都要用到。
 
+    '
 - id: 150
   question: 各個會員等級各有幾位客戶？
   expect: rows
-  sql: |
-    SELECT tier, COUNT(*) AS n FROM customer_profiles GROUP BY tier ORDER BY tier
-  note: |
-    最單純的寬表題：只要選對表就會做。
+  sql: 'SELECT tier, COUNT(*) AS n FROM customer_profiles GROUP BY tier ORDER BY tier
 
+    '
+  note: '最單純的寬表題：只要選對表就會做。
+
+    '
 - id: 151
   question: 行銷分群被標記為 AT_RISK 的客戶有哪些？
   expect: rows
-  sql: |
-    SELECT c.name FROM customer_profiles p JOIN customers c ON c.id = p.customer_id
-    WHERE p.segment = 'AT_RISK' ORDER BY c.name
-  note: |
-    姓名在 customers，分群在 customer_profiles —— 1:1 JOIN。
+  sql: 'SELECT c.name FROM customer_profiles p JOIN customers c ON c.id = p.customer_id
 
+    WHERE p.segment = ''AT_RISK'' ORDER BY c.name
+
+    '
+  note: '姓名在 customers，分群在 customer_profiles —— 1:1 JOIN。
+
+    '
 - id: 152
   question: 同意接收 Email 行銷的客戶有幾位？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM customer_profiles WHERE email_opt_in = 1
+  sql: 'SELECT COUNT(*) AS n FROM customer_profiles WHERE email_opt_in = 1
 
+    '
 - id: 153
   question: 各會員等級的平均流失風險分數是多少？
   expect: rows
-  sql: |
-    SELECT tier, AVG(churn_risk_score) AS avg_churn
+  sql: 'SELECT tier, AVG(churn_risk_score) AS avg_churn
+
     FROM customer_profiles GROUP BY tier ORDER BY tier
 
+    '
 - id: 154
   question: 還沒有通過 Email 驗證的客戶有幾位？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM customer_profiles WHERE email_verified_at IS NULL
-  note: |
-    NULL 表示未驗證，寫在欄位註解裡。測模型會不會用 IS NULL 而不是 = 0。
+  sql: 'SELECT COUNT(*) AS n FROM customer_profiles WHERE email_verified_at IS NULL
 
+    '
+  note: 'NULL 表示未驗證，寫在欄位註解裡。測模型會不會用 IS NULL 而不是 = 0。
+
+    '
 - id: 155
   question: VIP 客戶的平均預估終身價值分數是多少？
   expect: rows
-  sql: |
-    SELECT AVG(ltv_score) AS avg_ltv FROM customer_profiles WHERE is_vip = 1
+  sql: 'SELECT AVG(ltv_score) AS avg_ltv FROM customer_profiles WHERE is_vip = 1
 
+    '
 - id: 156
   question: 各個來源管道帶進來的客戶各有幾位？平均互動活躍度分數是多少？
   expect: rows
-  sql: |
-    SELECT referral_source, COUNT(*) AS n, AVG(engagement_score) AS avg_eng
+  sql: 'SELECT referral_source, COUNT(*) AS n, AVG(engagement_score) AS avg_eng
+
     FROM customer_profiles GROUP BY referral_source ORDER BY referral_source
 
+    '
 - id: 157
   question: 每個城市的客戶平均流失風險分數是多少？
   expect: rows
-  sql: |
-    SELECT c.city, AVG(p.churn_risk_score) AS avg_churn
-    FROM customer_profiles p JOIN customers c ON c.id = p.customer_id
-    GROUP BY c.city ORDER BY c.city
-  note: |
-    城市在 customers，分數在 customer_profiles。
+  sql: 'SELECT c.city, AVG(p.churn_risk_score) AS avg_churn
 
+    FROM customer_profiles p JOIN customers c ON c.id = p.customer_id
+
+    GROUP BY c.city ORDER BY c.city
+
+    '
+  note: '城市在 customers，分數在 customer_profiles。
+
+    '
 - id: 158
   question: 被列入黑名單的客戶是誰？請列出姓名與 email。
   expect: rows
-  sql: |
-    SELECT c.name, c.email FROM customer_profiles p JOIN customers c ON c.id = p.customer_id
+  sql: 'SELECT c.name, c.email FROM customer_profiles p JOIN customers c ON c.id = p.customer_id
+
     WHERE p.is_blacklisted = 1 ORDER BY c.name
 
+    '
 - id: 159
   question: 風控標記為 HIGH 的客戶有哪些？
   expect: empty
-  sql: |
-    SELECT c.name FROM customer_profiles p JOIN customers c ON c.id = p.customer_id
-    WHERE p.risk_flag = 'HIGH' ORDER BY c.name
+  sql: 'SELECT c.name FROM customer_profiles p JOIN customers c ON c.id = p.customer_id
+
+    WHERE p.risk_flag = ''HIGH'' ORDER BY c.name
+
+    '
   alt_sql:
-    # 只查 customer_profiles 也是正解 —— customer_id 就足以指認客戶，
-    # 不 JOIN customers 不算漏。補這條是為了讓 eval_lucky.py 不要一直
-    # 把它報成僥倖候選：常態誤報會讓稽核工具失去意義。
-    - |
-      SELECT customer_id FROM customer_profiles WHERE risk_flag = 'HIGH'
-  note: |
-    HIGH 是合法的列舉值（寫在欄位註解裡），但 50 列資料剛好一筆都沒有。
+  - 'SELECT customer_id FROM customer_profiles WHERE risk_flag = ''HIGH''
+
+    '
+  note: 'HIGH 是合法的列舉值（寫在欄位註解裡），但 50 列資料剛好一筆都沒有。
+
     測的是「誠實回報 0 筆」，不可以改成 WATCH 硬湊出東西。
+
     ⚠️ 這題的空集合是資料相依的 —— 換種子若生出 HIGH 就要改成 expect: rows。
 
-# =============================================================================
-# #160-171 — 把 19 張「零 GT 覆蓋」的表拉回訊號（ARCHITECTURE.md §10.1）
-# -----------------------------------------------------------------------------
-# 為什麼補這批：干擾不是表的屬性，是「表 × 題目集」的屬性。這些表在 155 題裡
-# 一次都沒當過正確答案，等於檢索器只要學會「這 19 張永遠別選」就能拿滿分 ——
-# 那是評估的漏洞，現實中沒有這種捷徑。補題之後它們才變成「有時是答案、有時
-# 是干擾」的真實表，相似度層才第一次被要求撈出它沒撈過的東西。
-#
-# 撰寫時實測到的兩個地雷（先驗證 GT 再測試，所以沒有寫進去）：
-#   - support_tickets 36 張單分屬 36 位不同客戶，「工單最多的客戶」全是 1，
-#     order_returns 的退回數量前五名全部並列 3 —— 兩題極值都會變成任意平手。
-#   - customers 有同名不同人（37 個 id 對 33 個名字），#169 因此問「幾位客戶」
-#     而不是列名字，否則 33 與 37 兩種答案都說得通。
-# 不含歧義誘餌：payments.status 只有 SUCCESS 一種值，失敗只存在於
-# payment_attempts.result，所以「刷卡失敗」指向唯一一張表。
-# =============================================================================
-
+    '
 - id: 160
   question: 有幾張發票已經作廢？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM invoices WHERE is_voided = 1
+  sql: 'SELECT COUNT(*) AS n FROM invoices WHERE is_voided = 1
 
+    '
 - id: 161
   question: 列出所有已作廢發票的發票號碼、對應的訂單編號與該筆訂單的金額。
   expect: rows
-  sql: |
-    SELECT i.invoice_no, i.order_id, o.total_amount
-    FROM invoices i JOIN orders o ON o.id = i.order_id
-    WHERE i.is_voided = 1
-    ORDER BY i.invoice_no
-  note: invoices → orders 的跨表。發票金額不在 invoices 裡，必須走訂單。
+  sql: 'SELECT i.invoice_no, i.order_id, o.total_amount
 
+    FROM invoices i JOIN orders o ON o.id = i.order_id
+
+    WHERE i.is_voided = 1
+
+    ORDER BY i.invoice_no
+
+    '
+  note: invoices → orders 的跨表。發票金額不在 invoices 裡，必須走訂單。
 - id: 162
   question: 2026 年 7 月開立了幾張發票？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM invoices
-    WHERE issued_at >= '2026-07-01' AND issued_at < '2026-08-01'
-  note: 作廢的也算「開立過」。題目問開立不問有效。
+  sql: 'SELECT COUNT(*) AS n FROM invoices
 
+    WHERE issued_at >= ''2026-07-01'' AND issued_at < ''2026-08-01''
+
+    '
+  note: 作廢的也算「開立過」。題目問開立不問有效。
 - id: 163
   question: 目前還沒結案的客服工單有幾張？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM support_tickets WHERE status <> 'CLOSED'
-  note: OPEN 15 + PENDING 13 = 28。PENDING 是處理中，不是結案。
+  sql: 'SELECT COUNT(*) AS n FROM support_tickets WHERE status <> ''CLOSED''
 
+    '
+  note: OPEN 15 + PENDING 13 = 28。PENDING 是處理中，不是結案。
 - id: 164
   question: 有幾張客服工單沒有對應到任何訂單？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM support_tickets WHERE order_id IS NULL
-  note: 測 NULL 語意。order_id 可為空是刻意的 —— 帳號問題類的工單沒有訂單。
+  sql: 'SELECT COUNT(*) AS n FROM support_tickets WHERE order_id IS NULL
 
+    '
+  note: 測 NULL 語意。order_id 可為空是刻意的 —— 帳號問題類的工單沒有訂單。
 - id: 165
   question: 列出所有狀態為 OPEN 的客服工單主旨，以及提出的客戶姓名。
   expect: rows
-  sql: |
-    SELECT t.subject, c.name
+  sql: 'SELECT t.subject, c.name
+
     FROM support_tickets t JOIN customers c ON c.id = t.customer_id
-    WHERE t.status = 'OPEN'
+
+    WHERE t.status = ''OPEN''
+
     ORDER BY t.id
 
+    '
 - id: 166
   question: 有幾張退貨申請被拒絕？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM order_returns WHERE status = 'REJECTED'
+  sql: 'SELECT COUNT(*) AS n FROM order_returns WHERE status = ''REJECTED''
 
+    '
 - id: 167
   question: 總共有多少件商品被退回？
   expect: rows
-  sql: |
-    SELECT SUM(quantity) AS q FROM order_returns
-  note: |
-    問「件數」→ SUM(quantity)=30，不是「幾張退貨單」=18。
+  sql: 'SELECT SUM(quantity) AS q FROM order_returns
+
+    '
+  note: '問「件數」→ SUM(quantity)=30，不是「幾張退貨單」=18。
+
     這題刻意測單位詞：退貨單的粒度是單，商品的粒度是件。
 
+    '
 - id: 168
   question: 列出退貨狀態是「已收到」的退貨單，包含訂單編號與退回的商品名稱。
   expect: rows
-  sql: |
-    SELECT r.order_id, p.name
+  sql: 'SELECT r.order_id, p.name
+
     FROM order_returns r JOIN products p ON p.id = r.product_id
-    WHERE r.status = 'RECEIVED'
+
+    WHERE r.status = ''RECEIVED''
+
     ORDER BY r.id
-  note: |
-    「已收到」對應 order_returns.status = 'RECEIVED'，不含 REQUESTED（還沒寄到）。
+
+    '
+  note: '「已收到」對應 order_returns.status = ''RECEIVED''，不含 REQUESTED（還沒寄到）。
+
     2026-08-20 改問句：第二波加了 return_shipments（退貨物流），它的
+
     received_at 註解正是「倉庫收到時間」—— 原本的「已經收到退貨」變成兩張表
+
     都答得出來的歧義。**是我加表把題目弄壞的，不是模型讀錯**（§11.7）。
 
+    '
 - id: 169
   question: 有多少位客戶的訂單曾經刷卡失敗過？
   expect: rows
-  sql: |
-    SELECT COUNT(DISTINCT o.customer_id) AS n
+  sql: 'SELECT COUNT(DISTINCT o.customer_id) AS n
+
     FROM payment_attempts a JOIN orders o ON o.id = a.order_id
-    WHERE a.result <> 'OK'
-  note: |
-    三表路徑（payment_attempts → orders → customers），本批最深的一題。
+
+    WHERE a.result <> ''OK''
+
+    '
+  note: '三表路徑（payment_attempts → orders → customers），本批最深的一題。
+
     失敗 = DECLINED 或 TIMEOUT。payments 裡只有 SUCCESS，走 payments 必然答錯。
+
     問「幾位」不問名字：37 個 customer_id 只對應 33 個相異姓名。
 
+    '
 - id: 170
   question: 付款嘗試的結果分別各有幾次？
   expect: rows
-  sql: |
-    SELECT result, COUNT(*) AS n FROM payment_attempts GROUP BY result ORDER BY result
+  sql: 'SELECT result, COUNT(*) AS n FROM payment_attempts GROUP BY result ORDER BY result
 
+    '
 - id: 171
   question: 哪些訂單嘗試付款了 3 次？
   expect: rows
-  sql: |
-    SELECT order_id FROM payment_attempts
+  sql: 'SELECT order_id FROM payment_attempts
+
     GROUP BY order_id HAVING COUNT(*) = 3
+
     ORDER BY order_id
+
+    '
   note: 恰好 3 次，不是「3 次以上」。全庫最多就是 3 次，兩種讀法答案相同。
-
-# =============================================================================
-# #172-195 — 把剩下 12 張業務表拉回訊號（ARCHITECTURE.md §10.10）
-# -----------------------------------------------------------------------------
-# 接續 #160-171。§10.2 的比例規則：業務表補題、基礎設施表明確標成永不作答。
-# 這批之後零覆蓋剩 3 張（customer_login_logs / cart_recovery_emails /
-# product_bundles），是刻意保留的稀釋律測試組，不是覆蓋缺口。
-#
-# 寫的時候實測擋掉的平手題（先驗證 GT 再測試）：
-#   「圖片最多的商品」        → 五個並列 4 張
-#   「狀態異動最多的訂單」    → 大量並列 3 次
-# 兩題都改成清單或計數。留下來的極值題都確認過唯一：
-#   降幅最大 iPhone 15 6250.67｜調出最多 桃園轉運倉 500｜8/13 庫存最少 iPhone 15 9
-# =============================================================================
-
 - id: 172
   question: 有多少張訂單曾經被取消過？
   expect: rows
-  sql: |
-    SELECT COUNT(DISTINCT order_id) AS n
-    FROM order_status_history WHERE to_status = 'CANCELLED'
+  sql: 'SELECT COUNT(DISTINCT order_id) AS n
+
+    FROM order_status_history WHERE to_status = ''CANCELLED''
+
+    '
   alt_sql:
-    - SELECT COUNT(DISTINCT order_id) AS n FROM order_cancellations
-    - SELECT COUNT(*) AS n FROM orders WHERE status = 'CANCELLED'
-  note: |
-    問「曾經」→ 走異動歷程。orders.status 只有現在的狀態，
+  - SELECT COUNT(DISTINCT order_id) AS n FROM order_cancellations
+  - SELECT COUNT(*) AS n FROM orders WHERE status = 'CANCELLED'
+  note: '問「曾經」→ 走異動歷程。orders.status 只有現在的狀態，
+
     答案剛好也是 17 —— 本資料集沒有取消後又復原的訂單，三條路同值。
+
     2026-08-20 補 alt_sql：僥倖偵測標了這題（模型走 order_cancellations）。
+
     **既然我自己在上一行就寫了「兩條路同值」，GT 就該接受兩條** ——
+
     只留一條等於在考「猜我心裡想的那張表」，不是在考 SQL。
 
+    '
 - id: 173
   question: 列出曾經被取消過的訂單編號與下單客戶的姓名。
   expect: rows
-  sql: |
-    SELECT DISTINCT h.order_id, c.name
+  sql: 'SELECT DISTINCT h.order_id, c.name
+
     FROM order_status_history h
+
     JOIN orders o ON o.id = h.order_id
+
     JOIN customers c ON c.id = o.customer_id
-    WHERE h.to_status = 'CANCELLED'
+
+    WHERE h.to_status = ''CANCELLED''
+
     ORDER BY h.order_id
+
+    '
   alt_sql:
-    - |
-      SELECT DISTINCT o.id AS order_id, c.name
-      FROM orders o
-      JOIN customers c ON c.id = o.customer_id
-      JOIN order_cancellations oc ON oc.order_id = o.id
-      ORDER BY o.id
-  note: |
-    三表路徑。一張訂單可能有多筆歷程，要去重。
+  - 'SELECT DISTINCT o.id AS order_id, c.name
+
+    FROM orders o
+
+    JOIN customers c ON c.id = o.customer_id
+
+    JOIN order_cancellations oc ON oc.order_id = o.id
+
+    ORDER BY o.id
+
+    '
+  note: '三表路徑。一張訂單可能有多筆歷程，要去重。
+
     同 #172，order_cancellations 是等價的另一條路，補進 alt_sql。
 
+    '
 - id: 174
   question: 2026 年 8 月 13 日這天，庫存最少的商品是哪一個？庫存剩多少？
   expect: rows
-  sql: |
-    SELECT p.name, s.stock_qty
-    FROM product_stock_snapshots s JOIN products p ON p.id = s.product_id
-    WHERE s.snapshot_date = '2026-08-13'
-      AND s.stock_qty = (SELECT MIN(stock_qty) FROM product_stock_snapshots
-                         WHERE snapshot_date = '2026-08-13')
-  note: |
-    問「某一天」→ 必須走快照表。products.stock 是即時值，答不出歷史某日。
+  sql: "SELECT p.name, s.stock_qty\nFROM product_stock_snapshots s JOIN products p ON p.id = s.product_id\n\
+    WHERE s.snapshot_date = '2026-08-13'\n  AND s.stock_qty = (SELECT MIN(stock_qty) FROM product_stock_snapshots\n\
+    \                     WHERE snapshot_date = '2026-08-13')\n"
+  note: '問「某一天」→ 必須走快照表。products.stock 是即時值，答不出歷史某日。
+
     這一題與 #31「庫存最少的商品」是刻意的一對：同樣問庫存最少，
+
     有沒有指定日期決定該用哪張表。
 
+    '
 - id: 175
   question: 庫存快照總共記錄了幾天？
   expect: rows
-  sql: |
-    SELECT COUNT(DISTINCT snapshot_date) AS n FROM product_stock_snapshots
+  sql: 'SELECT COUNT(DISTINCT snapshot_date) AS n FROM product_stock_snapshots
 
+    '
 - id: 176
   question: 有多少張出貨單配送失敗過？
   expect: rows
-  sql: |
-    SELECT COUNT(DISTINCT shipment_id) AS n
-    FROM delivery_attempts WHERE result <> 'DELIVERED'
-  note: 失敗 = REFUSED（拒收）或 ABSENT（不在家），不是只有其中一種。
+  sql: 'SELECT COUNT(DISTINCT shipment_id) AS n
 
+    FROM delivery_attempts WHERE result <> ''DELIVERED''
+
+    '
+  note: 失敗 = REFUSED（拒收）或 ABSENT（不在家），不是只有其中一種。
 - id: 177
   question: 有幾張出貨單嘗試配送了 3 次？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM (
-      SELECT shipment_id FROM delivery_attempts
-      GROUP BY shipment_id HAVING COUNT(*) = 3
-    ) t
-
+  sql: "SELECT COUNT(*) AS n FROM (\n  SELECT shipment_id FROM delivery_attempts\n  GROUP BY shipment_id\
+    \ HAVING COUNT(*) = 3\n) t\n"
 - id: 178
   question: 有哪些商品的圖片超過 3 張？
   expect: rows
-  sql: |
-    SELECT p.name
-    FROM product_images i JOIN products p ON p.id = i.product_id
-    GROUP BY p.id, p.name HAVING COUNT(*) > 3
-    ORDER BY p.name
-  note: 原本想問「圖片最多的商品」，實測五個並列 4 張，改成清單。
+  sql: 'SELECT p.name
 
+    FROM product_images i JOIN products p ON p.id = i.product_id
+
+    GROUP BY p.id, p.name HAVING COUNT(*) > 3
+
+    ORDER BY p.name
+
+    '
+  note: 原本想問「圖片最多的商品」，實測五個並列 4 張，改成清單。
 - id: 179
   question: 總共設定了幾張主圖？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM product_images WHERE is_primary = 1
+  sql: 'SELECT COUNT(*) AS n FROM product_images WHERE is_primary = 1
 
+    '
 - id: 180
   question: 有多少位客戶登記了已驗證的聯絡方式？
   expect: rows
-  sql: |
-    SELECT COUNT(DISTINCT customer_id) AS n
-    FROM customer_contacts WHERE is_verified = 1
-  note: 問「幾位客戶」不是「幾筆聯絡方式」—— 一位客戶可以有多筆，要去重。
+  sql: 'SELECT COUNT(DISTINCT customer_id) AS n
 
+    FROM customer_contacts WHERE is_verified = 1
+
+    '
+  note: 問「幾位客戶」不是「幾筆聯絡方式」—— 一位客戶可以有多筆，要去重。
 - id: 181
   question: 客戶登記的聯絡方式，各種類型分別有幾筆？
   expect: rows
-  sql: |
-    SELECT contact_type, COUNT(*) AS n
+  sql: 'SELECT contact_type, COUNT(*) AS n
+
     FROM customer_contacts GROUP BY contact_type ORDER BY contact_type
 
+    '
 - id: 182
   question: 商品調價的紀錄裡，有幾次是調降價格？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM product_price_history WHERE new_price < old_price
+  sql: 'SELECT COUNT(*) AS n FROM product_price_history WHERE new_price < old_price
 
+    '
 - id: 183
   question: 哪一次調價的降幅最大？是哪個商品，降了多少？
   expect: rows
-  sql: |
-    SELECT p.name, (h.old_price - h.new_price) AS drop_amount
-    FROM product_price_history h JOIN products p ON p.id = h.product_id
-    WHERE (h.old_price - h.new_price) = (
-      SELECT MAX(old_price - new_price) FROM product_price_history)
-
+  sql: "SELECT p.name, (h.old_price - h.new_price) AS drop_amount\nFROM product_price_history h JOIN products\
+    \ p ON p.id = h.product_id\nWHERE (h.old_price - h.new_price) = (\n  SELECT MAX(old_price - new_price)\
+    \ FROM product_price_history)\n"
 - id: 184
   question: 哪個倉庫調出的商品數量最多？調出了多少件？
   expect: rows
-  sql: |
-    SELECT w.name, SUM(t.quantity) AS q
-    FROM warehouse_transfers t JOIN warehouses w ON w.id = t.from_warehouse_id
-    GROUP BY w.id, w.name
-    HAVING SUM(t.quantity) = (
-      SELECT MAX(s) FROM (SELECT SUM(quantity) AS s FROM warehouse_transfers
-                          GROUP BY from_warehouse_id) x)
+  sql: "SELECT w.name, SUM(t.quantity) AS q\nFROM warehouse_transfers t JOIN warehouses w ON w.id = t.from_warehouse_id\n\
+    GROUP BY w.id, w.name\nHAVING SUM(t.quantity) = (\n  SELECT MAX(s) FROM (SELECT SUM(quantity) AS s\
+    \ FROM warehouse_transfers\n                      GROUP BY from_warehouse_id) x)\n"
   note: 問「調出」→ from_warehouse_id。調入是 to_warehouse_id，方向反了答案就不同。
-
 - id: 185
   question: 倉庫之間總共調撥了多少件商品？
   expect: rows
-  sql: |
-    SELECT SUM(quantity) AS q FROM warehouse_transfers
+  sql: 'SELECT SUM(quantity) AS q FROM warehouse_transfers
 
+    '
 - id: 186
   question: 有多少張訂單有內部備註？
   expect: rows
-  sql: |
-    SELECT COUNT(DISTINCT order_id) AS n FROM order_notes WHERE is_internal = 1
-  note: 內部備註 = is_internal = 1（客戶看不到的那種）。
+  sql: 'SELECT COUNT(DISTINCT order_id) AS n FROM order_notes WHERE is_internal = 1
 
+    '
+  note: 內部備註 = is_internal = 1（客戶看不到的那種）。
 - id: 187
   question: 客戶看得到的訂單備註有幾則？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM order_notes WHERE is_internal = 0
+  sql: 'SELECT COUNT(*) AS n FROM order_notes WHERE is_internal = 0
 
+    '
 - id: 188
   question: 有多少則商品評價還沒有被回覆？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM reviews r
-    WHERE r.is_deleted = 0
-      AND NOT EXISTS (SELECT 1 FROM review_replies x WHERE x.review_id = r.id)
-  note: |
-    反向查詢：主體是 reviews，review_replies 只用來排除。
+  sql: "SELECT COUNT(*) AS n FROM reviews r\nWHERE r.is_deleted = 0\n  AND NOT EXISTS (SELECT 1 FROM review_replies\
+    \ x WHERE x.review_id = r.id)\n"
+  note: '反向查詢：主體是 reviews，review_replies 只用來排除。
+
     ⚠️ 我第一版漏了 is_deleted = 0，寫成 101（模型答 97，是對的）。
+
     reviews 有軟刪除，既有的 #142-145 四題全都帶 is_deleted = 0，
+
     semantic_layer 也有 few-shot 在教 —— **是 GT 沒跟上專案慣例，不是模型錯。**
 
+    '
 - id: 189
   question: 有被回覆的評價佔全部評價的百分之幾？
   expect: rows
-  sql: |
-    SELECT (SELECT COUNT(*) FROM reviews r
-            WHERE r.is_deleted = 0
-              AND EXISTS (SELECT 1 FROM review_replies x WHERE x.review_id = r.id))
-           * 100.0
-           / (SELECT COUNT(*) FROM reviews WHERE is_deleted = 0) AS pct
-  note: 同 #188，分子分母都只算未刪除的評價（125 則中有 28 則被回覆）。
-
+  sql: "SELECT (SELECT COUNT(*) FROM reviews r\n        WHERE r.is_deleted = 0\n          AND EXISTS (SELECT\
+    \ 1 FROM review_replies x WHERE x.review_id = r.id))\n       * 100.0\n       / (SELECT COUNT(*) FROM\
+    \ reviews WHERE is_deleted = 0) AS pct\n"
+  note: 同
 - id: 190
   question: 訂單取消的原因，各有幾筆？
   expect: rows
-  sql: |
-    SELECT reason, COUNT(*) AS n
+  sql: 'SELECT reason, COUNT(*) AS n
+
     FROM order_cancellations GROUP BY reason ORDER BY reason
 
+    '
 - id: 191
   question: 由客戶自己發起取消的訂單有幾張？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM order_cancellations WHERE cancelled_by = 'CUSTOMER'
-  note: 另外兩種發起方是 STAFF 與 SYSTEM，不能一起算進去。
+  sql: 'SELECT COUNT(*) AS n FROM order_cancellations WHERE cancelled_by = ''CUSTOMER''
 
+    '
+  note: 另外兩種發起方是 STAFF 與 SYSTEM，不能一起算進去。
 - id: 192
   question: 有幾份供應商合約在 2026 年內到期？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM supplier_contracts
-    WHERE ends_at >= '2026-01-01' AND ends_at < '2027-01-01'
+  sql: 'SELECT COUNT(*) AS n FROM supplier_contracts
 
+    WHERE ends_at >= ''2026-01-01'' AND ends_at < ''2027-01-01''
+
+    '
 - id: 193
   question: 列出付款條件是「月結60天」的合約編號與供應商名稱。
   expect: rows
-  sql: |
-    SELECT c.contract_no, s.name
+  sql: 'SELECT c.contract_no, s.name
+
     FROM supplier_contracts c JOIN suppliers s ON s.id = c.supplier_id
-    WHERE c.payment_terms = '月結60天'
+
+    WHERE c.payment_terms = ''月結60天''
+
     ORDER BY c.contract_no
 
+    '
 - id: 194
   question: 有幾條促銷規則是可以疊加使用的？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM promotion_rules WHERE stackable = 1
+  sql: 'SELECT COUNT(*) AS n FROM promotion_rules WHERE stackable = 1
 
+    '
 - id: 195
   question: 促銷規則的最低消費門檻，最高是多少？
   expect: rows
-  sql: |
-    SELECT MAX(min_amount) AS m FROM promotion_rules
+  sql: 'SELECT MAX(min_amount) AS m FROM promotion_rules
 
-# =============================================================================
-# #196-225 — 第一波擴表 41 → 60 的配套題（ARCHITECTURE.md §11.3）
-# -----------------------------------------------------------------------------
-# 15 張業務表 × 2 題。基礎設施表（audit_log / schema_migrations / job_runs /
-# user_sessions）刻意不補題，在 seed plan 標了 never_answered。
-#
-# 寫的時候實測擋掉的平手題：
-#   「在職員工最多的部門」    → 四個部門並列 4 人
-#   「使用最多次的優惠券」    → SAVE50D 與 SAVE100L 並列 7 次
-#   「被收藏最多的商品」      → 洗衣精與 iPad Pro 並列 6 次
-# 留下的極值題都確認唯一：
-#   處理訂單最多 許建宏 13（第二名 11）｜取貨最多 台中市門市 10（第二名 7）
-#   回覆問答最多 蔡柏勳 4（第二名 3）｜點數最高 謝俊傑 2497（第二名 2351）
-# employees 24 個 id 對 24 個相異姓名，沒有 #169 那種同名問題。
-#
-# 刻意做的鑑別對照（新表與既有表近義）：
-#   employees vs customers                「員工」不是「客戶」
-#   stores vs warehouses                  「門市」不是「倉庫」
-#   store_pickups vs shipments            「到店取貨」不是「宅配出貨」
-#   coupons vs promotions                 「券碼」不是「檔期活動」
-#   wishlist_items vs order_items         「收藏」不是「購買」
-#   product_qna vs reviews                「提問」不是「評價」
-#   user_sessions vs customer_login_logs  兩張都 never_answered，互為近義干擾
-# =============================================================================
-
+    '
 - id: 196
   question: 公司目前有多少位在職員工？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM employees WHERE is_active = 1
-  note: 「員工」是 employees 不是 customers。在職 = is_active = 1。
+  sql: 'SELECT COUNT(*) AS n FROM employees WHERE is_active = 1
 
+    '
+  note: 「員工」是 employees 不是 customers。在職 = is_active = 1。
 - id: 197
   question: 每個部門各有幾位在職員工？
   expect: rows
-  sql: |
-    SELECT d.name, COUNT(*) AS n
-    FROM employees e JOIN departments d ON d.id = e.department_id
-    WHERE e.is_active = 1
-    GROUP BY d.id, d.name ORDER BY d.name
-  note: 原本想問「最多的部門」，實測四個部門並列 4 人，改成分組。
+  sql: 'SELECT d.name, COUNT(*) AS n
 
+    FROM employees e JOIN departments d ON d.id = e.department_id
+
+    WHERE e.is_active = 1
+
+    GROUP BY d.id, d.name ORDER BY d.name
+
+    '
+  note: 原本想問「最多的部門」，實測四個部門並列 4 人，改成分組。
 - id: 198
   question: 哪位員工經手處理的訂單最多？處理了幾張？
   expect: rows
-  sql: |
-    SELECT e.name, COUNT(DISTINCT a.order_id) AS n
-    FROM order_assignments a JOIN employees e ON e.id = a.employee_id
-    GROUP BY e.id, e.name
-    HAVING COUNT(DISTINCT a.order_id) = (
-      SELECT MAX(c) FROM (SELECT COUNT(DISTINCT order_id) AS c
-                          FROM order_assignments GROUP BY employee_id) x)
+  sql: "SELECT e.name, COUNT(DISTINCT a.order_id) AS n\nFROM order_assignments a JOIN employees e ON e.id\
+    \ = a.employee_id\nGROUP BY e.id, e.name\nHAVING COUNT(DISTINCT a.order_id) = (\n  SELECT MAX(c) FROM\
+    \ (SELECT COUNT(DISTINCT order_id) AS c\n                      FROM order_assignments GROUP BY employee_id)\
+    \ x)\n"
   note: 一張訂單可能轉手多次，要 COUNT(DISTINCT order_id) 而不是 COUNT(*)。
-
 - id: 199
   question: 有多少張訂單被指派給員工處理過？
   expect: rows
-  sql: |
-    SELECT COUNT(DISTINCT order_id) AS n FROM order_assignments
+  sql: 'SELECT COUNT(DISTINCT order_id) AS n FROM order_assignments
 
+    '
 - id: 200
   question: 目前還在營業的門市有幾間？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM stores WHERE is_active = 1
-  note: 「門市」是 stores 不是 warehouses（倉庫）。
+  sql: 'SELECT COUNT(*) AS n FROM stores WHERE is_active = 1
 
+    '
+  note: 「門市」是 stores 不是 warehouses（倉庫）。
 - id: 201
   question: 哪一間門市的取貨訂單最多？有幾張？
   expect: rows
-  sql: |
-    SELECT s.name, COUNT(*) AS n
-    FROM store_pickups p JOIN stores s ON s.id = p.store_id
-    GROUP BY s.id, s.name
-    HAVING COUNT(*) = (SELECT MAX(c) FROM (SELECT COUNT(*) AS c
-                       FROM store_pickups GROUP BY store_id) x)
-
+  sql: "SELECT s.name, COUNT(*) AS n\nFROM store_pickups p JOIN stores s ON s.id = p.store_id\nGROUP BY\
+    \ s.id, s.name\nHAVING COUNT(*) = (SELECT MAX(c) FROM (SELECT COUNT(*) AS c\n                   FROM\
+    \ store_pickups GROUP BY store_id) x)\n"
 - id: 202
   question: 有幾張訂單選了到店取貨但還沒有去取？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM store_pickups WHERE picked_up_at IS NULL
-  note: 測 NULL 語意。到店取貨是 store_pickups，宅配出貨在 shipments。
+  sql: 'SELECT COUNT(*) AS n FROM store_pickups WHERE picked_up_at IS NULL
 
+    '
+  note: 測 NULL 語意。到店取貨是 store_pickups，宅配出貨在 shipments。
 - id: 203
   question: 優惠券總共被使用了幾次？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM coupon_redemptions
-  note: 原本想問「使用最多次的券」，實測 SAVE50D 與 SAVE100L 並列 7 次。
+  sql: 'SELECT COUNT(*) AS n FROM coupon_redemptions
 
+    '
+  note: 原本想問「使用最多次的券」，實測 SAVE50D 與 SAVE100L 並列 7 次。
 - id: 204
   question: 有多少位客戶使用過優惠券？
   expect: rows
-  sql: |
-    SELECT COUNT(DISTINCT customer_id) AS n FROM coupon_redemptions
-  note: 問「幾位客戶」要去重；一位客戶可以用過多張券。
+  sql: 'SELECT COUNT(DISTINCT customer_id) AS n FROM coupon_redemptions
 
+    '
+  note: 問「幾位客戶」要去重；一位客戶可以用過多張券。
 - id: 205
   question: 有幾張禮物卡的餘額已經用完了？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM gift_cards WHERE balance = 0
+  sql: 'SELECT COUNT(*) AS n FROM gift_cards WHERE balance = 0
 
+    '
 - id: 206
   question: 所有禮物卡的面額總和與目前餘額總和各是多少？
   expect: rows
-  sql: |
-    SELECT SUM(face_value) AS total_face, SUM(balance) AS total_balance
+  sql: 'SELECT SUM(face_value) AS total_face, SUM(balance) AS total_balance
+
     FROM gift_cards
 
+    '
 - id: 207
   question: 禮物卡被用來消費的金額總共是多少？
   expect: rows
-  sql: |
-    SELECT SUM(amount) AS n FROM gift_card_transactions WHERE amount < 0
+  sql: 'SELECT SUM(amount) AS n FROM gift_card_transactions WHERE amount < 0
+
+    '
   alt_sql:
-    - SELECT -SUM(amount) AS n FROM gift_card_transactions WHERE amount < 0
-  note: |
-    負數是消費、正數是儲值。
+  - SELECT -SUM(amount) AS n FROM gift_card_transactions WHERE amount < 0
+  note: '負數是消費、正數是儲值。
+
     2026-08-20 補 alt_sql：模型回 4900（取絕對值），我的 GT 是 -4900。
+
     問「消費的金額總共是多少」，回正數其實比回負數自然 ——
+
     **兩種都對，是 GT 寫窄了**，與 #71 同一類。
 
+    '
 - id: 208
   question: 有幾張禮物卡還沒有指定持有人？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM gift_cards WHERE customer_id IS NULL
+  sql: 'SELECT COUNT(*) AS n FROM gift_cards WHERE customer_id IS NULL
 
+    '
 - id: 209
   question: 會員點數的異動原因各有幾筆？
   expect: rows
-  sql: |
-    SELECT reason, COUNT(*) AS n FROM loyalty_points GROUP BY reason ORDER BY reason
+  sql: 'SELECT reason, COUNT(*) AS n FROM loyalty_points GROUP BY reason ORDER BY reason
 
+    '
 - id: 210
   question: 哪一位客戶的累計點數最多？累計了幾點？
   expect: rows
-  sql: |
-    SELECT c.name, SUM(l.points) AS pts
-    FROM loyalty_points l JOIN customers c ON c.id = l.customer_id
-    GROUP BY c.id, c.name
-    HAVING SUM(l.points) = (SELECT MAX(s) FROM (SELECT SUM(points) AS s
-                            FROM loyalty_points GROUP BY customer_id) x)
-  note: |
-    累計 = 加總，包含負數的 REDEEM 與 EXPIRE。
+  sql: "SELECT c.name, SUM(l.points) AS pts\nFROM loyalty_points l JOIN customers c ON c.id = l.customer_id\n\
+    GROUP BY c.id, c.name\nHAVING SUM(l.points) = (SELECT MAX(s) FROM (SELECT SUM(points) AS s\n     \
+    \                   FROM loyalty_points GROUP BY customer_id) x)\n"
+  note: '累計 = 加總，包含負數的 REDEEM 與 EXPIRE。
+
     謝俊傑 2497，第二名 2351，沒有平手。
 
+    '
 - id: 211
   question: 目前訂閱狀態各有幾位客戶？
   expect: rows
-  sql: |
-    SELECT status, COUNT(*) AS n FROM subscriptions GROUP BY status ORDER BY status
+  sql: 'SELECT status, COUNT(*) AS n FROM subscriptions GROUP BY status ORDER BY status
 
+    '
 - id: 212
   question: 有幾筆訂閱還沒有結束？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM subscriptions WHERE ended_at IS NULL
-  note: 測 NULL 語意。ended_at 為空代表仍在訂閱中。
+  sql: 'SELECT COUNT(*) AS n FROM subscriptions WHERE ended_at IS NULL
 
+    '
+  note: 測 NULL 語意。ended_at 為空代表仍在訂閱中。
 - id: 213
   question: 有多少位客戶建立過願望清單？
   expect: rows
-  sql: |
-    SELECT COUNT(DISTINCT customer_id) AS n FROM wishlists
+  sql: 'SELECT COUNT(DISTINCT customer_id) AS n FROM wishlists
 
+    '
 - id: 214
   question: 願望清單裡總共收藏了多少種不同的商品？
   expect: rows
-  sql: |
-    SELECT COUNT(DISTINCT product_id) AS n FROM wishlist_items
-  note: |
-    問「多少種」→ COUNT(DISTINCT product_id)，不是總品項數。
+  sql: 'SELECT COUNT(DISTINCT product_id) AS n FROM wishlist_items
+
+    '
+  note: '問「多少種」→ COUNT(DISTINCT product_id)，不是總品項數。
+
     **收藏不是購買** —— 銷售請看 order_items，這一題是刻意的鑑別對照。
 
+    '
 - id: 215
   question: 商品問答裡還沒有被回覆的問題有幾則？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM product_qna WHERE answer IS NULL
-  note: 商品問答是購買前提問，與 reviews（評價）、support_tickets（工單）都不同。
+  sql: 'SELECT COUNT(*) AS n FROM product_qna WHERE answer IS NULL
 
+    '
+  note: 商品問答是購買前提問，與 reviews（評價）、support_tickets（工單）都不同。
 - id: 216
   question: 哪位員工回覆的商品問答最多？回覆了幾則？
   expect: rows
-  sql: |
-    SELECT e.name, COUNT(*) AS n
-    FROM product_qna q JOIN employees e ON e.id = q.answered_by
-    GROUP BY e.id, e.name
-    HAVING COUNT(*) = (SELECT MAX(c) FROM (SELECT COUNT(*) AS c FROM product_qna
-                       WHERE answered_by IS NOT NULL GROUP BY answered_by) x)
+  sql: "SELECT e.name, COUNT(*) AS n\nFROM product_qna q JOIN employees e ON e.id = q.answered_by\nGROUP\
+    \ BY e.id, e.name\nHAVING COUNT(*) = (SELECT MAX(c) FROM (SELECT COUNT(*) AS c FROM product_qna\n\
+    \                   WHERE answered_by IS NOT NULL GROUP BY answered_by) x)\n"
   note: 蔡柏勳 4 則，第二名 3 則，沒有平手。
-
 - id: 217
   question: 商品標籤各有幾個商品被標記？
   expect: rows
-  sql: |
-    SELECT tag, COUNT(*) AS n FROM product_tags GROUP BY tag ORDER BY tag
+  sql: 'SELECT tag, COUNT(*) AS n FROM product_tags GROUP BY tag ORDER BY tag
 
+    '
 - id: 218
   question: 有幾個商品被標記為「熱銷」？
   expect: rows
-  sql: |
-    SELECT COUNT(DISTINCT product_id) AS n FROM product_tags WHERE tag = '熱銷'
-  note: |
-    行銷標籤與 products.category（主分類）、product_categories（關聯表）
+  sql: 'SELECT COUNT(DISTINCT product_id) AS n FROM product_tags WHERE tag = ''熱銷''
+
+    '
+  note: '行銷標籤與 products.category（主分類）、product_categories（關聯表）
+
     是三個不同的東西，這一題刻意測能不能分開。
 
+    '
 - id: 219
   question: 列出所有部門的名稱與成立日期，依成立日期由早到晚排序。
   expect: rows
   ordered: true
-  sql: |
-    SELECT name, founded_at FROM departments ORDER BY founded_at
+  sql: 'SELECT name, founded_at FROM departments ORDER BY founded_at
 
+    '
 - id: 220
   question: 員工的職稱各有幾人？
   expect: rows
-  sql: |
-    SELECT title, COUNT(*) AS n FROM employees GROUP BY title ORDER BY title
+  sql: 'SELECT title, COUNT(*) AS n FROM employees GROUP BY title ORDER BY title
 
+    '
 - id: 221
   question: 列出有到店取貨紀錄的訂單編號與取貨門市名稱，只要已經取走的。
   expect: rows
-  sql: |
-    SELECT p.order_id, s.name
+  sql: 'SELECT p.order_id, s.name
+
     FROM store_pickups p JOIN stores s ON s.id = p.store_id
+
     WHERE p.picked_up_at IS NOT NULL
+
     ORDER BY p.order_id
 
+    '
 - id: 222
   question: 使用優惠券的訂單，平均每張折抵多少錢？
   expect: rows
-  sql: |
-    SELECT AVG(c.discount_amount) AS avg_discount
+  sql: 'SELECT AVG(c.discount_amount) AS avg_discount
+
     FROM coupon_redemptions r JOIN coupons c ON c.id = r.coupon_id
 
+    '
 - id: 223
   question: 有哪些客戶同時建立過願望清單又訂閱過方案？列出姓名。
   expect: rows
-  sql: |
-    SELECT c.name FROM customers c
-    WHERE EXISTS (SELECT 1 FROM wishlists w WHERE w.customer_id = c.id)
-      AND EXISTS (SELECT 1 FROM subscriptions s WHERE s.customer_id = c.id)
-    GROUP BY c.id, c.name
-    ORDER BY c.name
-  note: |
-    兩個 EXISTS 交集，主體是客戶要收斂（§10.9 的粒度規則）。
+  sql: "SELECT c.name FROM customers c\nWHERE EXISTS (SELECT 1 FROM wishlists w WHERE w.customer_id =\
+    \ c.id)\n  AND EXISTS (SELECT 1 FROM subscriptions s WHERE s.customer_id = c.id)\nGROUP BY c.id, c.name\n\
+    ORDER BY c.name\n"
+  note: '兩個 EXISTS 交集，主體是客戶要收斂（§10.9 的粒度規則）。
+
     這一題同時碰兩張新表，是這一波最深的檢索。
 
+    '
 - id: 224
   question: 每位有建立願望清單的客戶，平均收藏了幾樣商品？
   expect: rows
-  sql: |
-    SELECT COUNT(*) * 1.0 / COUNT(DISTINCT w.customer_id) AS avg_items
+  sql: 'SELECT COUNT(*) * 1.0 / COUNT(DISTINCT w.customer_id) AS avg_items
+
     FROM wishlists w JOIN wishlist_items i ON i.wishlist_id = w.id
 
+    '
 - id: 225
   question: 商品問答的回覆率是多少？
   expect: rows
-  sql: |
-    SELECT COUNT(answer) * 100.0 / COUNT(*) AS pct FROM product_qna
+  sql: 'SELECT COUNT(answer) * 100.0 / COUNT(*) AS pct FROM product_qna
+
+    '
   note: COUNT(answer) 不算 NULL，等於已回覆數除以總數。
-
-# =============================================================================
-# #226-257 — 第二波擴表 60 → 80 的配套題（ARCHITECTURE.md §11.5）
-# -----------------------------------------------------------------------------
-# 16 張業務表 × 2 題。基礎設施表（api_request_logs / feature_flags /
-# cache_entries / error_reports）刻意不補題，標 never_answered。
-#
-# 實測擋掉的平手題（先驗證 GT 再測試，第三次派上用場）：
-#   「人力最多的倉庫」    → 三個倉庫並列 3 人
-#   「人力最多的門市」    → 台南與高雄並列 5 人
-#   「變體最多的商品」    → 三個商品並列 4 種
-#   「文章最多的 FAQ 分類」→ 五個分類全部並列 4 篇
-# 留下的極值題確認唯一：最熱關鍵字 掃地機器人 57（第二名 54）
-#
-# 這一波的近義鑑別對照：
-#   search_logs vs browse_logs              「搜尋」不是「瀏覽」
-#   newsletter_subscriptions vs subscriptions 「訂電子報」不是「付費訂閱」
-#   campaigns vs promotions                 「廣告投放」不是「站上折扣檔期」
-#   faq_votes vs reviews                    「文章投票」不是「商品評價」
-#   warranty_claims vs order_returns        「保固維修」不是「退貨」
-#   service_appointments vs store_pickups   「到店服務預約」不是「到店取貨」
-#   product_recommendations vs order_items  「演算法推薦」不是「實際共同購買」
-#   warehouse_staff vs store_staff          倉庫人力不是門市人力
-# =============================================================================
-
 - id: 226
   question: 每個倉庫各配置了幾位員工？
   expect: rows
-  sql: |
-    SELECT w.name, COUNT(*) AS n
-    FROM warehouse_staff s JOIN warehouses w ON w.id = s.warehouse_id
-    GROUP BY w.id, w.name ORDER BY w.name
-  note: 原本想問「人力最多的倉庫」，實測三個倉庫並列 3 人，改成分組。
+  sql: 'SELECT w.name, COUNT(*) AS n
 
+    FROM warehouse_staff s JOIN warehouses w ON w.id = s.warehouse_id
+
+    GROUP BY w.id, w.name ORDER BY w.name
+
+    '
+  note: 原本想問「人力最多的倉庫」，實測三個倉庫並列 3 人，改成分組。
 - id: 227
   question: 有多少位員工被派駐在倉庫？
   expect: rows
-  sql: |
-    SELECT COUNT(DISTINCT employee_id) AS n FROM warehouse_staff
-  note: 問「幾位員工」要去重 —— 一位員工可能派駐多個倉庫。
+  sql: 'SELECT COUNT(DISTINCT employee_id) AS n FROM warehouse_staff
 
+    '
+  note: 問「幾位員工」要去重 —— 一位員工可能派駐多個倉庫。
 - id: 228
   question: 每間門市各配置了幾位員工？
   expect: rows
-  sql: |
-    SELECT s.name, COUNT(*) AS n
-    FROM store_staff x JOIN stores s ON s.id = x.store_id
-    GROUP BY s.id, s.name ORDER BY s.name
-  note: 門市人力是 store_staff，倉庫人力在 warehouse_staff，兩張表不可互換。
+  sql: 'SELECT s.name, COUNT(*) AS n
 
+    FROM store_staff x JOIN stores s ON s.id = x.store_id
+
+    GROUP BY s.id, s.name ORDER BY s.name
+
+    '
+  note: 門市人力是 store_staff，倉庫人力在 warehouse_staff，兩張表不可互換。
 - id: 229
   question: 有哪些員工同時被派駐在倉庫和門市？列出姓名。
   expect: rows
-  sql: |
-    SELECT e.name FROM employees e
-    WHERE EXISTS (SELECT 1 FROM warehouse_staff w WHERE w.employee_id = e.id)
-      AND EXISTS (SELECT 1 FROM store_staff s WHERE s.employee_id = e.id)
-    GROUP BY e.id, e.name ORDER BY e.name
+  sql: "SELECT e.name FROM employees e\nWHERE EXISTS (SELECT 1 FROM warehouse_staff w WHERE w.employee_id\
+    \ = e.id)\n  AND EXISTS (SELECT 1 FROM store_staff s WHERE s.employee_id = e.id)\nGROUP BY e.id, e.name\
+    \ ORDER BY e.name\n"
   note: 兩個 EXISTS 交集，主體是員工要收斂（§10.9）。同時碰兩張新表。
-
 - id: 230
   question: 員工班表的各種班別各排了幾班？
   expect: rows
-  sql: |
-    SELECT shift_type, COUNT(*) AS n
+  sql: 'SELECT shift_type, COUNT(*) AS n
+
     FROM employee_shifts GROUP BY shift_type ORDER BY shift_type
 
+    '
 - id: 231
   question: 排定的總工時是多少小時？
   expect: rows
-  sql: |
-    SELECT SUM(hours) AS h FROM employee_shifts
+  sql: 'SELECT SUM(hours) AS h FROM employee_shifts
 
+    '
 - id: 232
   question: 總共有幾種商品規格變體？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM product_variants
-  note: 原本想問「變體最多的商品」，實測三個商品並列 4 種。
+  sql: 'SELECT COUNT(*) AS n FROM product_variants
 
+    '
+  note: 原本想問「變體最多的商品」，實測三個商品並列 4 種。
 - id: 233
   question: 有幾個商品規格變體被設為預設？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM product_variants WHERE is_default = 1
+  sql: 'SELECT COUNT(*) AS n FROM product_variants WHERE is_default = 1
 
+    '
 - id: 234
   question: 總共登錄了幾組商品條碼？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM variant_barcodes
+  sql: 'SELECT COUNT(*) AS n FROM variant_barcodes
 
+    '
 - id: 235
   question: 有哪些規格變體登錄了超過一組條碼？列出變體編號與條碼數。
   expect: rows
-  sql: |
-    SELECT variant_id, COUNT(*) AS n
+  sql: 'SELECT variant_id, COUNT(*) AS n
+
     FROM variant_barcodes GROUP BY variant_id HAVING COUNT(*) > 1
+
     ORDER BY variant_id
 
+    '
 - id: 236
   question: 總共寄出了幾期電子報？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM newsletters
-  note: 電子報是群發信；購物車挽回信在 cart_recovery_emails，兩者不同。
+  sql: 'SELECT COUNT(*) AS n FROM newsletters
 
+    '
+  note: 電子報是群發信；購物車挽回信在 cart_recovery_emails，兩者不同。
 - id: 237
   question: 目前還有多少位客戶訂閱著電子報？
   expect: rows
-  sql: |
-    SELECT COUNT(DISTINCT customer_id) AS n
+  sql: 'SELECT COUNT(DISTINCT customer_id) AS n
+
     FROM newsletter_subscriptions WHERE unsubscribed_at IS NULL
-  note: |
-    測 NULL 語意。**這是「訂電子報」不是「付費訂閱方案」** ——
+
+    '
+  note: '測 NULL 語意。**這是「訂電子報」不是「付費訂閱方案」** ——
+
     後者在 subscriptions，是刻意的鑑別對照。
 
+    '
 - id: 238
   question: 有多少位客戶退訂了電子報？
   expect: rows
-  sql: |
-    SELECT COUNT(DISTINCT customer_id) AS n
+  sql: 'SELECT COUNT(DISTINCT customer_id) AS n
+
     FROM newsletter_subscriptions WHERE unsubscribed_at IS NOT NULL
 
+    '
 - id: 239
   question: 行銷活動的投放渠道各有幾檔？
   expect: rows
-  sql: |
-    SELECT channel, COUNT(*) AS n FROM campaigns GROUP BY channel ORDER BY channel
-  note: 廣告活動是 campaigns；站上折扣檔期在 promotions。
+  sql: 'SELECT channel, COUNT(*) AS n FROM campaigns GROUP BY channel ORDER BY channel
 
+    '
+  note: 廣告活動是 campaigns；站上折扣檔期在 promotions。
 - id: 240
   question: 各投放渠道的廣告點擊次數分別是多少？
   expect: rows
-  sql: |
-    SELECT c.channel, COUNT(*) AS n
+  sql: 'SELECT c.channel, COUNT(*) AS n
+
     FROM campaign_clicks k JOIN campaigns c ON c.id = k.campaign_id
+
     GROUP BY c.channel ORDER BY c.channel
 
+    '
 - id: 241
   question: 有多少次廣告點擊是未登入的訪客產生的？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM campaign_clicks WHERE customer_id IS NULL
+  sql: 'SELECT COUNT(*) AS n FROM campaign_clicks WHERE customer_id IS NULL
 
+    '
 - id: 242
   question: 站內搜尋最熱門的關鍵字是哪一個？被搜尋了幾次？
   expect: rows
-  sql: |
-    SELECT keyword, COUNT(*) AS n FROM search_logs
-    GROUP BY keyword
-    HAVING COUNT(*) = (SELECT MAX(c) FROM (SELECT COUNT(*) AS c FROM search_logs
-                       GROUP BY keyword) x)
-  note: |
-    掃地機器人 57 次，第二名 54，沒有平手。
+  sql: "SELECT keyword, COUNT(*) AS n FROM search_logs\nGROUP BY keyword\nHAVING COUNT(*) = (SELECT MAX(c)\
+    \ FROM (SELECT COUNT(*) AS c FROM search_logs\n                   GROUP BY keyword) x)\n"
+  note: '掃地機器人 57 次，第二名 54，沒有平手。
+
     **搜尋不是瀏覽** —— 瀏覽紀錄在 browse_logs，是刻意的鑑別對照。
 
+    '
 - id: 243
   question: 有幾次站內搜尋沒有搜到任何結果？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM search_logs WHERE result_count = 0
+  sql: 'SELECT COUNT(*) AS n FROM search_logs WHERE result_count = 0
 
+    '
 - id: 244
   question: 系統總共建立了幾筆商品推薦關聯？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM product_recommendations
-  note: |
-    **這是演算法推薦，不是實際的共同購買** ——
+  sql: 'SELECT COUNT(*) AS n FROM product_recommendations
+
+    '
+  note: '**這是演算法推薦，不是實際的共同購買** ——
+
     「最常一起被購買」要走 order_items（見 #81），是刻意的鑑別對照。
 
+    '
 - id: 245
   question: 商品「iPhone 15」被推薦了哪些商品？依推薦排序列出。
   expect: rows
   ordered: true
-  sql: |
-    SELECT rp.name
-    FROM product_recommendations r
-    JOIN products p ON p.id = r.product_id
-    JOIN products rp ON rp.id = r.recommended_product_id
-    WHERE p.name = 'iPhone 15'
-    ORDER BY r.rank_no
-  note: 自我參照的兩次 JOIN products，一次當來源、一次當被推薦。
+  sql: 'SELECT rp.name
 
+    FROM product_recommendations r
+
+    JOIN products p ON p.id = r.product_id
+
+    JOIN products rp ON rp.id = r.recommended_product_id
+
+    WHERE p.name = ''iPhone 15''
+
+    ORDER BY r.rank_no
+
+    '
+  note: 自我參照的兩次 JOIN products，一次當來源、一次當被推薦。
 - id: 246
   question: 常見問題文章各分類有幾篇？
   expect: rows
-  sql: |
-    SELECT category, COUNT(*) AS n
-    FROM faq_articles GROUP BY category ORDER BY category
-  note: 原本想問「文章最多的分類」，實測五個分類全部並列 4 篇。
+  sql: 'SELECT category, COUNT(*) AS n
 
+    FROM faq_articles GROUP BY category ORDER BY category
+
+    '
+  note: 原本想問「文章最多的分類」，實測五個分類全部並列 4 篇。
 - id: 247
   question: 常見問題的投票裡，覺得有幫助的佔多少百分比？
   expect: rows
-  sql: |
-    SELECT SUM(is_helpful) * 100.0 / COUNT(*) AS pct FROM faq_votes
-  note: 文章投票不是商品評價 —— 後者在 reviews，是刻意的鑑別對照。
+  sql: 'SELECT SUM(is_helpful) * 100.0 / COUNT(*) AS pct FROM faq_votes
 
+    '
+  note: 文章投票不是商品評價 —— 後者在 reviews，是刻意的鑑別對照。
 - id: 248
   question: 有幾則常見問題的投票是未登入訪客投的？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM faq_votes WHERE customer_id IS NULL
+  sql: 'SELECT COUNT(*) AS n FROM faq_votes WHERE customer_id IS NULL
 
+    '
 - id: 249
   question: 有幾筆退貨的商品倉庫還沒有收到？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM return_shipments WHERE received_at IS NULL
-  note: 退貨物流是 return_shipments；退貨申請在 order_returns，退款在 refunds。
+  sql: 'SELECT COUNT(*) AS n FROM return_shipments WHERE received_at IS NULL
 
+    '
+  note: 退貨物流是 return_shipments；退貨申請在 order_returns，退款在 refunds。
 - id: 250
   question: 有多少筆退貨申請已經寄出物流了？
   expect: rows
-  sql: |
-    SELECT COUNT(DISTINCT return_id) AS n FROM return_shipments
+  sql: 'SELECT COUNT(DISTINCT return_id) AS n FROM return_shipments
 
+    '
 - id: 251
   question: 保固申請的處理狀態各有幾筆？
   expect: rows
-  sql: |
-    SELECT status, COUNT(*) AS n
-    FROM warranty_claims GROUP BY status ORDER BY status
-  note: 保固維修不是退貨 —— 退貨在 order_returns，是刻意的鑑別對照。
+  sql: 'SELECT status, COUNT(*) AS n
 
+    FROM warranty_claims GROUP BY status ORDER BY status
+
+    '
+  note: 保固維修不是退貨 —— 退貨在 order_returns，是刻意的鑑別對照。
 - id: 252
   question: 有幾件保固申請被拒絕了？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM warranty_claims WHERE status = 'REJECTED'
+  sql: 'SELECT COUNT(*) AS n FROM warranty_claims WHERE status = ''REJECTED''
 
+    '
 - id: 253
   question: 到店服務預約的各種服務類型各有幾筆？
   expect: rows
-  sql: |
-    SELECT service_type, COUNT(*) AS n
-    FROM service_appointments GROUP BY service_type ORDER BY service_type
-  note: 到店服務預約不是到店取貨 —— 後者在 store_pickups，是刻意的鑑別對照。
+  sql: 'SELECT service_type, COUNT(*) AS n
 
+    FROM service_appointments GROUP BY service_type ORDER BY service_type
+
+    '
+  note: 到店服務預約不是到店取貨 —— 後者在 store_pickups，是刻意的鑑別對照。
 - id: 254
   question: 有多少筆到店服務預約客戶沒有出席？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS n FROM service_appointments WHERE attended = 0
+  sql: 'SELECT COUNT(*) AS n FROM service_appointments WHERE attended = 0
 
+    '
 - id: 255
   question: 列出有申請過保固的商品名稱與申請次數。
   expect: rows
-  sql: |
-    SELECT p.name, COUNT(*) AS n
+  sql: 'SELECT p.name, COUNT(*) AS n
+
     FROM warranty_claims w JOIN products p ON p.id = w.product_id
+
     GROUP BY p.id, p.name
+
     ORDER BY p.name
-  note: |
-    原本寫 `ordered: true` 且「由多到少排序」，改掉了 —— 24 個商品裡大量
+
+    '
+  note: '原本寫 `ordered: true` 且「由多到少排序」，改掉了 —— 24 個商品裡大量
+
     並列 1 次，名次相同時的先後是任意的，那會變成在考排序的巧合而不是 SQL。
 
+    '
 - id: 256
   question: 有哪些客戶既預約過到店服務，也建立過保固申請？列出姓名。
   expect: rows
-  sql: |
-    SELECT c.name FROM customers c
-    WHERE EXISTS (SELECT 1 FROM service_appointments a WHERE a.customer_id = c.id)
-      AND EXISTS (SELECT 1 FROM warranty_claims w
-                  JOIN orders o ON o.id = w.order_id
-                  WHERE o.customer_id = c.id)
-    GROUP BY c.id, c.name ORDER BY c.name
-  note: |
-    warranty_claims 沒有 customer_id，必須經由 orders 才連得到客戶 ——
+  sql: "SELECT c.name FROM customers c\nWHERE EXISTS (SELECT 1 FROM service_appointments a WHERE a.customer_id\
+    \ = c.id)\n  AND EXISTS (SELECT 1 FROM warranty_claims w\n              JOIN orders o ON o.id = w.order_id\n\
+    \              WHERE o.customer_id = c.id)\nGROUP BY c.id, c.name ORDER BY c.name\n"
+  note: 'warranty_claims 沒有 customer_id，必須經由 orders 才連得到客戶 ——
+
     這一題測的就是「橋接表要靠外鍵結構找，不是靠語意」（KMB 的存在理由）。
 
+    '
 - id: 257
   question: 每間門市各有幾筆到店服務預約？
   expect: rows
-  sql: |
-    SELECT s.name, COUNT(*) AS n
+  sql: 'SELECT s.name, COUNT(*) AS n
+
     FROM service_appointments a JOIN stores s ON s.id = a.store_id
+
     GROUP BY s.id, s.name ORDER BY s.name
 
-# ===========================================================================
-# 六張 1:1 寬表（product/order/employee/store/supplier/campaign_profiles）
-#   · multi_col  一題要多個欄位 —— 用來讓欄位裁剪的 K=4 天花板現形
-#   · discrim    條件落在寬表的非鍵欄位上，選錯表就答不出來
-#   · two_wide   兩張寬表的交集，少查一張就錯
-# 資料由 tools/add_wide_tables.py 保證式配置，判準見該檔 assert_criteria()。
-# ===========================================================================
-
+    '
 - id: 258
   question: 列出所有已停產商品的品名、英文品名、下架時間、內容維護負責人與可退貨天數。
   expect: rows
-  sql: |
-    SELECT p.name, pp.name_en, pp.delisted_at, pp.content_owner, pp.return_policy_days
+  sql: 'SELECT p.name, pp.name_en, pp.delisted_at, pp.content_owner, pp.return_policy_days
+
     FROM product_profiles pp JOIN products p ON p.id = pp.product_id
-    WHERE pp.lifecycle_stage = 'EOL'
+
+    WHERE pp.lifecycle_stage = ''EOL''
+
+    '
   alt_sql:
-    - |
-      SELECT p.name, pp.name_en, pp.delisted_at, pp.content_owner, pp.return_policy_days
-      FROM product_profiles pp JOIN products p ON p.id = pp.product_id
-      WHERE pp.delisted_at IS NOT NULL
-  note: |
-    「已停產」有兩種寫法：lifecycle_stage='EOL' 與 delisted_at IS NOT NULL。
+  - 'SELECT p.name, pp.name_en, pp.delisted_at, pp.content_owner, pp.return_policy_days
+
+    FROM product_profiles pp JOIN products p ON p.id = pp.product_id
+
+    WHERE pp.delisted_at IS NOT NULL
+
+    '
+  note: '「已停產」有兩種寫法：lifecycle_stage=''EOL'' 與 delisted_at IS NOT NULL。
+
     本資料集兩者完全等價（各 12 筆、互斥集合皆為 0），兩式都收。
 
+    '
 - id: 259
   question: 有些東西是不能走空運的，這類商品我想看一下它們的危險品分類、外箱長寬高跟含包裝的重量，幫我整理出來。
   expect: rows
-  sql: |
-    SELECT hazard_class, package_length_cm, package_width_cm, package_height_cm, package_weight_g
-    FROM product_profiles WHERE is_air_restricted = 1
-  note: |
-    不放品名：題目沒指名要，而比對規則對「多回欄位」寬容、對「少回」不寬容（§5.1）。
+  sql: 'SELECT hazard_class, package_length_cm, package_width_cm, package_height_cm, package_weight_g
 
+    FROM product_profiles WHERE is_air_restricted = 1
+
+    '
+  note: '不放品名：題目沒指名要，而比對規則對「多回欄位」寬容、對「少回」不寬容（§5.1）。
+
+    '
 - id: 260
   question: 有沒有商品的安全認證其實已經過期了？我怕有合規風險。
   expect: rows
-  sql: |
-    SELECT p.name FROM product_profiles pp JOIN products p ON p.id = pp.product_id
-    WHERE pp.safety_cert_expiry < '2026-08-15'
+  sql: 'SELECT p.name FROM product_profiles pp JOIN products p ON p.id = pp.product_id
+
+    WHERE pp.safety_cert_expiry < ''2026-08-15''
+
+    '
   alt_sql:
-    - |
-      SELECT COUNT(*) FROM product_profiles WHERE safety_cert_expiry < '2026-08-15'
-  note: |
-    「有沒有」可以回名單也可以回筆數，兩式都收。
+  - 'SELECT COUNT(*) FROM product_profiles WHERE safety_cert_expiry < ''2026-08-15''
+
+    '
+  note: '「有沒有」可以回名單也可以回筆數，兩式都收。
+
     過期基準用資料錨點 2026-08-15，不用 CURDATE()。
 
+    '
 - id: 261
   question: 內容完整度低於 60% 的商品，內容檔案上登記的圖片張數、是否有影片、是否附說明書與翻譯狀態各是什麼？
   expect: rows
-  sql: |
-    SELECT image_count, has_video, has_manual_pdf, translation_status
+  sql: 'SELECT image_count, has_video, has_manual_pdf, translation_status
+
     FROM product_profiles WHERE content_completeness < 60
-  note: |
-    原本問「各自的圖片張數」，模型 8/8 都去 COUNT(product_images) —— 那是同一個概念
+
+    '
+  note: '原本問「各自的圖片張數」，模型 8/8 都去 COUNT(product_images) —— 那是同一個概念
+
     的另一份資料，而且值不一樣（快照 2 vs 實際 3）。這是加寬表造成的真實歧義，
+
     照 §7.3 用**改問句**消歧（「內容檔案上登記的」），同時把快照語意寫進
+
     image_count 的欄位註解，與 customer_profiles 的既有寫法一致。
 
+    '
 - id: 262
   question: 列出所有以行動應用下單的訂單，含裝置類型、作業系統、應用版本與結帳耗時秒數。
   expect: rows
-  sql: |
-    SELECT order_id, device_type, os_name, app_version, checkout_seconds
-    FROM order_profiles WHERE channel = 'APP'
+  sql: 'SELECT order_id, device_type, os_name, app_version, checkout_seconds
 
+    FROM order_profiles WHERE channel = ''APP''
+
+    '
 - id: 263
   question: 那些被系統擋下來說要人工看過的單子，最後審的結果是什麼？誰審的、什麼時候審的、客人有沒有抱怨？
   expect: rows
-  sql: |
-    SELECT order_id, fraud_review_result, reviewed_by, reviewed_at, has_complaint
+  sql: 'SELECT order_id, fraud_review_result, reviewed_by, reviewed_at, has_complaint
+
     FROM order_profiles WHERE fraud_review_required = 1
 
+    '
 - id: 264
   question: 有多少客人下單的時候有特別交代說送到之前要先打電話給他？
   expect: rows
-  sql: |
-    SELECT COUNT(DISTINCT o.customer_id)
-    FROM order_profiles op JOIN orders o ON o.id = op.order_id
-    WHERE op.contact_before_delivery = 1
-  alt_sql:
-    - |
-      SELECT COUNT(*) FROM order_profiles WHERE contact_before_delivery = 1
-  note: |
-    「有多少客人」字面是客戶數（32），但問的其實是訂單上的註記，讀成訂單數（47）也合理，兩式都收。
+  sql: 'SELECT COUNT(DISTINCT o.customer_id)
 
+    FROM order_profiles op JOIN orders o ON o.id = op.order_id
+
+    WHERE op.contact_before_delivery = 1
+
+    '
+  alt_sql:
+  - 'SELECT COUNT(*) FROM order_profiles WHERE contact_before_delivery = 1
+
+    '
+  note: '「有多少客人」字面是客戶數（32），但問的其實是訂單上的註記，讀成訂單數（47）也合理，兩式都收。
+
+    '
 - id: 265
   question: 訪客結帳的訂單，其流量來源、媒介、導流網域與落地頁分別是什麼？
   expect: rows
-  sql: |
-    SELECT order_id, utm_source, utm_medium, referrer_domain, landing_page
+  sql: 'SELECT order_id, utm_source, utm_medium, referrer_domain, landing_page
+
     FROM order_profiles WHERE is_guest_checkout = 1
 
+    '
 - id: 266
   question: 我想知道哪些同事是完全在家上班的，順便看一下他們一週可以遠端幾天、人在哪個城市、時區跟聘僱方式。
   expect: rows
-  sql: |
-    SELECT e.name, ep.remote_days_per_week, ep.work_city, ep.timezone, ep.employment_type
-    FROM employee_profiles ep JOIN employees e ON e.id = ep.employee_id
-    WHERE ep.remote_policy = 'REMOTE'
-  note: |
-    全遠端的 7 位都還在職，加不加 is_active 結果相同，不需要 alt_sql。
+  sql: 'SELECT e.name, ep.remote_days_per_week, ep.work_city, ep.timezone, ep.employment_type
 
+    FROM employee_profiles ep JOIN employees e ON e.id = ep.employee_id
+
+    WHERE ep.remote_policy = ''REMOTE''
+
+    '
+  note: '全遠端的 7 位都還在職，加不加 is_active 結果相同，不需要 alt_sql。
+
+    '
 - id: 267
   question: 今年教育訓練時數還沒補齊的同仁有哪些？我要看他們上了幾小時、規定要幾小時、上次上課是什麼時候，還有職安訓練什麼時候到期。
   expect: rows
-  sql: |
-    SELECT e.name, ep.training_hours_ytd, ep.training_required_hours,
-           ep.last_training_at, ep.safety_training_expiry
-    FROM employee_profiles ep JOIN employees e ON e.id = ep.employee_id
-    WHERE ep.training_hours_ytd < ep.training_required_hours
-
+  sql: "SELECT e.name, ep.training_hours_ytd, ep.training_required_hours,\n       ep.last_training_at,\
+    \ ep.safety_training_expiry\nFROM employee_profiles ep JOIN employees e ON e.id = ep.employee_id\n\
+    WHERE ep.training_hours_ytd < ep.training_required_hours\n"
 - id: 268
   question: 最近一次年度考核等第是 A 的員工有哪些？
   expect: rows
-  sql: |
-    SELECT e.name FROM employee_profiles ep JOIN employees e ON e.id = ep.employee_id
-    WHERE ep.review_grade_last = 'A'
-  note: |
-    6 位考核 A 全部在職，所以「要不要排除離職者」這個歧義在本資料集不存在，
+  sql: 'SELECT e.name FROM employee_profiles ep JOIN employees e ON e.id = ep.employee_id
+
+    WHERE ep.review_grade_last = ''A''
+
+    '
+  note: '6 位考核 A 全部在職，所以「要不要排除離職者」這個歧義在本資料集不存在，
+
     不需要 alt_sql。兩位離職者的等第分別是 C 與 B。
 
+    '
 - id: 269
   question: 禮拜天不開的店有哪些？順便告訴我它們在哪一區、店多大、離最近的捷運站走路要幾分鐘。
   expect: rows
-  sql: |
-    SELECT s.name, sp.district, sp.floor_area_ping, sp.walk_minutes_from_mrt
+  sql: 'SELECT s.name, sp.district, sp.floor_area_ping, sp.walk_minutes_from_mrt
+
     FROM store_profiles sp JOIN stores s ON s.id = sp.store_id
-    WHERE sp.sun_open = 'CLOSED'
-  note: |
-    週日公休的三家都還在營業（唯一一家 stores.is_active=0 的門市週日有開），
+
+    WHERE sp.sun_open = ''CLOSED''
+
+    '
+  note: '週日公休的三家都還在營業（唯一一家 stores.is_active=0 的門市週日有開），
+
     所以加不加 is_active 都是同一組答案。#270、#271 同理。
 
+    '
 - id: 270
   question: 我想找那種維修、安裝、舊機換購三種服務都有做的門市，這些店的服務櫃檯有幾個？有沒有無障礙？
   expect: rows
-  sql: |
-    SELECT s.name, sp.service_counter_count, sp.wheelchair_accessible
+  sql: 'SELECT s.name, sp.service_counter_count, sp.wheelchair_accessible
+
     FROM store_profiles sp JOIN stores s ON s.id = sp.store_id
+
     WHERE sp.offers_repair = 1 AND sp.offers_installation = 1 AND sp.offers_trade_in = 1
 
+    '
 - id: 271
   question: 有沒有哪幾家店的消防安檢快到期了？今年年底前會過期的那種。
   expect: rows
-  sql: |
-    SELECT s.name FROM store_profiles sp JOIN stores s ON s.id = sp.store_id
-    WHERE sp.fire_cert_expiry <= '2026-12-31'
-  alt_sql:
-    - |
-      SELECT s.name FROM store_profiles sp JOIN stores s ON s.id = sp.store_id
-      WHERE sp.fire_cert_expiry BETWEEN '2026-08-15' AND '2026-12-31'
-  note: |
-    沒有任何一家已經過期，所以加不加下界都是同一組門市。
+  sql: 'SELECT s.name FROM store_profiles sp JOIN stores s ON s.id = sp.store_id
 
+    WHERE sp.fire_cert_expiry <= ''2026-12-31''
+
+    '
+  alt_sql:
+  - 'SELECT s.name FROM store_profiles sp JOIN stores s ON s.id = sp.store_id
+
+    WHERE sp.fire_cert_expiry BETWEEN ''2026-08-15'' AND ''2026-12-31''
+
+    '
+  note: '沒有任何一家已經過期，所以加不加下界都是同一組門市。
+
+    '
 - id: 272
   question: 列出準時交貨率低於 90% 的供應商，含不良品率、品質等第、承諾交期天數與尚未結案的稽核缺失數。
   expect: rows
-  sql: |
-    SELECT s.name, sp.defect_rate_ppm, sp.quality_grade,
-           sp.lead_time_committed_days, sp.audit_findings_open
-    FROM supplier_profiles sp JOIN suppliers s ON s.id = sp.supplier_id
-    WHERE sp.on_time_delivery_pct < 90
-
+  sql: "SELECT s.name, sp.defect_rate_ppm, sp.quality_grade,\n       sp.lead_time_committed_days, sp.audit_findings_open\n\
+    FROM supplier_profiles sp JOIN suppliers s ON s.id = sp.supplier_id\nWHERE sp.on_time_delivery_pct\
+    \ < 90\n"
 - id: 273
   question: 我們現在有跟哪幾家廠商停止往來嗎？為什麼停？
   expect: rows
-  sql: |
-    SELECT s.name, sp.suspend_reason
+  sql: 'SELECT s.name, sp.suspend_reason
+
     FROM supplier_profiles sp JOIN suppliers s ON s.id = sp.supplier_id
+
     WHERE sp.suspended_at IS NOT NULL
 
+    '
 - id: 274
   question: 列出每一檔活動的總預算、實際花費、花費進度、曝光數、點擊數與點擊率。
   expect: rows
-  sql: |
-    SELECT budget_total, spend_total, spend_pacing_pct, impressions, clicks, ctr_pct
+  sql: 'SELECT budget_total, spend_total, spend_pacing_pct, impressions, clicks, ctr_pct
+
     FROM campaign_profiles
-  note: |
-    不放活動名稱：campaigns.name 有重複（10 檔只有 4 種名字），
+
+    '
+  note: '不放活動名稱：campaigns.name 有重複（10 檔只有 4 種名字），
+
     放進 GT 等於把「同名不同檔」的風險帶進比對（§5.1）。
 
+    '
 - id: 275
   question: 有哪幾檔廣告後來被停掉了？為什麼停、當初是誰核准的、什麼時候核的、已經花掉多少錢？
   expect: rows
-  sql: |
-    SELECT paused_reason, approved_by, approved_at, spend_total
-    FROM campaign_profiles WHERE is_paused = 1
-  note: |
-    同 #274，活動名稱有重複所以不入 GT。
+  sql: 'SELECT paused_reason, approved_by, approved_at, spend_total
 
+    FROM campaign_profiles WHERE is_paused = 1
+
+    '
+  note: '同 #274，活動名稱有重複所以不入 GT。
+
+    '
 - id: 276
   question: 已經停止往來的那些供應商，他們供的貨裡面還有哪些是現在架上還在賣的？我想看商品的英文品名跟那家廠商的品質等第。
   expect: rows
-  sql: |
-    SELECT pp.name_en, sp.quality_grade
-    FROM supplier_profiles sp
-    JOIN product_suppliers ps ON ps.supplier_id = sp.supplier_id
-    JOIN product_profiles pp ON pp.product_id = ps.product_id
-    WHERE sp.suspended_at IS NOT NULL AND pp.delisted_at IS NULL
-  alt_sql:
-    - |
-      SELECT pp.name_en, sp.quality_grade
-      FROM supplier_profiles sp
-      JOIN product_suppliers ps ON ps.supplier_id = sp.supplier_id
-      JOIN product_profiles pp ON pp.product_id = ps.product_id
-      WHERE sp.suspended_at IS NOT NULL AND pp.lifecycle_stage <> 'EOL'
-    - |
-      SELECT DISTINCT pp.name_en, sp.quality_grade
-      FROM supplier_profiles sp
-      JOIN product_suppliers ps ON ps.supplier_id = sp.supplier_id
-      JOIN product_profiles pp ON pp.product_id = ps.product_id
-      WHERE sp.suspended_at IS NOT NULL AND pp.delisted_at IS NULL
-  note: |
-    有一項商品同時由兩家暫停往來的供應商供貨，而且兩家品質等第相同，
-    所以「一組供貨關係一列」是 15 列、「一項商品一列」是 14 列 —— 兩種讀法都收。
-    「在架」用 delisted_at IS NULL，與 lifecycle_stage <> 'EOL' 在本資料集等價。
+  sql: 'SELECT pp.name_en, sp.quality_grade
 
+    FROM supplier_profiles sp
+
+    JOIN product_suppliers ps ON ps.supplier_id = sp.supplier_id
+
+    JOIN product_profiles pp ON pp.product_id = ps.product_id
+
+    WHERE sp.suspended_at IS NOT NULL AND pp.delisted_at IS NULL
+
+    '
+  alt_sql:
+  - 'SELECT pp.name_en, sp.quality_grade
+
+    FROM supplier_profiles sp
+
+    JOIN product_suppliers ps ON ps.supplier_id = sp.supplier_id
+
+    JOIN product_profiles pp ON pp.product_id = ps.product_id
+
+    WHERE sp.suspended_at IS NOT NULL AND pp.lifecycle_stage <> ''EOL''
+
+    '
+  - 'SELECT DISTINCT pp.name_en, sp.quality_grade
+
+    FROM supplier_profiles sp
+
+    JOIN product_suppliers ps ON ps.supplier_id = sp.supplier_id
+
+    JOIN product_profiles pp ON pp.product_id = ps.product_id
+
+    WHERE sp.suspended_at IS NOT NULL AND pp.delisted_at IS NULL
+
+    '
+  note: '有一項商品同時由兩家暫停往來的供應商供貨，而且兩家品質等第相同，
+
+    所以「一組供貨關係一列」是 15 列、「一項商品一列」是 14 列 —— 兩種讀法都收。
+
+    「在架」用 delisted_at IS NULL，與 lifecycle_stage <> ''EOL'' 在本資料集等價。
+
+    '
 - id: 277
   question: 以行動應用下單、而且客戶會員等級是 GOLD 的訂單有幾張？
   expect: rows
-  sql: |
-    SELECT COUNT(*) FROM order_profiles op
-    JOIN orders o ON o.id = op.order_id
-    JOIN customer_profiles cp ON cp.customer_id = o.customer_id
-    WHERE op.channel = 'APP' AND cp.tier = 'GOLD'
+  sql: 'SELECT COUNT(*) FROM order_profiles op
 
+    JOIN orders o ON o.id = op.order_id
+
+    JOIN customer_profiles cp ON cp.customer_id = o.customer_id
+
+    WHERE op.channel = ''APP'' AND cp.tier = ''GOLD''
+
+    '
 - id: 278
   question: 我想找那些有提供維修服務的門市，而且裡面有配置「全遠端」工作的員工，有哪些店？
   expect: rows
-  sql: |
-    SELECT DISTINCT s.name FROM store_profiles sp
+  sql: 'SELECT DISTINCT s.name FROM store_profiles sp
+
     JOIN stores s ON s.id = sp.store_id
+
     JOIN store_staff ss ON ss.store_id = sp.store_id
+
     JOIN employee_profiles ep ON ep.employee_id = ss.employee_id
-    WHERE sp.offers_repair = 1 AND ep.remote_policy = 'REMOTE'
-  note: |
-    兩個條件都會改變答案：維修門市 6 家、有全遠端員工的門市 3 家、交集 2 家 ——
+
+    WHERE sp.offers_repair = 1 AND ep.remote_policy = ''REMOTE''
+
+    '
+  note: '兩個條件都會改變答案：維修門市 6 家、有全遠端員工的門市 3 家、交集 2 家 ——
+
     少查任何一張表都答不對，這正是雙寬表題要測的。
+
     六家維修門市全部都還在營業，所以加不加 stores.is_active 沒有差別。
 
+    '
 - id: 279
   question: 點擊率最高的那一檔活動，歸因到它的訂單有幾張？總金額多少？
   expect: rows
-  sql: |
-    SELECT COUNT(*) AS order_count, SUM(o.total_amount) AS amount
+  sql: 'SELECT COUNT(*) AS order_count, SUM(o.total_amount) AS amount
+
     FROM campaign_profiles cp
-    JOIN order_profiles op ON op.utm_campaign = CONCAT('CMP-', LPAD(cp.campaign_id, 2, '0'))
+
+    JOIN order_profiles op ON op.utm_campaign = CONCAT(''CMP-'', LPAD(cp.campaign_id, 2, ''0''))
+
     JOIN orders o ON o.id = op.order_id
+
     WHERE cp.ctr_pct = (SELECT MAX(ctr_pct) FROM campaign_profiles)
-  note: |
-    極值用 MAX 子查詢，不用 ORDER BY LIMIT（§5.1 交叉驗證）。
+
+    '
+  note: '極值用 MAX 子查詢，不用 ORDER BY LIMIT（§5.1 交叉驗證）。
+
     訂單數 20 有三檔活動並列，所以題目多問總金額 —— 十檔的歸因金額兩兩相異，選錯活動不可能蒙對。
+
+    '
+- id: 280
+  question: 列出所有派送過程發生過異常的出貨，其異常代碼、異常說明、上門次數、最後掃描地點與掃描時間。
+  expect: rows
+  sql: 'SELECT exception_code, exception_note, attempt_count, last_scan_location, last_scan_at FROM shipment_profiles
+    WHERE exception_code <> ''NONE''
+
+    '
+  note: '只選問到的五欄。exception_code = ''NONE'' 是「沒有異常」的表示法，所以條件是 <> ''NONE'' 而不是 IS NOT NULL。
+
+    '
+- id: 281
+  question: 有哪幾筆貨是鄰居幫忙簽收的？我想看一下簽收人是誰、簽收方式、送到幾樓、要不要搭電梯。
+  expect: rows
+  sql: 'SELECT signed_by_name, signature_type, delivered_floor, needs_elevator FROM shipment_profiles
+    WHERE recipient_relation = ''NEIGHBOR''
+
+    '
+  note: '「鄰居幫忙簽收」對應 recipient_relation = ''NEIGHBOR''，不是 signature_type —— 那問的是簽收方式。
+
+    '
+- id: 282
+  question: 有沒有哪些出貨是中途改過地址的？改的原因是什麼？
+  expect: rows
+  sql: 'SELECT shipment_id, redirect_reason FROM shipment_profiles WHERE is_redirected = 1
+
+    '
+  alt_sql:
+  - 'SELECT s.tracking_no, sp.redirect_reason FROM shipment_profiles sp JOIN shipments s ON s.id = sp.shipment_id
+    WHERE sp.is_redirected = 1
+
+    '
+  note: '「哪些出貨」的識別方式有兩種合理選擇：shipment_id 或 tracking_no，所以補 alt_sql，不賭模型選哪一個。
+
+    '
+- id: 283
+  question: 材積重大於實際重量的出貨，各自的外箱型式、長寬高與拆成幾箱是多少？
+  expect: rows
+  sql: 'SELECT carton_type, box_length_cm, box_width_cm, box_height_cm, carton_count FROM shipment_profiles
+    WHERE volumetric_weight_g > actual_weight_g
+
+    '
+  note: '兩欄相比，不是跟常數比。
+
+    '
+- id: 284
+  question: 商品本身標成易碎品的，實際出貨的時候外箱有沒有貼易碎標籤、用什麼緩衝材、封箱方式是什麼？
+  expect: rows
+  sql: 'SELECT sp.shipment_id, sp.has_fragile_label, sp.packing_material, sp.seal_type FROM shipment_profiles
+    sp JOIN shipments s ON s.id = sp.shipment_id JOIN order_items oi ON oi.order_id = s.order_id JOIN
+    product_profiles pp ON pp.product_id = oi.product_id WHERE pp.is_fragile = 1 GROUP BY sp.shipment_id,
+    sp.has_fragile_label, sp.packing_material, sp.seal_type
+
+    '
+  alt_sql:
+  - 'SELECT DISTINCT sp.has_fragile_label, sp.packing_material, sp.seal_type FROM shipment_profiles sp
+    JOIN shipments s ON s.id = sp.shipment_id JOIN order_items oi ON oi.order_id = s.order_id JOIN product_profiles
+    pp ON pp.product_id = oi.product_id WHERE pp.is_fragile = 1
+
+    '
+  note: '雙寬表題。主 SQL 逐筆出貨（一張出貨可能含多件易碎品，所以要 GROUP BY 去重）；alt_sql 是「只看有哪幾種組合」的讀法。易碎是**商品**屬性（product_profiles），貼標籤是**出貨**屬性
+    —— 兩者刻意互不蘊含（易碎出貨 73 筆、貼標籤 63 筆、交集 51），所以只查 has_fragile_label = 1 會得到不同答案。
+
+    '
+- id: 285
+  question: 列出被隱藏的評價，其隱藏原因、檢舉次數、主要檢舉事由、審核狀態與審核人員。
+  expect: rows
+  sql: 'SELECT hidden_reason, report_count, report_reason, moderation_status, moderator FROM review_profiles
+    WHERE is_hidden = 1
+
+    '
+  note: '誘餌題：reviews.is_deleted 也有 9 則，與 is_hidden 的 8 則**零重疊**，模型選錯欄位一定答錯。
+
+    '
+- id: 286
+  question: 那些拿了回饋才寫的評價，是給什麼回饋、附幾張照片、被按幾次有幫助、情緒標記是什麼？
+  expect: rows
+  sql: 'SELECT incentive_type, photo_count, helpful_votes, sentiment_label FROM review_profiles WHERE
+    is_incentivized = 1
+
+    '
+  note: '「拿了回饋才寫」= is_incentivized = 1。incentive_type 在沒回饋時是 ''NONE''，所以不能用 incentive_type <> ''NONE''
+    以外的寫法當主條件（結果相同，但語意上主詞是 is_incentivized）。
+
+    '
+- id: 287
+  question: 有沒有評價是收到貨超過三十天才寫的？
+  expect: rows
+  sql: 'SELECT review_id, days_after_delivery FROM review_profiles WHERE days_after_delivery > 30
+
+    '
+  alt_sql:
+  - 'SELECT COUNT(*) FROM review_profiles WHERE days_after_delivery > 30
+
+    '
+  note: '「有沒有」可以答成清單也可以答成筆數，兩種都合法，補 alt_sql。嚴格大於 30 —— 「超過三十天」不含第 30 天。
+
+    '
+- id: 288
+  question: 被選為精選的評價，其標題、內文字數、張貼裝置、評價語言與是否已驗證購買各是什麼？
+  expect: rows
+  sql: 'SELECT title, body_length, device_type, language_code, is_verified_purchase FROM review_profiles
+    WHERE is_featured = 1
+
+    '
+  note: 'is_featured 與 is_pinned 是不同概念（精選 vs 置頂），別選錯。
+
+    '
+- id: 289
+  question: 列出所有遭到退刷的付款，其退刷時間、退刷事由、爭議處理狀態與爭議結案時間。
+  expect: rows
+  sql: 'SELECT chargeback_at, chargeback_reason, dispute_status, dispute_closed_at FROM payment_profiles
+    WHERE is_chargeback = 1
+
+    '
+  note: '5 筆全部掛在母表 status = SUCCESS 的付款上（準則 4b）。
+
+    '
+- id: 290
+  question: 用國外的卡付款的有哪幾筆？我想知道卡別、發卡銀行、發卡國別跟交易幣別。
+  expect: rows
+  sql: 'SELECT card_brand, card_issuer, card_country, currency_code FROM payment_profiles WHERE is_foreign_card
+    = 1
+
+    '
+  note: '「國外的卡」是 is_foreign_card，不是 card_country <> ''TW'' —— 後者結果相同但那是推導，前者是登記值。
+
+    '
+- id: 291
+  question: 分期付款的訂單，各自分幾期、是不是零利率、第一期扣款日與收單機構是什麼？
+  expect: rows
+  sql: 'SELECT p.order_id, pp.installment_periods, pp.is_zero_interest, pp.first_payment_date, pp.acquirer_name
+    FROM payment_profiles pp JOIN payments p ON p.id = pp.payment_id WHERE pp.is_installment = 1
+
+    '
+  note: '問句主詞是「訂單」，所以要 join payments 拿 order_id。
+
+    '
+- id: 292
+  question: 有哪些付款到現在還沒跟對帳單勾稽完成？
+  expect: rows
+  sql: 'SELECT payment_id FROM payment_profiles WHERE is_reconciled = 0
+
+    '
+  alt_sql:
+  - 'SELECT p.transaction_no FROM payment_profiles pp JOIN payments p ON p.id = pp.payment_id WHERE pp.is_reconciled
+    = 0
+
+    '
+  note: '識別方式有歧義，補 alt_sql。
+
+    '
+- id: 293
+  question: 用手機下單而且有通過 3D 驗證的那些付款，是走哪個金流閘道、回應碼是什麼、授權時間跟請款時間各是什麼時候？
+  expect: rows
+  sql: 'SELECT pp.gateway_name, pp.response_code, pp.authorized_at, pp.captured_at FROM payment_profiles
+    pp JOIN payments p ON p.id = pp.payment_id JOIN order_profiles op ON op.order_id = p.order_id WHERE
+    op.device_type = ''MOBILE'' AND pp.is_3ds_verified = 1
+
+    '
+  note: '雙寬表題，而且兩張都是寬表（order_profiles 47 欄、payment_profiles 44 欄）。手機下單 87 筆、3D 驗證 115 筆、交集 68 —— 少查任何一邊都答不對。
+
+    '
+- id: 294
+  question: 列出超過承諾回應時間的工單，其受理管道、一級分類、第一次回覆花了幾分鐘、承諾上限與逾時原因。
+  expect: rows
+  sql: 'SELECT intake_channel, category_l1, first_response_minutes, sla_target_minutes, breach_reason
+    FROM support_ticket_profiles WHERE is_sla_breached = 1
+
+    '
+  note: 'is_sla_breached 是登記值，等價於 first_response_minutes > sla_target_minutes。
+
+    '
+- id: 295
+  question: 有被主管介入處理的工單，是誰承辦的、轉手幾次、升級到第幾層、升級給誰？
+  expect: rows
+  sql: 'SELECT assigned_agent, transfer_count, escalation_level, escalated_to FROM support_ticket_profiles
+    WHERE is_supervisor_involved = 1
+
+    '
+  note: '5 張，全部 escalation_level >= 1（矛盾檢查保證）。
+
+    '
+- id: 296
+  question: 有哪些工單結案之後又被客戶重新開啟過？
+  expect: rows
+  sql: 'SELECT ticket_id, reopened_count FROM support_ticket_profiles WHERE reopened_count > 0
+
+    '
+  alt_sql:
+  - 'SELECT t.subject FROM support_ticket_profiles sp JOIN support_tickets t ON t.id = sp.ticket_id WHERE
+    sp.reopened_count > 0
+
+    '
+  note: '識別方式有歧義（ticket_id 或工單主旨），補 alt_sql。
+
+    '
+- id: 297
+  question: 受理當下被標記要優先處理的那些工單，客戶現在的會員等級是什麼？工單的承辦團隊、結案方式跟滿意度選項又是什麼？
+  expect: rows
+  sql: 'SELECT cp.tier, sp.assigned_team, sp.resolution_type, sp.satisfaction_label FROM support_ticket_profiles
+    sp JOIN support_tickets t ON t.id = sp.ticket_id JOIN customer_profiles cp ON cp.customer_id = t.customer_id
+    WHERE sp.is_vip_flagged = 1
+
+    '
+  note: '雙寬表題，而且刻意有陷阱：問的是「**現在的**會員等級」= customer_profiles.tier（BRONZE/SILVER/GOLD/PLATINUM），不是 support_ticket_profiles.customer_tier_at_intake（受理當下的中文快照）。兩欄值域完全不同，選錯欄位一定答錯。
+
+    '
+- id: 298
+  question: 列出目前暫停中的訂閱，其暫停時間、暫停原因、排定復訂日、累計暫停次數與方案允許的單次暫停天數上限。
+  expect: rows
+  sql: 'SELECT paused_at, pause_reason, resume_scheduled_at, pause_count, max_pause_days FROM subscription_profiles
+    WHERE is_paused = 1
+
+    '
+  note: '5 筆，與母表 subscriptions.status = ''PAUSED'' 完全一致（準則 4b）。
+
+    '
+- id: 299
+  question: 從試用轉成付費的那些訂閱，是透過什麼管道轉的？試用了幾天、現在計費週期是什麼、每月多少錢？
+  expect: rows
+  sql: 'SELECT conversion_source, trial_days, billing_cycle, monthly_amount FROM subscription_profiles
+    WHERE converted_from_trial = 1
+
+    '
+  note: '轉付費 4 筆是「有試用 6 筆」的真子集 —— 用 had_trial = 1 會多兩筆。
+
+    '
+- id: 300
+  question: 有哪些訂閱扣款失敗過？最近一次失敗的原因是什麼？
+  expect: rows
+  sql: 'SELECT subscription_id, last_failure_reason FROM subscription_profiles WHERE failed_billing_count
+    > 0
+
+    '
+  alt_sql:
+  - 'SELECT s.plan_name, sp.last_failure_reason FROM subscription_profiles sp JOIN subscriptions s ON
+    s.id = sp.subscription_id WHERE sp.failed_billing_count > 0
+
+    '
+  note: '識別方式有歧義，補 alt_sql。
+
+    '
+- id: 301
+  question: 已取消的訂閱，其取消時間、取消原因、取消時填寫的意見、累計扣款期數與是否已列入招回名單各是什麼？
+  expect: rows
+  sql: 'SELECT cancel_requested_at, cancel_reason, cancel_feedback, billed_count, is_win_back_targeted
+    FROM subscription_profiles WHERE cancel_requested_at IS NOT NULL
+
+    '
+  note: '6 筆，與母表 status = ''CANCELLED'' 一致。注意 PAUSED 的 5 筆**不算已取消** —— 那是三態裡的另一態。
+
+    '
+- id: 302
+  question: 列出不可與其他優惠疊加的檔期，其適用範圍、疊加優先序、是否不可再輸入券碼與是否不可用禮物卡折抵。
+  expect: rows
+  sql: 'SELECT applies_to_scope, stack_priority, excludes_coupon, excludes_gift_card FROM promotion_profiles
+    WHERE is_stackable = 0
+
+    '
+  note: '只有 8 檔活動，3 檔不可疊加。
+
+    '
+- id: 303
+  question: 哪幾檔活動的預算已經用完了？用完的時間、預算上限、已折抵多少、被用了幾次分別是多少？
+  expect: rows
+  sql: 'SELECT promotion_id, exhausted_at, budget_amount, budget_used, used_count FROM promotion_profiles
+    WHERE is_budget_exhausted = 1
+
+    '
+  alt_sql:
+  - 'SELECT p.name, pp.exhausted_at, pp.budget_amount, pp.budget_used, pp.used_count FROM promotion_profiles
+    pp JOIN promotions p ON p.id = pp.promotion_id WHERE pp.is_budget_exhausted = 1
+
+    '
+  note: '「哪幾檔活動」用活動名稱識別也合理，補 alt_sql。
+
+    '
+- id: 304
+  question: 需要輸入代碼才生效的檔期，其主標文案、副標文案、呈現版位、角標文字與活動頁網址是什麼？
+  expect: rows
+  sql: 'SELECT banner_headline, banner_subtext, display_slot, badge_text, landing_url FROM promotion_profiles
+    WHERE requires_code = 1
+
+    '
+  note: 'requires_code 與 is_auto_applied 互斥（矛盾檢查保證），所以用哪一個當條件結果相同 —— 但問句說的是「需要輸入代碼」。
+
+    '
+- id: 305
+  question: 那些掛在首頁橫幅、而且結帳時自動套用的檔期，實際被用掉的訂單是從哪些流量來源進來的？順便告訴我檔期的最低訂單門檻與單筆折抵上限。
+  expect: rows
+  sql: 'SELECT DISTINCT op.utm_source, pp.min_order_amount, pp.max_discount_amount FROM promotion_profiles
+    pp JOIN order_promotions o2p ON o2p.promotion_id = pp.promotion_id JOIN order_profiles op ON op.order_id
+    = o2p.order_id WHERE pp.display_slot = ''HOME_TOP'' AND pp.is_auto_applied = 1
+
+    '
+  note: '雙寬表題，走 order_promotions 這條真實外鍵路徑（promotions 與 campaigns 之間沒有外鍵，所以不用「同期」那種日期比對）。
+
+    '
+- id: 306
+  question: 列出檢驗結果不符合退貨條件的退貨單，其退貨主因、檢驗人員、包裝狀況、缺少的配件與後續處置方式。
+  expect: rows
+  sql: 'SELECT reason_l1, inspector, package_condition, missing_accessories, disposition_decision FROM
+    return_profiles WHERE inspection_result = ''FAIL''
+
+    '
+  note: '7 筆，與母表 order_returns.status = ''REJECTED'' 完全一致（準則 4b）—— 模型用母表狀態或用這一欄都會對，這是設計要的。
+
+    '
+- id: 307
+  question: 有哪些退貨是判給物流商責任的？判定說明、退回物流商、幾天到倉、收到的倉庫分別是什麼？
+  expect: rows
+  sql: 'SELECT return_id, fault_note, carrier_name, transit_days, received_warehouse FROM return_profiles
+    WHERE is_carrier_fault = 1
+
+    '
+  alt_sql:
+  - 'SELECT rp.fault_note, rp.carrier_name, rp.transit_days, rp.received_warehouse FROM return_profiles
+    rp WHERE rp.is_carrier_fault = 1
+
+    '
+  note: '識別欄位可有可無，補 alt_sql。
+
+    '
+- id: 308
+  question: 有沒有客人是超過可退期限才申請退貨的，最後還是讓他退了？
+  expect: rows
+  sql: 'SELECT return_id, requested_at, approved_at, policy_window_days FROM return_profiles WHERE is_over_policy_window
+    = 1 AND approved_at IS NOT NULL
+
+    '
+  alt_sql:
+  - 'SELECT COUNT(*) FROM return_profiles WHERE is_over_policy_window = 1 AND approved_at IS NOT NULL
+
+    '
+  note: '「最後還是讓他退了」= approved_at IS NOT NULL，兩個條件都要 —— 只查超期限會多出沒核准的那些。
+
+    '
+- id: 309
+  question: 換貨處理的退貨單，其換成的商品、換貨寄出時間、補償方式、補償說明與是否為專案通融各是什麼？
+  expect: rows
+  sql: 'SELECT exchange_product_id, exchange_shipped_at, compensation_type, compensation_note, is_goodwill
+    FROM return_profiles WHERE is_exchange = 1
+
+    '
+  note: '4 筆，全部 exchange_product_id 非 NULL（矛盾檢查保證）。
+
+    '

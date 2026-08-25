@@ -840,7 +840,14 @@ def guarantee(conn, data: dict[str, list[dict]]) -> list[str]:
             r["exchange_product_id"] = R.randint(1, 40)
             r["exchange_shipped_at"] = _after(r["requested_at"], 10080, 30240)
             r["compensation_type"] = _pick(["COUPON", "POINTS", "GIFT_CARD"])
-            r["compensation_note"] = "已補償折價券作為換貨等待的補償"
+            # 說明文字要跟代碼對得起來。原本寫死「已補償折價券」，
+            # 結果 compensation_type = POINTS 的兩列在講折價券 ——
+            # 這種文字與代碼打架的資料，人看得出來，模型只會照抄。
+            r["compensation_note"] = {
+                "COUPON": "已補償折價券作為換貨等待的補償",
+                "POINTS": "已補償會員點數作為換貨等待的補償",
+                "GIFT_CARD": "已補償禮物卡作為換貨等待的補償",
+            }[r["compensation_type"]]
     # 超過可退期限但仍放行 —— 只能挑已核准的，否則問題問不出東西
     ok = [r for r in rids if idx["return_profiles"][r]["approved_at"]]
     for rid in ok[:2]:

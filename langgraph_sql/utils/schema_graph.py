@@ -158,6 +158,25 @@ _DEFAULT_COST_REVIEWED: frozenset[str] = frozenset({
     # （這也正是 #40／#62 漏 products 時 KMB 補不回來的同一個性質，見 §7.2。）
     "product_profiles", "order_profiles", "employee_profiles",
     "store_profiles", "supplier_profiles", "campaign_profiles",
+    # --- 2026-08-25 第二批寬表：七張 1:1 檔案表，同樣維持成本 1 ---
+    # 判斷依據與上一批相同，而且這次是**查過外鍵圖才寫的**：
+    # INFORMATION_SCHEMA.KEY_COLUMN_USAGE 顯示這七張各自恰好一條 FK 邊
+    # （shipments / reviews / payments / support_tickets / subscriptions /
+    #  promotions / order_returns），全部是 degree-1 葉節點。
+    #
+    # 有兩個看起來像捷徑、實際上不是的欄位，特別記下來免得日後誤判：
+    #   support_ticket_profiles.related_order_id / related_product_id
+    #   return_profiles.exchange_product_id / knowledge_article_id
+    # 它們是純 INT，**沒有宣告 FOREIGN KEY**，所以不在外鍵圖上，
+    # 構不成 customers↔products 的捷徑。哪天有人補上 FK 約束，
+    # 這個判斷就要重做 —— 那時 support_ticket_profiles 會同時連到
+    # orders 與 products，正是 _TABLE_COST 存在的那種形狀。
+    #
+    # review_profiles 掛在 reviews 底下，而 reviews 的成本是 3（評論 ≠ 購買），
+    # 子表維持 1 不會削弱那道門 —— 要走到子表本來就得先付母表的 3。
+    "shipment_profiles", "review_profiles", "payment_profiles",
+    "support_ticket_profiles", "subscription_profiles",
+    "promotion_profiles", "return_profiles",
 })
 
 
