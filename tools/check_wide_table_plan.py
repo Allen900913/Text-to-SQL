@@ -20,6 +20,7 @@
 用法：
     python tools/check_wide_table_plan.py
 """
+import argparse
 import io
 import os
 import re
@@ -62,11 +63,18 @@ def declared_columns(plan) -> list[tuple[str, str, str]]:
 
 
 def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--plan", default=PLAN_PATH,
+                    help="宣告檔路徑（第二批用 wide_table_plan_2.yaml）")
+    args = ap.parse_args()
     log.remove()
-    plan = yaml.safe_load(io.open(PLAN_PATH, encoding="utf-8"))
+    print(f"宣告檔：{os.path.relpath(args.plan, _ROOT)}")
+    plan = yaml.safe_load(io.open(args.plan, encoding="utf-8"))
     cols = declared_columns(plan)
     tables = plan["tables"]
-    policy = plan["probe_policy"]
+    # 探針政策**永遠**讀第一批那份，不讀 --plan 指的檔案 ——
+    # 每批各抄一份就會漂移，而漂移的方向一定是「這批剛好沒抄到那個字」。
+    policy = yaml.safe_load(io.open(PLAN_PATH, encoding="utf-8"))["probe_policy"]
     fail = 0
 
     n_cols = sum(len(s["columns"]) for s in tables.values())

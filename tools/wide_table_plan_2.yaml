@@ -1,0 +1,617 @@
+# 寬表擴充計畫 第二批（宣告檔）—— 86 → 93 張表
+# =============================================================================
+# 與第一批的差別，只有一句話：**這批是刻意「語意重疊」的。**
+#
+#   第一批的六張表各自掛在一個還沒有寬表的主體上（商品、訂單、員工、門市、
+#   供應商、活動），彼此不搶題。實測代價很小：候選@40 只從 99.2% 掉到 98.8%，
+#   257 題裡只有 1 題（#2）被擠出候選，平均位移 +0.36 名。
+#
+#   這批反過來。每一張都掛在**已經有人在管那個概念**的主體上，
+#   讓選表層必須在「字面像的舊窄表」與「真的裝著答案的新寬表」之間做選擇。
+#   e2e 上已經有一個活例子：#264 問「交代送到前先打電話」，
+#   模型選了字面更像的 order_notes，漏掉 order_profiles（6/8 硬幣）。
+#
+# 為什麼要刻意製造這種痛：語意獨立的表永遠不會進候選前段，
+# 加了它們只會讓分母變大而漏題數不變 —— **分數上升，能力沒動**。
+# 那是 §7.4「干擾表全是零列時熱度先驗假性滿分」的同一個病。
+#
+# 這批要讓這三個數字動起來（動不了就是白加）：
+#
+#   候選@40（257 題舊題）  98.8% → 預測掉到 97~98%
+#   被擠出候選的題數        3 → 預測 <= 6（餘裕分析的最壞情況上界）
+#   一題同時要兩張寬表      第一批只跨新表；這批要跨**批次**（新表 x 舊寬表）
+#
+# 硬約束（與第一批相同，違反任何一條都會靜默毀掉既有 GT）：
+#   1. 只 CREATE + INSERT，絕不重跑 db/init_db.py（會作廢 279 題 GT）
+#   2. 亂數用**新的**專屬種子，不碰 RNG_WIDE(20260821) 的序列
+#   3. 建表後跑逐表 SHA 指紋，確認既有 86 張表一位元都沒動
+#   4. 欄位名與註解不得命中防禦題探針
+#      —— 政策讀 wide_table_plan.yaml 那一份，這裡不再抄一遍（抄了就會漂移）
+#   5. 每張新表都要有 GT 題（閘門第 6 項會擋）
+#
+# 流程：
+#   python tools/check_wide_table_plan.py --plan tools/wide_table_plan_2.yaml
+#   -> 全綠才准建表
+
+# =============================================================================
+# 重疊地圖：每張新表要跟誰搶題
+# =============================================================================
+# 這一段是給人看的，稽核腳本不讀。寫下來是因為「重疊」是這批的**目的**，
+# 不寫清楚的話，事後看不出哪些退步是設計要的、哪些是意外。
+#
+#   shipment_profiles        <- shipments / delivery_attempts / store_pickups /
+#                               return_shipments / product_profiles（易碎、冷鏈同名不同層級）
+#   review_profiles          <- reviews / review_replies / product_qna /
+#                               faq_votes（有幫助票數同名）/ support_tickets
+#   payment_profiles         <- payments / payment_attempts / payment_methods /
+#                               invoices / gift_cards / loyalty_points /
+#                               order_profiles（結帳與付款情境，**同一個概念的兩張寬表**）
+#   support_ticket_profiles  <- support_tickets / order_notes / product_qna /
+#                               faq_articles / order_profiles（客服接觸）/ customer_profiles（會員等級）
+#   subscription_profiles    <- subscriptions / newsletter_subscriptions /
+#                               customer_profiles（行銷同意設定，**#152 就是這個形狀**）/ payments
+#   promotion_profiles       <- promotions / promotion_rules / coupons /
+#                               coupon_redemptions / order_promotions /
+#                               campaigns / campaign_profiles（受眾鎖定）
+#   return_profiles          <- order_returns / return_shipments / refunds /
+#                               warranty_claims / product_profiles（可退天數同名）
+
+# =============================================================================
+# 四條語意禁令的逐條判斷（字串探針掃不到，只能人守）
+# =============================================================================
+#   [1] 倉庫在庫數量   ✓ 七張表沒有任何數量欄位。return_profiles 只有
+#                        received_warehouse（倉名）與 disposition_decision（處置別）。
+#   [2] 商品成本／利潤 ✓ 沒有。payment_profiles 的金額是那筆付款本身，
+#                        payments 已經有了，不構成新的成本面。
+#   [3] 訂單層運送費用 ⚠ **這批最需要盯的一條。** shipment_profiles 刻意
+#                        **一個金額欄位都沒有**，但它給了材積重、實際重量、
+#                        距離級距與轉運站數 —— 這些正是「發明運費公式」的原料，
+#                        而 #68 要擋的就是發明公式。
+#                        字串探針掃不到這種風險（沒有任何欄位叫「費」）。
+#                        **建表後必跑 check_defence_gt.py + e2e 防禦題 4/4**，
+#                        掉了就把 distance_band 或 volumetric_weight_g 拿掉。
+#                        payment_profiles 的 exchange_rate x original_currency_amount
+#                        會約等於 payments.amount，那是同一筆錢的換算，
+#                        不是「小計 vs 總額」的差額，判定為安全。
+#   [4] 客戶信用分數   ✓ 沒有。support_ticket_profiles 的 customer_tier_at_intake
+#                        是會員等級快照（customer_profiles 已有同概念），不是評分。
+
+tables:
+
+  # ---------------------------------------------------------------- 1
+  shipment_profiles:
+    attach: {to: shipments, fk: shipment_id, cardinality: "1:1"}
+    # 註解刻意只寫 4 群，留「溫層與特殊處理」當盲區樣本（§2.5 容量上限）
+    table_comment: >-
+      出貨作業檔案寬表：外箱與材積、轉運路徑與最後掃描站、
+      簽收方式與交付情境、派送異常與重新投遞。
+      這是單次出貨的作業細節，出貨倉庫與到貨時間在 shipments，
+      每一次上門派送在 delivery_attempts。
+    concept_groups: [外箱與材積, 轉運路徑, 簽收與交付, 異常與重投, 溫層與特殊處理]
+    columns:
+      - {name: id, type: INT AUTO_INCREMENT PRIMARY KEY, comment: 流水號}
+      - {name: shipment_id, type: INT, comment: 對應的出貨紀錄}
+      - {name: carton_type, type: VARCHAR(20), comment: "外箱型式：BOX 紙箱／BAG 破壞袋／TUBE 圓筒／PALLET 棧板"}
+      - {name: carton_count, type: INT, comment: 這次出貨拆成幾箱}
+      - {name: box_length_cm, type: "DECIMAL(6,1)", comment: 外箱長度（公分）}
+      - {name: box_width_cm, type: "DECIMAL(6,1)", comment: 外箱寬度（公分）}
+      - {name: box_height_cm, type: "DECIMAL(6,1)", comment: 外箱高度（公分）}
+      - {name: volumetric_weight_g, type: INT, comment: 材積重（公克），由長寬高換算}
+      - {name: actual_weight_g, type: INT, comment: 出貨前秤得的實際重量（公克）}
+      - {name: is_repacked, type: TINYINT, comment: 出貨前是否重新包裝過}
+      - {name: packing_material, type: VARCHAR(30), comment: "緩衝材質：AIR 氣泡柱／FOAM 泡棉／PAPER 紙屑／NONE 無"}
+      - {name: has_fragile_label, type: TINYINT, comment: 外箱是否貼易碎標籤}
+      - {name: seal_type, type: VARCHAR(20), comment: "封箱方式：TAPE 膠帶／STRAP 打包帶／SEAL 安全封條"}
+      - {name: origin_hub, type: VARCHAR(40), comment: 起運集貨站名稱}
+      - {name: transit_hub_1, type: VARCHAR(40), comment: 第一個轉運站，NULL 表示直送}
+      - {name: transit_hub_2, type: VARCHAR(40), comment: 第二個轉運站，NULL 表示沒有}
+      - {name: hub_count, type: INT, comment: 總共經過幾個站點}
+      - {name: route_code, type: VARCHAR(20), comment: 路線代碼}
+      - {name: last_scan_location, type: VARCHAR(40), comment: 最後一次條碼掃描的地點}
+      - {name: last_scan_at, type: DATETIME, comment: 最後一次條碼掃描的時間}
+      - {name: is_cross_city, type: TINYINT, comment: 是否跨縣市配送}
+      - {name: distance_band, type: VARCHAR(20), comment: "距離級距：SHORT 同市／MID 鄰縣／LONG 跨區／REMOTE 離島偏鄉"}
+      - {name: delivery_window, type: VARCHAR(20), comment: "指定送達時段：MORNING 上午／AFTERNOON 下午／NIGHT 晚間／ANY 不指定"}
+      - {name: recipient_relation, type: VARCHAR(20), comment: "實際簽收人與收件人的關係：SELF 本人／FAMILY 家人／NEIGHBOR 鄰居／GUARD 管理員／COWORKER 同事"}
+      - {name: signature_type, type: VARCHAR(20), comment: "簽收方式：SIGN 親簽／STAMP 蓋章／PHOTO 拍照／NONE 免簽"}
+      - {name: signed_by_name, type: VARCHAR(40), comment: 簽收人姓名，免簽時為 NULL}
+      - {name: id_check_required, type: TINYINT, comment: 是否需要查驗證件才能領取}
+      - {name: is_contactless, type: TINYINT, comment: 是否為無接觸放置交付}
+      - {name: photo_proof_count, type: INT, comment: 交付證明照片張數}
+      - {name: delivered_floor, type: VARCHAR(10), comment: 送達樓層}
+      - {name: needs_elevator, type: TINYINT, comment: 是否需要電梯搬運}
+      - {name: attempt_count, type: INT, comment: "這次出貨總共上門幾次，與 delivery_attempts 的列數為同一件事的登記值"}
+      - {name: exception_code, type: VARCHAR(20), comment: "異常代碼：NONE 無／ADDR 地址不明／ABSENT 收件人不在／REFUSE 拒收／DAMAGE 貨損／DELAY 天候延誤"}
+      - {name: exception_note, type: VARCHAR(200), comment: 異常情形的文字說明}
+      - {name: is_redirected, type: TINYINT, comment: 是否中途改過送件地址}
+      - {name: redirect_reason, type: VARCHAR(120), comment: 改址原因}
+      - {name: returned_to_hub_at, type: DATETIME, comment: 退回集貨站的時間，NULL 表示沒退回過}
+      - {name: damage_reported, type: TINYINT, comment: 是否有回報貨品受損}
+      - {name: damage_note, type: VARCHAR(200), comment: 貨損情形描述}
+      - {name: temperature_zone, type: VARCHAR(20), comment: "溫層：AMBIENT 常溫／CHILL 冷藏／FROZEN 冷凍"}
+      - {name: needs_cold_chain, type: TINYINT, comment: "這次出貨是否走冷鏈，與 product_profiles 的同名欄位不同層級（那是商品屬性，這是實際出貨方式）"}
+      - {name: dry_ice_used, type: TINYINT, comment: 是否使用乾冰}
+      - {name: is_dangerous_goods_declared, type: TINYINT, comment: 是否申報為危險品運送}
+      - {name: handling_note, type: VARCHAR(200), comment: 給司機的特殊處理指示}
+      - {name: created_at, type: DATETIME, comment: 建檔時間}
+
+  # ---------------------------------------------------------------- 2
+  review_profiles:
+    attach: {to: reviews, fk: review_id, cardinality: "1:1"}
+    table_comment: >-
+      評價內容檔案寬表：評價文字與附圖影片、購買驗證與可信度、
+      有幫助票數與檢舉、上架審核與隱藏處理。
+      這是評價本身的內容面與處理面，星等與評價文字在 reviews，
+      商家的回覆內容在 review_replies。
+    concept_groups: [內容與媒體, 購買驗證與可信度, 互動與檢舉, 審核與隱藏, 語言與主題]
+    columns:
+      - {name: id, type: INT AUTO_INCREMENT PRIMARY KEY, comment: 流水號}
+      - {name: review_id, type: INT, comment: 對應的商品評價}
+      - {name: title, type: VARCHAR(120), comment: 評價標題}
+      - {name: body_length, type: INT, comment: 評價內文字數}
+      - {name: has_photo, type: TINYINT, comment: 是否附照片}
+      - {name: photo_count, type: INT, comment: 附了幾張照片}
+      - {name: has_video, type: TINYINT, comment: 是否附影片}
+      - {name: is_edited, type: TINYINT, comment: 張貼後是否編輯過}
+      - {name: edit_count, type: INT, comment: 編輯次數}
+      - {name: first_posted_at, type: DATETIME, comment: 首次張貼時間}
+      - {name: last_edited_at, type: DATETIME, comment: 最後一次編輯時間，沒編輯過為 NULL}
+      - {name: device_type, type: VARCHAR(20), comment: "張貼裝置：MOBILE 手機／DESKTOP 電腦／TABLET 平板"}
+      - {name: input_channel, type: VARCHAR(20), comment: "張貼來源：APP／WEB／EMAIL 邀評信"}
+      - {name: is_verified_purchase, type: TINYINT, comment: 是否已驗證為實際購買者所寫}
+      - {name: days_after_delivery, type: INT, comment: 收到貨之後隔幾天才寫評價}
+      - {name: reviewer_review_count, type: INT, comment: 這位客戶累計寫過幾則評價}
+      - {name: is_first_review_by_user, type: TINYINT, comment: 是否為這位客戶的第一則評價}
+      - {name: is_incentivized, type: TINYINT, comment: 是否為有給予回饋才寫的評價}
+      - {name: incentive_type, type: VARCHAR(20), comment: "回饋型式：POINTS 點數／COUPON 折價券／NONE 無"}
+      - {name: helpful_votes, type: INT, comment: "被按有幫助的次數，與 faq_votes 的投票是不同對象（那是說明文章）"}
+      - {name: unhelpful_votes, type: INT, comment: 被按沒幫助的次數}
+      - {name: reply_count, type: INT, comment: 這則評價底下有幾則回覆}
+      - {name: has_merchant_reply, type: TINYINT, comment: 商家是否回覆過}
+      - {name: merchant_reply_at, type: DATETIME, comment: 商家第一次回覆的時間}
+      - {name: report_count, type: INT, comment: 被檢舉次數}
+      - {name: report_reason, type: VARCHAR(30), comment: "主要檢舉事由：SPAM 廣告／ABUSE 辱罵／OFFTOPIC 離題／FAKE 造假／NONE 未被檢舉"}
+      - {name: moderation_status, type: VARCHAR(20), comment: "審核狀態：PENDING 待審／APPROVED 通過／REJECTED 退回"}
+      - {name: moderated_at, type: DATETIME, comment: 審核完成時間}
+      - {name: moderator, type: VARCHAR(40), comment: 審核人員}
+      - {name: is_hidden, type: TINYINT, comment: 是否已從商品頁隱藏}
+      - {name: hidden_reason, type: VARCHAR(120), comment: 隱藏原因}
+      - {name: is_pinned, type: TINYINT, comment: 是否置頂}
+      - {name: is_featured, type: TINYINT, comment: 是否選為精選評價}
+      - {name: language_code, type: VARCHAR(10), comment: "評價語言：zh-TW／en／ja"}
+      - {name: is_translated, type: TINYINT, comment: 是否提供機器翻譯版本}
+      - {name: translated_from, type: VARCHAR(10), comment: 翻譯來源語言}
+      - {name: sentiment_label, type: VARCHAR(20), comment: "情緒標記：POSITIVE 正面／NEUTRAL 中性／NEGATIVE 負面"}
+      - {name: topic_tags, type: VARCHAR(200), comment: 自動抽出的主題標籤，以分號分隔}
+      - {name: mentions_speed, type: TINYINT, comment: 評價內容是否提到到貨快慢}
+      - {name: mentions_packaging, type: TINYINT, comment: 評價內容是否提到包裝}
+      - {name: mentions_service, type: TINYINT, comment: 評價內容是否提到客服態度}
+      - {name: created_at, type: DATETIME, comment: 建檔時間}
+
+  # ---------------------------------------------------------------- 3
+  payment_profiles:
+    attach: {to: payments, fk: payment_id, cardinality: "1:1"}
+    # 這張表與 order_profiles 的「結帳過程與付款情境」是**同一個概念的兩張寬表**。
+    # 這是這批最強的重疊，也是最可能出事的地方 —— 留著就是要看它出事。
+    table_comment: >-
+      付款授權檔案寬表：金流閘道的授權與回應碼、卡片與電子錢包資訊、
+      分期與點數禮物卡折抵、對帳結算與退刷爭議。
+      這是單筆付款在金流端的細節，付了多少與付款時間在 payments，
+      每次刷卡嘗試在 payment_attempts，下單當時的結帳情境在 order_profiles。
+    concept_groups: [授權與回應, 卡片與錢包, 分期與折抵, 對帳與結算, 退刷與爭議]
+    columns:
+      - {name: id, type: INT AUTO_INCREMENT PRIMARY KEY, comment: 流水號}
+      - {name: payment_id, type: INT, comment: 對應的付款紀錄}
+      - {name: gateway_name, type: VARCHAR(30), comment: 金流閘道名稱}
+      - {name: gateway_reference, type: VARCHAR(40), comment: 閘道端的交易參考號}
+      - {name: acquirer_name, type: VARCHAR(30), comment: 收單機構名稱}
+      - {name: authorization_code, type: VARCHAR(20), comment: 授權碼}
+      - {name: authorized_at, type: DATETIME, comment: 授權成功時間}
+      - {name: captured_at, type: DATETIME, comment: 請款時間，NULL 表示只授權未請款}
+      - {name: response_code, type: VARCHAR(10), comment: 閘道回應碼，00 表示成功}
+      - {name: response_message, type: VARCHAR(120), comment: 閘道回應訊息}
+      - {name: is_3ds_verified, type: TINYINT, comment: 是否通過 3D 驗證}
+      - {name: threeds_version, type: VARCHAR(10), comment: 3D 驗證版本}
+      - {name: avs_result, type: VARCHAR(10), comment: 帳單地址比對結果代碼}
+      - {name: card_brand, type: VARCHAR(20), comment: "卡別：VISA／MASTER／JCB／AMEX"}
+      - {name: card_bin, type: VARCHAR(8), comment: 卡號前六碼}
+      - {name: card_last4, type: VARCHAR(4), comment: 卡號末四碼}
+      - {name: card_country, type: VARCHAR(10), comment: 發卡國別代碼}
+      - {name: card_issuer, type: VARCHAR(40), comment: 發卡銀行名稱}
+      - {name: is_foreign_card, type: TINYINT, comment: 是否為國外發卡}
+      - {name: card_expiry_month, type: INT, comment: 卡片到期月}
+      - {name: card_expiry_year, type: INT, comment: 卡片到期年}
+      - {name: is_tokenized, type: TINYINT, comment: 是否以代碼化方式儲存卡號}
+      - {name: wallet_type, type: VARCHAR(20), comment: "電子錢包：APPLE／GOOGLE／LINE／NONE 未使用錢包"}
+      - {name: is_installment, type: TINYINT, comment: 是否分期付款}
+      - {name: installment_periods, type: INT, comment: 分期期數，未分期為 0}
+      - {name: is_zero_interest, type: TINYINT, comment: 是否為零利率分期}
+      - {name: first_payment_date, type: DATE, comment: 第一期扣款日}
+      - {name: bonus_points_used, type: INT, comment: "這筆付款折抵掉的會員點數，點數異動明細在 loyalty_points"}
+      - {name: gift_card_applied, type: VARCHAR(20), comment: "折抵使用的禮物卡卡號，未使用為 NULL，卡片主檔在 gift_cards"}
+      - {name: coupon_code_applied, type: VARCHAR(20), comment: "結帳時輸入的券碼，券主檔在 coupons"}
+      - {name: is_reconciled, type: TINYINT, comment: 是否已與金流對帳單勾稽}
+      - {name: reconciled_at, type: DATETIME, comment: 對帳完成時間}
+      - {name: statement_batch, type: VARCHAR(20), comment: 對帳批次編號}
+      - {name: settlement_date, type: DATE, comment: 款項實際入帳日}
+      - {name: currency_code, type: VARCHAR(10), comment: 交易幣別}
+      - {name: exchange_rate, type: "DECIMAL(10,4)", comment: 外幣交易的匯率，台幣交易為 1}
+      - {name: original_currency_amount, type: "DECIMAL(12,2)", comment: 以原幣別計價的金額}
+      - {name: is_chargeback, type: TINYINT, comment: 是否遭到退刷}
+      - {name: chargeback_at, type: DATETIME, comment: 退刷發生時間}
+      - {name: chargeback_reason, type: VARCHAR(120), comment: 退刷事由}
+      - {name: dispute_status, type: VARCHAR(20), comment: "爭議處理狀態：NONE 無爭議／OPEN 處理中／WON 勝訴／LOST 敗訴"}
+      - {name: dispute_closed_at, type: DATETIME, comment: 爭議結案時間}
+      - {name: void_at, type: DATETIME, comment: 授權取消時間，NULL 表示沒取消過}
+      - {name: created_at, type: DATETIME, comment: 建檔時間}
+
+  # ---------------------------------------------------------------- 4
+  support_ticket_profiles:
+    attach: {to: support_tickets, fk: ticket_id, cardinality: "1:1"}
+    table_comment: >-
+      客服工單處理檔案寬表：受理管道與自動分類、回應時效與逾時、
+      指派轉手與升級層級、結案方式與滿意度調查。
+      這是工單怎麼被處理的，客戶問了什麼與工單狀態在 support_tickets，
+      訂單上的文字備註在 order_notes。
+    concept_groups: [受理與分類, 時效與逾時, 指派與升級, 客戶情境, 結案與滿意度]
+    columns:
+      - {name: id, type: INT AUTO_INCREMENT PRIMARY KEY, comment: 流水號}
+      - {name: ticket_id, type: INT, comment: 對應的客服工單}
+      - {name: intake_channel, type: VARCHAR(20), comment: "受理管道：PHONE 電話／EMAIL 信箱／CHAT 線上客服／APP／STORE 門市"}
+      - {name: intake_language, type: VARCHAR(10), comment: 受理時使用的語言}
+      - {name: category_l1, type: VARCHAR(30), comment: 一級分類}
+      - {name: category_l2, type: VARCHAR(30), comment: 二級分類}
+      - {name: subject_line, type: VARCHAR(120), comment: 工單主旨}
+      - {name: is_auto_classified, type: TINYINT, comment: 分類是否由系統自動判定}
+      - {name: related_order_id, type: INT, comment: 關聯的訂單，沒關聯為 NULL}
+      - {name: related_product_id, type: INT, comment: 關聯的商品，沒關聯為 NULL}
+      - {name: is_order_related, type: TINYINT, comment: 是否與某張訂單有關}
+      - {name: first_response_at, type: DATETIME, comment: 第一次回覆客戶的時間}
+      - {name: first_response_minutes, type: INT, comment: 從受理到第一次回覆經過幾分鐘}
+      - {name: resolution_minutes, type: INT, comment: 從受理到結案經過幾分鐘}
+      - {name: sla_target_minutes, type: INT, comment: 這個分類承諾的回應時間上限（分鐘）}
+      - {name: is_sla_breached, type: TINYINT, comment: 是否超過承諾的回應時間}
+      - {name: breach_reason, type: VARCHAR(120), comment: 逾時原因}
+      - {name: business_hours_only, type: TINYINT, comment: 這個分類是否只在營業時間受理}
+      - {name: reopened_count, type: INT, comment: 結案後又被重新開啟幾次}
+      - {name: last_reopened_at, type: DATETIME, comment: 最後一次重開的時間}
+      - {name: assigned_team, type: VARCHAR(30), comment: 承辦團隊}
+      - {name: assigned_agent, type: VARCHAR(40), comment: 承辦客服人員}
+      - {name: transfer_count, type: INT, comment: 轉手幾次}
+      - {name: escalation_level, type: INT, comment: 升級層級，0 表示沒升級}
+      - {name: escalated_at, type: DATETIME, comment: 升級時間}
+      - {name: escalated_to, type: VARCHAR(40), comment: 升級給誰}
+      - {name: is_supervisor_involved, type: TINYINT, comment: 主管是否介入處理}
+      - {name: customer_tier_at_intake, type: VARCHAR(20), comment: "受理當下這位客戶的會員等級快照，現在的等級在 customer_profiles"}
+      - {name: is_repeat_issue, type: TINYINT, comment: 是否為同一問題再次來電}
+      - {name: prior_ticket_count, type: INT, comment: 這位客戶先前開過幾張工單}
+      - {name: sentiment_at_intake, type: VARCHAR(20), comment: "受理當下的客戶情緒標記：CALM 平和／UPSET 不滿／ANGRY 憤怒"}
+      - {name: is_vip_flagged, type: TINYINT, comment: 是否被標記為需優先處理}
+      - {name: contact_attempts, type: INT, comment: 客服主動聯繫客戶幾次}
+      - {name: preferred_callback_window, type: VARCHAR(20), comment: "客戶希望的回電時段：MORNING／AFTERNOON／NIGHT／ANY"}
+      - {name: resolution_type, type: VARCHAR(30), comment: "結案方式：ANSWERED 說明解決／REFUND 退款／REPLACE 換貨／ESCALATED 轉其他部門／NO_RESPONSE 客戶未回覆"}
+      - {name: resolution_note, type: VARCHAR(255), comment: 結案說明}
+      - {name: closed_at, type: DATETIME, comment: 結案時間}
+      - {name: closed_by, type: VARCHAR(40), comment: 結案人員}
+      - {name: survey_sent_at, type: DATETIME, comment: 滿意度調查寄出時間}
+      - {name: survey_responded, type: TINYINT, comment: 客戶是否回覆滿意度調查}
+      - {name: satisfaction_label, type: VARCHAR(20), comment: "滿意度選項：VERY_SATISFIED 非常滿意／SATISFIED 滿意／NEUTRAL 普通／DISSATISFIED 不滿意"}
+      - {name: knowledge_article_id, type: INT, comment: 處理時引用的說明文章，文章主檔在 faq_articles}
+      - {name: is_knowledge_gap, type: TINYINT, comment: 是否標記為說明文件不足}
+      - {name: created_at, type: DATETIME, comment: 建檔時間}
+
+  # ---------------------------------------------------------------- 5
+  subscription_profiles:
+    attach: {to: subscriptions, fk: subscription_id, cardinality: "1:1"}
+    # 「通知與行銷同意」刻意不寫進表註解 —— 那正是 #152 的形狀
+    # （customer_profiles 也有一組行銷同意設定）。要看兩張表搶同一個概念時誰贏。
+    table_comment: >-
+      訂閱方案檔案寬表：計費週期與扣款結果、試用與轉換、
+      暫停與復訂、方案升降級異動。
+      這是訂閱的合約與帳務面，方案名稱與起訖日在 subscriptions，
+      電子報收信意願在 newsletter_subscriptions。
+    concept_groups: [計費與扣款, 試用與轉換, 暫停與復訂, 方案異動, 通知與行銷同意]
+    columns:
+      - {name: id, type: INT AUTO_INCREMENT PRIMARY KEY, comment: 流水號}
+      - {name: subscription_id, type: INT, comment: 對應的訂閱方案}
+      - {name: billing_cycle, type: VARCHAR(20), comment: "計費週期：MONTHLY 月繳／QUARTERLY 季繳／ANNUAL 年繳"}
+      - {name: billing_day, type: INT, comment: 每期扣款日（每月幾號）}
+      - {name: next_billing_date, type: DATE, comment: 下一次扣款日}
+      - {name: last_billed_at, type: DATETIME, comment: 最近一次扣款成功時間}
+      - {name: billed_count, type: INT, comment: 累計成功扣款幾期}
+      - {name: monthly_amount, type: "DECIMAL(10,2)", comment: 換算成每月的訂閱金額}
+      - {name: total_billed_amount, type: "DECIMAL(12,2)", comment: 這個訂閱累計已扣款總額}
+      - {name: payment_method_name, type: VARCHAR(30), comment: 綁定的扣款方式名稱}
+      - {name: is_auto_renew, type: TINYINT, comment: 是否自動續訂}
+      - {name: auto_renew_changed_at, type: DATETIME, comment: 最後一次變更自動續訂設定的時間}
+      - {name: failed_billing_count, type: INT, comment: 扣款失敗次數}
+      - {name: last_failure_reason, type: VARCHAR(120), comment: 最近一次扣款失敗的原因}
+      - {name: grace_period_days, type: INT, comment: 扣款失敗後保留服務的寬限天數}
+      - {name: had_trial, type: TINYINT, comment: 是否經過試用期}
+      - {name: trial_days, type: INT, comment: 試用天數，沒試用為 0}
+      - {name: trial_started_at, type: DATE, comment: 試用開始日}
+      - {name: trial_ended_at, type: DATE, comment: 試用結束日}
+      - {name: converted_from_trial, type: TINYINT, comment: 試用結束後是否轉為付費}
+      - {name: conversion_source, type: VARCHAR(30), comment: "轉換來源：EMAIL 提醒信／APP 推播／AGENT 客服致電／SELF 自行升級"}
+      - {name: is_paused, type: TINYINT, comment: 目前是否處於暫停中}
+      - {name: paused_at, type: DATETIME, comment: 最近一次暫停的時間}
+      - {name: resume_scheduled_at, type: DATE, comment: 排定的復訂日}
+      - {name: pause_count, type: INT, comment: 累計暫停過幾次}
+      - {name: pause_reason, type: VARCHAR(120), comment: 暫停原因}
+      - {name: max_pause_days, type: INT, comment: 這個方案允許的單次暫停天數上限}
+      - {name: plan_changed_count, type: INT, comment: 方案異動次數}
+      - {name: previous_plan_name, type: VARCHAR(40), comment: 上一個方案名稱，沒換過為 NULL}
+      - {name: plan_changed_at, type: DATETIME, comment: 最近一次換方案的時間}
+      - {name: upgrade_count, type: INT, comment: 升級次數}
+      - {name: downgrade_count, type: INT, comment: 降級次數}
+      - {name: is_annual_prepaid, type: TINYINT, comment: 是否為年繳一次付清}
+      - {name: contract_end_date, type: DATE, comment: 合約到期日}
+      - {name: early_termination_note, type: VARCHAR(200), comment: 提前解約的說明}
+      - {name: renewal_reminder_days, type: INT, comment: 續訂前幾天寄提醒}
+      - {name: notify_by_email, type: TINYINT, comment: 是否以 Email 通知續訂與異動}
+      - {name: notify_by_sms, type: TINYINT, comment: 是否以簡訊通知}
+      - {name: notify_by_push, type: TINYINT, comment: 是否以 App 推播通知}
+      - {name: last_reminder_sent_at, type: DATETIME, comment: 最近一次寄出提醒的時間}
+      - {name: opt_out_marketing, type: TINYINT, comment: "是否已表示不接收訂閱相關的行銷推廣，與 customer_profiles 的整體行銷同意是不同層級"}
+      - {name: cancel_requested_at, type: DATETIME, comment: 提出取消的時間}
+      - {name: cancel_reason, type: VARCHAR(120), comment: 取消原因}
+      - {name: cancel_feedback, type: VARCHAR(255), comment: 取消時填寫的意見}
+      - {name: is_win_back_targeted, type: TINYINT, comment: 是否已列入招回名單}
+      - {name: created_at, type: DATETIME, comment: 建檔時間}
+
+  # ---------------------------------------------------------------- 6
+  promotion_profiles:
+    attach: {to: promotions, fk: promotion_id, cardinality: "1:1"}
+    table_comment: >-
+      促銷檔期檔案寬表：適用範圍與排除條件、與其他優惠的疊加規則、
+      預算與使用次數上限、站上呈現的版位與文案。
+      這是檔期怎麼設定的，折扣型態與數值在 promotions，
+      門檻金額等適用條件在 promotion_rules，可輸入的券碼在 coupons。
+    concept_groups: [適用範圍與排除, 疊加與優先序, 預算與使用上限, 呈現與版位, 核准與稽核]
+    columns:
+      - {name: id, type: INT AUTO_INCREMENT PRIMARY KEY, comment: 流水號}
+      - {name: promotion_id, type: INT, comment: 對應的促銷活動}
+      - {name: applies_to_scope, type: VARCHAR(20), comment: "適用範圍：ALL 全站／CATEGORY 指定分類／SKU 指定商品／BRAND 指定品牌"}
+      - {name: included_category, type: VARCHAR(40), comment: 適用的商品分類，全站適用時為 NULL}
+      - {name: excluded_category, type: VARCHAR(40), comment: 排除的商品分類}
+      - {name: included_brand, type: VARCHAR(40), comment: 適用的品牌}
+      - {name: excluded_sku_list, type: VARCHAR(200), comment: 排除的商品編號清單，以逗號分隔}
+      - {name: min_quantity, type: INT, comment: 最低購買件數門檻}
+      - {name: min_order_amount, type: "DECIMAL(10,2)", comment: 最低訂單金額門檻}
+      - {name: max_discount_amount, type: "DECIMAL(10,2)", comment: 單筆最高折抵上限}
+      - {name: first_order_only, type: TINYINT, comment: 是否限首購}
+      - {name: member_tier_required, type: VARCHAR(20), comment: "需要的會員等級，NONE 表示不限"}
+      - {name: new_customer_only, type: TINYINT, comment: 是否限新客}
+      - {name: region_limit, type: VARCHAR(40), comment: 限定的配送地區，NULL 表示不限}
+      - {name: is_stackable, type: TINYINT, comment: 是否可與其他檔期疊加}
+      - {name: stack_priority, type: INT, comment: 疊加時的套用優先序，數字小的先算}
+      - {name: conflicts_with, type: VARCHAR(120), comment: 不可同時使用的其他檔期名稱}
+      - {name: excludes_coupon, type: TINYINT, comment: 是否不可再輸入折價券碼}
+      - {name: excludes_gift_card, type: TINYINT, comment: 是否不可用禮物卡折抵}
+      - {name: is_exclusive, type: TINYINT, comment: 是否為獨佔檔期，套用後其他一律不生效}
+      - {name: budget_amount, type: "DECIMAL(12,2)", comment: 這檔活動的折抵預算上限}
+      - {name: budget_used, type: "DECIMAL(12,2)", comment: 已折抵掉的金額}
+      - {name: usage_limit_total, type: INT, comment: 全站可使用次數上限}
+      - {name: usage_limit_per_customer, type: INT, comment: 每位客戶可使用次數上限}
+      - {name: used_count, type: INT, comment: 已被使用幾次}
+      - {name: is_budget_exhausted, type: TINYINT, comment: 預算是否已用罄}
+      - {name: exhausted_at, type: DATETIME, comment: 預算用罄的時間}
+      - {name: banner_headline, type: VARCHAR(120), comment: 活動主標文案}
+      - {name: banner_subtext, type: VARCHAR(200), comment: 活動副標文案}
+      - {name: display_slot, type: VARCHAR(30), comment: "呈現版位：HOME_TOP 首頁橫幅／CATEGORY 分類頁／CART 購物車／CHECKOUT 結帳頁"}
+      - {name: show_countdown, type: TINYINT, comment: 是否顯示倒數計時}
+      - {name: badge_text, type: VARCHAR(30), comment: 商品上顯示的角標文字}
+      - {name: landing_url, type: VARCHAR(200), comment: 活動頁網址}
+      - {name: is_auto_applied, type: TINYINT, comment: 是否結帳時自動套用，不需要客戶操作}
+      - {name: requires_code, type: TINYINT, comment: 是否需要輸入代碼才生效}
+      - {name: created_by, type: VARCHAR(40), comment: 建立這檔活動的人}
+      - {name: approved_by, type: VARCHAR(40), comment: 核准人}
+      - {name: approved_at, type: DATETIME, comment: 核准時間，NULL 表示尚未核准}
+      - {name: approval_note, type: VARCHAR(200), comment: 核准意見}
+      - {name: is_paused, type: TINYINT, comment: 是否已暫停這檔活動}
+      - {name: paused_at, type: DATETIME, comment: 暫停時間}
+      - {name: pause_reason, type: VARCHAR(120), comment: 暫停原因}
+      - {name: review_cycle, type: VARCHAR(20), comment: "成效檢討頻率：DAILY 每日／WEEKLY 每週／END 結檔後"}
+      - {name: created_at, type: DATETIME, comment: 建檔時間}
+
+  # ---------------------------------------------------------------- 7
+  return_profiles:
+    attach: {to: order_returns, fk: return_id, cardinality: "1:1"}
+    table_comment: >-
+      退貨處理檔案寬表：退貨原因與責任歸屬、到倉檢驗結果與後續處置、
+      退回物流與收件、換貨與補償方式。
+      這是退貨怎麼被處理的，退貨申請與狀態在 order_returns，
+      退回的物流單號在 return_shipments，退款金額在 refunds。
+    concept_groups: [原因與責任, 檢驗與處置, 退回物流, 換貨與補償, 時效與稽核]
+    columns:
+      - {name: id, type: INT AUTO_INCREMENT PRIMARY KEY, comment: 流水號}
+      - {name: return_id, type: INT, comment: 對應的退貨申請單}
+      - {name: reason_l1, type: VARCHAR(30), comment: "退貨主因：QUALITY 品質瑕疵／WRONG_ITEM 出錯貨／NOT_AS_DESCRIBED 與說明不符／CHANGE_MIND 不想要了／DAMAGED 運送損壞"}
+      - {name: reason_l2, type: VARCHAR(40), comment: 退貨細因}
+      - {name: customer_note, type: VARCHAR(255), comment: 客戶填寫的退貨說明}
+      - {name: is_customer_fault, type: TINYINT, comment: 是否歸責於客戶}
+      - {name: is_seller_fault, type: TINYINT, comment: 是否歸責於賣方}
+      - {name: is_carrier_fault, type: TINYINT, comment: 是否歸責於物流商}
+      - {name: fault_note, type: VARCHAR(200), comment: 責任歸屬的判定說明}
+      - {name: is_quality_issue, type: TINYINT, comment: 是否認定為品質問題}
+      - {name: defect_code, type: VARCHAR(20), comment: 瑕疵代碼，非品質問題為 NONE}
+      - {name: inspected_at, type: DATETIME, comment: 到倉檢驗時間，NULL 表示尚未檢驗}
+      - {name: inspector, type: VARCHAR(40), comment: 檢驗人員}
+      - {name: inspection_result, type: VARCHAR(20), comment: "檢驗結果：PASS 符合退貨條件／FAIL 不符合／PARTIAL 部分符合"}
+      - {name: is_resellable, type: TINYINT, comment: 檢驗後判定是否可以再次販售}
+      - {name: disposition_decision, type: VARCHAR(30), comment: "後續處置：RESHELF 重新上架／REFURBISH 整新／SCRAP 報廢／RETURN_SUPPLIER 退回供應商"}
+      - {name: package_condition, type: VARCHAR(20), comment: "包裝狀況：INTACT 完整／OPENED 已拆封／BROKEN 破損／MISSING 遺失"}
+      - {name: missing_accessories, type: VARCHAR(200), comment: 缺少的配件清單}
+      - {name: has_original_box, type: TINYINT, comment: 是否附回原廠盒}
+      - {name: photo_count, type: INT, comment: 客戶上傳的佐證照片張數}
+      - {name: pickup_method, type: VARCHAR(20), comment: "退回方式：HOME_PICKUP 到府收件／STORE_DROP 門市寄回／SELF_SEND 自行寄回"}
+      - {name: pickup_scheduled_at, type: DATETIME, comment: 排定的收件時間}
+      - {name: carrier_name, type: VARCHAR(30), comment: 退回使用的物流商}
+      - {name: received_at, type: DATETIME, comment: 倉庫收到退回商品的時間}
+      - {name: received_warehouse, type: VARCHAR(40), comment: 收件的倉庫名稱}
+      - {name: transit_days, type: INT, comment: 從寄回到收到經過幾天}
+      - {name: is_exchange, type: TINYINT, comment: 是否為換貨而非退貨}
+      - {name: exchange_product_id, type: INT, comment: 換成哪一項商品，非換貨為 NULL}
+      - {name: exchange_shipped_at, type: DATETIME, comment: 換貨商品寄出的時間}
+      - {name: compensation_type, type: VARCHAR(30), comment: "補償方式：NONE 無／COUPON 折價券／POINTS 點數／GIFT_CARD 禮物卡"}
+      - {name: compensation_note, type: VARCHAR(200), comment: 補償說明}
+      - {name: is_goodwill, type: TINYINT, comment: 是否為專案通融處理}
+      - {name: requested_at, type: DATETIME, comment: 客戶提出申請的時間}
+      - {name: approved_at, type: DATETIME, comment: 審核通過的時間，NULL 表示尚未通過}
+      - {name: approval_days, type: INT, comment: 從申請到審核通過經過幾天}
+      - {name: completed_at, type: DATETIME, comment: 整個退貨流程結案的時間}
+      - {name: total_days, type: INT, comment: 從申請到結案的總天數}
+      - {name: is_over_policy_window, type: TINYINT, comment: 申請時是否已超過可退貨期限}
+      - {name: policy_window_days, type: INT, comment: "當時適用的可退貨天數，商品層級的政策在 product_profiles.return_policy_days"}
+      - {name: escalated, type: TINYINT, comment: 是否曾升級為爭議案件}
+      - {name: handled_by, type: VARCHAR(40), comment: 承辦人員}
+      - {name: handling_note, type: VARCHAR(255), comment: 承辦過程的備註}
+      - {name: created_at, type: DATETIME, comment: 建檔時間}
+
+# =============================================================================
+# 配題（閘門第 6、7 項會讀這一段）
+# =============================================================================
+# 角色：
+#   multi_col  單表要 5 個以上非鍵欄位 —— 沒有這個，eval_column_recall 永遠回 100%
+#   two_wide   一題同時需要兩張寬表 —— 這批**刻意跨批次**（新表 x 第一批的舊寬表），
+#              因為那才會把 scoped DDL 推過 10,000 字元，觸發兩層 DDL 的判準
+#   discrim    答案要有鑑別力：非空、交集小於兩邊、單一條件涵蓋率不超過 75%
+#
+# phrasing 一半 terse 一半 spoken：口語題是誘餌題的來源（#264 就是口語題輸給
+# 字面像的舊表）。
+
+questions:
+
+  # ---- shipment_profiles ----
+  - table: shipment_profiles
+    roles: [multi_col]
+    phrasing: terse
+    q: 列出所有派送過程發生過異常的出貨，其異常代碼、異常說明、上門次數、最後掃描地點與掃描時間。
+  - table: shipment_profiles
+    roles: [multi_col, discrim]
+    phrasing: spoken
+    q: 有哪幾筆貨是鄰居幫忙簽收的？我想看一下簽收人是誰、簽收方式、送到幾樓、要不要搭電梯。
+  - table: shipment_profiles
+    roles: [discrim]
+    phrasing: spoken
+    q: 有沒有哪些出貨是中途改過地址的？改的原因是什麼？
+  - table: shipment_profiles
+    roles: [multi_col]
+    phrasing: terse
+    q: 材積重大於實際重量的出貨，各自的外箱型式、長寬高與拆成幾箱是多少？
+  - tables: [shipment_profiles, product_profiles]
+    roles: [multi_col, two_wide, discrim]
+    phrasing: spoken
+    q: 商品本身標成易碎品的，實際出貨的時候外箱有沒有貼易碎標籤、用什麼緩衝材、封箱方式是什麼？
+
+  # ---- review_profiles ----
+  - table: review_profiles
+    roles: [multi_col]
+    phrasing: terse
+    q: 列出被隱藏的評價，其隱藏原因、檢舉次數、主要檢舉事由、審核狀態與審核人員。
+  - table: review_profiles
+    roles: [multi_col, discrim]
+    phrasing: spoken
+    q: 那些拿了回饋才寫的評價，是給什麼回饋、附幾張照片、被按幾次有幫助、情緒標記是什麼？
+  - table: review_profiles
+    roles: [discrim]
+    phrasing: spoken
+    q: 有沒有評價是收到貨超過三十天才寫的？
+  - table: review_profiles
+    roles: [multi_col]
+    phrasing: terse
+    q: 被選為精選的評價，其標題、內文字數、張貼裝置、評價語言與是否已驗證購買各是什麼？
+
+  # ---- payment_profiles ----
+  - table: payment_profiles
+    roles: [multi_col]
+    phrasing: terse
+    q: 列出所有遭到退刷的付款，其退刷時間、退刷事由、爭議處理狀態與爭議結案時間。
+  - table: payment_profiles
+    roles: [multi_col, discrim]
+    phrasing: spoken
+    q: 用國外的卡付款的有哪幾筆？我想知道卡別、發卡銀行、發卡國別跟交易幣別。
+  - table: payment_profiles
+    roles: [multi_col]
+    phrasing: terse
+    q: 分期付款的訂單，各自分幾期、是不是零利率、第一期扣款日與收單機構是什麼？
+  - table: payment_profiles
+    roles: [discrim]
+    phrasing: spoken
+    q: 有哪些付款到現在還沒跟對帳單勾稽完成？
+  - tables: [payment_profiles, order_profiles]
+    roles: [multi_col, two_wide]
+    phrasing: spoken
+    q: 用手機下單而且有通過 3D 驗證的那些付款，是走哪個金流閘道、回應碼是什麼、授權時間跟請款時間各是什麼時候？
+
+  # ---- support_ticket_profiles ----
+  - table: support_ticket_profiles
+    roles: [multi_col]
+    phrasing: terse
+    q: 列出超過承諾回應時間的工單，其受理管道、一級分類、第一次回覆花了幾分鐘、承諾上限與逾時原因。
+  - table: support_ticket_profiles
+    roles: [multi_col, discrim]
+    phrasing: spoken
+    q: 有被主管介入處理的工單，是誰承辦的、轉手幾次、升級到第幾層、升級給誰？
+  - table: support_ticket_profiles
+    roles: [discrim]
+    phrasing: spoken
+    q: 有哪些工單結案之後又被客戶重新開啟過？
+  - tables: [support_ticket_profiles, customer_profiles]
+    roles: [multi_col, two_wide, discrim]
+    phrasing: spoken
+    q: 受理當下被標記要優先處理的那些工單，客戶現在的會員等級是什麼？工單的承辦團隊、結案方式跟滿意度選項又是什麼？
+
+  # ---- subscription_profiles ----
+  - table: subscription_profiles
+    roles: [multi_col]
+    phrasing: terse
+    q: 列出目前暫停中的訂閱，其暫停時間、暫停原因、排定復訂日、累計暫停次數與方案允許的單次暫停天數上限。
+  - table: subscription_profiles
+    roles: [multi_col, discrim]
+    phrasing: spoken
+    q: 從試用轉成付費的那些訂閱，是透過什麼管道轉的？試用了幾天、現在計費週期是什麼、每月多少錢？
+  - table: subscription_profiles
+    roles: [discrim]
+    phrasing: spoken
+    q: 有哪些訂閱扣款失敗過？最近一次失敗的原因是什麼？
+  - table: subscription_profiles
+    roles: [multi_col]
+    phrasing: terse
+    q: 已取消的訂閱，其取消時間、取消原因、取消時填寫的意見、累計扣款期數與是否已列入招回名單各是什麼？
+
+  # ---- promotion_profiles ----
+  - table: promotion_profiles
+    roles: [multi_col]
+    phrasing: terse
+    q: 列出不可與其他優惠疊加的檔期，其適用範圍、疊加優先序、是否不可再輸入券碼與是否不可用禮物卡折抵。
+  - table: promotion_profiles
+    roles: [multi_col, discrim]
+    phrasing: spoken
+    q: 哪幾檔活動的預算已經用完了？用完的時間、預算上限、已折抵多少、被用了幾次分別是多少？
+  - table: promotion_profiles
+    roles: [multi_col]
+    phrasing: terse
+    q: 需要輸入代碼才生效的檔期，其主標文案、副標文案、呈現版位、角標文字與活動頁網址是什麼？
+  - tables: [promotion_profiles, campaign_profiles]
+    roles: [multi_col, two_wide]
+    phrasing: spoken
+    q: 掛在首頁橫幅的檔期活動，跟同期的廣告投放比一比：檔期的最低訂單門檻跟折抵上限是多少，廣告那邊的受眾名稱跟版位設定又是什麼？
+
+  # ---- return_profiles ----
+  - table: return_profiles
+    roles: [multi_col]
+    phrasing: terse
+    q: 列出檢驗結果不符合退貨條件的退貨單，其退貨主因、檢驗人員、包裝狀況、缺少的配件與後續處置方式。
+  - table: return_profiles
+    roles: [multi_col, discrim]
+    phrasing: spoken
+    q: 有哪些退貨是判給物流商責任的？判定說明、退回物流商、幾天到倉、收到的倉庫分別是什麼？
+  - table: return_profiles
+    roles: [discrim]
+    phrasing: spoken
+    q: 有沒有客人是超過可退期限才申請退貨的，最後還是讓他退了？
+  - table: return_profiles
+    roles: [multi_col]
+    phrasing: terse
+    q: 換貨處理的退貨單，其換成的商品、換貨寄出時間、補償方式、補償說明與是否為專案通融各是什麼？
