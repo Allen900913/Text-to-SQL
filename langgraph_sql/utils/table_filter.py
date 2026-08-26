@@ -175,7 +175,8 @@ def _warn_if_candidate_n_binds(n_tables: int) -> None:
     )
 
 
-def format_catalog(tables: list[str], shuffle_seed: int | None = None) -> str:
+def format_catalog(tables: list[str], shuffle_seed: int | None = None,
+                   query: str | None = None) -> str:
     """候選清單。
 
     ⚠️ shuffle_seed=None（照相似度排名）是**舊行為，已被實測否決**。
@@ -191,12 +192,21 @@ def format_catalog(tables: list[str], shuffle_seed: int | None = None) -> str:
     production 走的是 table_retriever，它用問題的 CRC32 當 seed ——
     同一題永遠同一種順序（可重現、可除錯），不同題順序不同（不固化成新偏誤）。
     這裡保留 None 是為了讓評估程式能跑「固定順序」這個對照組。
+
+    `query` 給了才會加「本題可能相關的欄位」那一行（§2.7f）。預設 None ——
+    評估程式要跑「沒有欄位提示」的對照臂時不必改任何東西。
     """
     briefs = get_table_briefs()
     if shuffle_seed is not None:
         tables = list(tables)
         random.Random(shuffle_seed).shuffle(tables)
-    return "\n".join(f"- {t}: {briefs.get(t, '')}" for t in tables)
+    hints = {}
+    if query:
+        # 在函式內 import：column_hints → embedding → config 這條鏈與 table_filter
+        # 無關，但 table_filter 是 table_retriever 的相依，放頂層會讓相依圖更難讀。
+        from langgraph_sql.utils.column_hints import hints_for
+        hints = hints_for(query, list(tables))
+    return "\n".join(f"- {t}: {briefs.get(t, '')}{hints.get(t, '')}" for t in tables)
 
 
 def _json_arrays(raw: str) -> list[list]:
@@ -258,7 +268,8 @@ def filter_tables(query: str, candidates: list[str],
         llm_filter,
         [{"role": "system", "content": _SYSTEM_PROMPT},
          {"role": "user", "content": _USER_TEMPLATE.format(
-             catalog=format_catalog(candidates, shuffle_seed), query=query)}],
+             catalog=format_catalog(candidates, shuffle_seed, query=query),
+             query=query)}],
         tag="[Filter]",
     )
     if error:

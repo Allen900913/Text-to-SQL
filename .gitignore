@@ -37,3 +37,6 @@ eval_result_*.json
 
 # 離線評估用的欄位向量快取（eval_column_recall.py 自動重建）
 .column_vectors.json
+
+# 候選目錄的欄位提示向量快取（column_hints.py 自動重建，約 24 MB）
+.column_hint_vectors.json

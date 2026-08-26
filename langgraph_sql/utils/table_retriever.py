@@ -54,12 +54,16 @@ from sqlalchemy import text
 from langgraph_sql.config import MYSQL_URI, NVIDIA_API_KEY
 from langgraph_sql.utils.db_manager import get_db_manager
 from langgraph_sql.utils.schema_graph import find_join_path
+from langgraph_sql.utils.embedding import EMBED_MODEL, EMBED_URL  # noqa: F401
+# 2026-08-26：嵌入的實作搬到 embedding.py（column_hints 也要用，留在這裡會循環）。
+# 這三個底線名字**刻意保留**再匯出 —— eval/ 底下多支腳本直接 import 它們。
+from langgraph_sql.utils.embedding import cosine as _cosine  # noqa: F401
+from langgraph_sql.utils.embedding import doc_hash as _doc_hash  # noqa: F401
+from langgraph_sql.utils.embedding import embed as _embed  # noqa: F401
+from langgraph_sql.utils.embedding import embed_query as _embed_query
 from langgraph_sql.utils.table_filter import (
     filter_tables, get_candidate_n, get_table_briefs,
 )
-
-EMBED_URL = "https://integrate.api.nvidia.com/v1/embeddings"
-EMBED_MODEL = "nvidia/nemotron-3-embed-1b"
 
 # LLM 選表那一層失效時的退路（也是 eval_retrieval 量基準時用的設定）。
 # 多一個錨點在 KMB 裡不只是多一張表 —— 它會把整條路徑拉進來，
@@ -185,24 +189,6 @@ def build_table_documents() -> dict[str, str]:
         return _docs
 
 
-def _doc_hash(doc: str) -> str:
-    return hashlib.sha256(doc.encode("utf-8")).hexdigest()[:16]
-
-
-def _embed(texts: list[str], kind: str) -> list[list[float]]:
-    """呼叫 NIM embedding。kind 是 'passage'（文件）或 'query'（問題）。"""
-    headers = {"Authorization": f"Bearer {NVIDIA_API_KEY}",
-               "Accept": "application/json"}
-    out: list[list[float]] = []
-    for i in range(0, len(texts), 32):
-        resp = requests.post(EMBED_URL, headers=headers, timeout=60, json={
-            "input": texts[i:i + 32], "model": EMBED_MODEL, "input_type": kind,
-            "encoding_format": "float", "truncate": "END",
-        })
-        resp.raise_for_status()
-        data = sorted(resp.json()["data"], key=lambda d: d["index"])
-        out += [d["embedding"] for d in data]
-    return out
 
 
 def get_table_vectors() -> dict[str, list[float]]:
@@ -243,18 +229,13 @@ def get_table_vectors() -> dict[str, list[float]]:
         return _vectors
 
 
-def _cosine(a: list[float], b: list[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
-    na = math.sqrt(sum(x * x for x in a))
-    nb = math.sqrt(sum(y * y for y in b))
-    return dot / (na * nb) if na and nb else 0.0
 
 
 def rank_tables(query: str) -> list[tuple[str, float]]:
     """所有表依語意相似度排序，高分在前。失敗時回傳空陣列。"""
     try:
         vectors = get_table_vectors()
-        qvec = _embed([query], "query")[0]
+        qvec = _embed_query(query)
     except Exception as e:
         log.warning(f"[Retriever] 嵌入失敗（{type(e).__name__}: {e}），退回全表")
         return []
