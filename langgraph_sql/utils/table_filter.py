@@ -62,7 +62,9 @@ LLM 偶爾會漏掉問題裡明講的主體（#91「商品種類數最多」漏 
 API 掛掉，都不該讓這一題答不出來。這一層是加分項，不是單點故障。
 """
 import json
+import os
 import random
+import re
 import threading
 
 from loguru import logger as log
@@ -135,8 +137,85 @@ _USER_TEMPLATE = """可用的資料表：
 選出回答這個問題必須用到的表。"""
 
 
+# 「關係宣告」句：註解裡點名另一張表的那一句，例如
+#     shipment_profiles「…出貨倉庫與到貨時間在 shipments，每一次上門派送在 delivery_attempts」
+# 全庫有 38 句這種話，其中 13 句在 *_profiles 上。
+_REL_SENT = re.compile(r"[。;；]|——")
+_REL_NAMES = re.compile(r"在 ([a-z_]{3,})")
+
+# 只對寬表生效 —— 這是**被量到的範圍**。另外 25 句落在非寬表上，未量測。
+_REL_SCOPE = "_profiles"
+
+# **預設 keep = 關閉**（2026-08-26 全庫六輪配對驗收，見 _strip_relations()）。
+# 用環境變數開，才能在**不改程式碼**的前提下跑 A/B ——
+# 改常數再跑一次會讓兩次量測落在不同的 commit 上，事後分不清差異來自哪裡。
+#     BRIEF_RELATIONS=strip python eval/eval_retrieval.py --funnel
+_STRIP_RELATIONS = os.environ.get("BRIEF_RELATIONS", "keep") == "strip"
+
+
+def _strip_relations(brief: str, known: set[str]) -> str:
+    """丟掉點名了另一張表的句子。**這是分欄，不是刪除**（ARCHITECTURE §2.5）。
+
+    TABLE_COMMENT 仍然是唯一權威來源，也仍然原封不動進 DDL —— `get_ddl()` 走的是
+    `semantic_layer.yaml`（由 tools/gen_ddl.py 從 information_schema 產生），
+    跟這裡完全是兩條路。**這個函式只影響檢索文件與 LLM 選表目錄。**
+
+    **判決：平手，不上線（2026-08-26，全庫 305 題 × 各 3 輪 × 逐題配對）。**
+
+        anchor  變好 14  變差 14  持平 277   符號檢定 p = 0.5747
+        kmb     變好  9  變差  9  持平 287   符號檢定 p = 0.5927
+
+    有一輪撞 429 降級 59 題，拿掉之後結論不變（p = 0.40 / 0.50）；
+    只取乾淨的第 1、3 輪也一樣（p = 0.30 / 0.50）。**14 比 14、9 比 9。**
+
+    ⚠️ **單輪全庫漏斗沒有解析度，別再用它下判斷。** 同一個設定重複執行：
+
+        錨點召回   拆欄臂 n=10   93.4 ~ 96.1%     ← 區間 2.7pp
+                   現行臂 n=5    93.4 ~ 94.8%     ← 區間 1.4pp
+
+    這條路上量到的「+1.0pp」（單輪 A 94.1 → C' 95.1）整個泡在裡面。
+    §5.2 的「單輪評估分不出差異」只對 e2e 寫過，**漏斗也一樣，而且我今天
+    靠單輪漏斗下了三個判斷**（B 首句 −2.0pp、C' +1.0pp、「A 自己 spread 只有 0.3pp」）
+    —— 最後那句是拿兩個樣本當區間，錯得最離譜。
+
+    機制：那句話寫在**正解寬表**上時是在說「主要的東西在母表」，模型就跑去選母表。
+    §2.5 量過它的鏡像 ——「往干擾表加指路標沒有用」（`payment_attempts` 的註解
+    寫著「成功的付款結果在 payments」而完全無效）。**指路標只在指離正解時起作用。**
+
+    ⚠️ **它不是單向的。** 12 題探針上三組全贏（誘餌 3/32→9/32、窄表 34/40→40/40），
+    但全庫一跑就有 4 題退步，而且機制乾淨：`#286`/`#287` 需要
+    `review_profiles` **和** `reviews` 兩張，而被丟掉的正是
+    「星等與評價文字在 reviews」—— **那句話本來就在告訴模型「你還需要母表」**。
+
+        指路標在   → 跑去母表，忘了寬表     #282 #292
+        指路標不在 → 留在寬表，忘了母表     #286 #287
+
+    所以這仍然是 §2.7g 那條軸，只是粒度變了：不是「寬表 vs 窄表」，
+    是**「這一題需要幾張表」**。而配對之後兩端**恰好相抵** —— 這不是巧合，
+    是同一個機制的兩面，跟欄位提示（§2.7f）與第 5 條原則（§2.7g）同一個結局。
+
+    程式碼留著的理由：它是**分欄**這個做法的可運行紀錄。TABLE_COMMENT 一段文字
+    同時當檢索文件、選表目錄與 DDL 註解，三個職務的最佳內容並不相同；
+    這個函式證明了「拆給不同職務看」在實作上是零成本的（DDL 走
+    semantic_layer.yaml，結構上不受影響）。**沒兌現的是收益，不是做法。**
+    """
+    keep = []
+    for part in _REL_SENT.split(brief):
+        part = part.strip()
+        if not part:
+            continue
+        if any(w in known for w in _REL_NAMES.findall(part)):
+            continue
+        keep.append(part)
+    return "。".join(keep)
+
+
 def get_table_briefs() -> dict[str, str]:
-    """{表名: 表註解}。給 LLM 看的候選清單，只有註解，不含欄位。"""
+    """{表名: 表註解}。給 LLM 看的候選清單，只有註解，不含欄位。
+
+    ⚠️ 回傳的**不是**原始 TABLE_COMMENT：寬表的「關係宣告」句已經被
+    `_strip_relations()` 拆掉（見該函式）。DDL 拿到的仍然是完整註解。
+    """
     global _briefs
     if _briefs is not None:
         return _briefs
@@ -147,6 +226,10 @@ def get_table_briefs() -> dict[str, str]:
         with db.engine.connect() as conn:
             rows = conn.execute(text(_TABLE_BRIEF_SQL)).fetchall()
         _briefs = {t.lower(): (c or "").strip() for t, c in rows}
+        if _STRIP_RELATIONS:
+            known = set(_briefs)
+            _briefs = {t: (_strip_relations(b, known) if t.endswith(_REL_SCOPE) else b)
+                       for t, b in _briefs.items()}
         _warn_if_candidate_n_binds(len(_briefs))
         return _briefs
 
