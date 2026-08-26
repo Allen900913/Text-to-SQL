@@ -35,8 +35,21 @@ from langgraph_sql.config import MYSQL_URI
 from langgraph_sql.utils.db_manager import get_db_manager
 from langgraph_sql.utils.embedding import cosine, doc_hash, embed, embed_query
 
-# 每張表在目錄裡列幾個欄位。0 = 關閉這個功能，退回純表註解的舊行為。
-HINT_K = 2
+# 每張表在目錄裡列幾個欄位。**預設 0 = 關閉**，退回純表註解的舊行為。
+#
+# 為什麼預設關掉（2026-08-26 全庫驗收，§2.7f）：17 題探針量到「零退步」，
+# 但那 17 題有樣本偏誤 —— 誘餌四題正是研究最久的題。全庫 305 題一跑就是平手：
+#
+#     A 基準  錨點召回 95.7%  +KMB 97.4%
+#     E 欄位  錨點召回 95.4%  +KMB 97.4%
+#
+# 而且是**雙向**的。n=8 複驗：#282 1/8 → 8/8、#308 2/8 → 7/8、#287 4/8 → 7/8，
+# 但 #94、#100 是 **8/8 → 0/8**。機制查清楚了，見 hints_for() 的說明。
+#
+# 用環境變數覆寫，才能在**不改程式碼**的前提下跑 A/B ——
+# 改常數再跑一次會讓兩次量測落在不同的 commit 上，事後分不清差異來自哪裡。
+#     COLUMN_HINT_K=2 python eval/eval_retrieval.py --funnel
+HINT_K = int(os.environ.get("COLUMN_HINT_K", "0"))
 
 # 沿用 table_retriever 的慣例：專案根目錄的點檔，key 是文件雜湊。
 # **不要**叫 .column_vectors.json —— 那個名字已經被 eval_column_recall.py 佔用。
@@ -129,7 +142,31 @@ def get_column_vectors() -> dict[tuple[str, str], list[float]]:
 
 
 def hints_for(query: str, tables: list[str], k: int = HINT_K) -> dict[str, str]:
-    """{表名: 要接在目錄那一行後面的字串}。任何一步失敗都回空 dict。"""
+    """{表名: 要接在目錄那一行後面的字串}。任何一步失敗都回空 dict。
+
+    **為什麼這個功能預設關閉 —— 失敗機制（2026-08-26）**
+
+    `#94`「找出消費金額高於所在城市平均消費的客戶」8/8 → 0/8。查下去是這樣：
+
+        customer_profiles  0.302  total_spent（累計消費金額（每日結算快照，
+                                  不含最近數日訂單，與即時 SUM(orders.total_amount) 可能不同））
+        customers          0.239  city（居住城市）、name（客戶姓名）
+        orders             0.131  total_amount（訂單總金額）
+
+    模型看到「累計消費金額」就一張表答完，不 JOIN `orders` —— 而
+    `customer_profiles.total_spent` 正是 `seed_customer_profiles` 刻意埋的
+    **快照落後陷阱**（50 位客戶有 27 位與即時值對不上，閘門 [9] 已宣告為刻意）。
+
+    > **欄位提示會把「刻意的陷阱」變成「明顯的捷徑」。**
+
+    注意那段註解**自己就寫著**「與即時 SUM(orders.total_amount) 可能不同」，
+    模型照樣走捷徑 —— 所以這不是「警語寫得不夠」，加更多字沒有用。
+    門檻也切不開：0.302（錯）vs 0.239（對），差距比雜訊還小。
+
+    而修好的那幾題是同一個機制的另一面：寬表**就是**正解時，提示直接命中
+    （`#282` 的 `is_redirected`、`#308` 的 `is_over_policy_window`）。
+    **修好與弄壞來自同一個機制**，所以不存在「只留好處」的參數設定。
+    """
     if k <= 0 or not tables:
         return {}
     try:
