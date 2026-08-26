@@ -94,6 +94,7 @@ def run_filter(questions: list[str], rankings: list[list], workers: int) -> list
     實測 139 題有 13 題拿到空回覆而靜默降級，把召回從 98.6% 拉到看起來像
     97.8%。並行數要保守，而且失敗題數一定要回報給呼叫端。
     """
+    import zlib
     from concurrent.futures import ThreadPoolExecutor
 
     from langgraph_sql.utils.table_filter import filter_tables, get_candidate_n
@@ -102,7 +103,17 @@ def run_filter(questions: list[str], rankings: list[list], workers: int) -> list
 
     def one(pair):
         question, ranking = pair
-        return filter_tables(question, [t for t, _ in ranking[:top_n]])
+        # **shuffle_seed 一定要傳**（2026-08-26 修）。production 走的是
+        # table_retriever.select_tables()，它用 zlib.crc32(query) 打散候選順序 ——
+        # 那是 §2.8 / §10「打散候選順序」的**採用**方案，理由是固定順序與打散順序的
+        # 召回區間完全不重疊（固定 94.8/92.9/93.5、打散 98.1/96.1）。
+        #
+        # 這裡原本沒傳，於是 --funnel 量的是那條**已被否決**的固定順序臂，
+        # 而它是本專案唯一會打 LLM 的檢索評估 —— 也就是說所有 --funnel 的歷史數字
+        # 量的都不是 production。這是 §8 ④「對照組與檢查工具本身也要驗」的又一例：
+        # 評估程式與 production 走了不同的路，而不一致的那一邊不會報錯。
+        return filter_tables(question, [t for t, _ in ranking[:top_n]],
+                             shuffle_seed=zlib.crc32(question.encode("utf-8")))
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         return list(pool.map(one, zip(questions, rankings)))
