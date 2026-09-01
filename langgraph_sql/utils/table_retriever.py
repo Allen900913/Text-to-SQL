@@ -62,7 +62,7 @@ from langgraph_sql.utils.embedding import doc_hash as _doc_hash  # noqa: F401
 from langgraph_sql.utils.embedding import embed as _embed  # noqa: F401
 from langgraph_sql.utils.embedding import embed_query as _embed_query
 from langgraph_sql.utils.table_filter import (
-    filter_tables, get_candidate_n, get_table_briefs,
+    filter_tables, filter_tables_union, get_candidate_n, get_table_briefs,
 )
 
 # LLM 選表那一層失效時的退路（也是 eval_retrieval 量基準時用的設定）。
@@ -323,8 +323,10 @@ def select_tables(
         #
         # seed 用問題的雜湊：同一題永遠得到同一種順序（可重現、可除錯），
         # 不同題的順序不同（不會固化成另一個新的偏誤）。
-        picked = filter_tables(query, candidates,
-                               shuffle_seed=zlib.crc32(query.encode("utf-8")))
+        # seed 的推導搬進 table_filter._vote_seeds()：FILTER_VOTES=1 時它產出的
+        # 第 0 顆就是原本的 crc32(query)，**這條路徑與改動前位元相同**。
+        # FILTER_VOTES>1 時多跑幾票取聯集（見 filter_tables_union）。
+        picked = filter_tables_union(query, candidates)
         if picked:
             # dict.fromkeys 保序去重：LLM 的選擇在前，相似度第 1 名補在後
             anchors = list(dict.fromkeys(picked + ([ranked[0][0]] if ranked else [])))

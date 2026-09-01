@@ -22,7 +22,23 @@
 **燈號**
   紅（exit 1）不一致 + 有 GT 引用 + 沒宣告 —— 有題目正在量一個沒有唯一答案的東西
   黃（exit 0）不一致 + 沒有 GT 引用 + 沒宣告 —— 地雷，下次配題問到就會變紅燈
+  快          customer_profiles 的快照族：比的是 anchor − 30 天的截止值，不是即時值
   綠          一致，或已在 DECLARED 裡寫明理由
+
+**2026-08-26：快照族從「宣告」升級成「檢查」**
+
+`order_count` / `total_spent` 原本寫在 DECLARED 裡（宣告成不檢查），理由是
+「每日結算快照，與即時值本來就不同」。那句話是真的，但它讓兩件事分不開：
+**「刻意落後 30 天」與「根本沒有在算」看起來一模一樣。**
+實測這兩欄剛好等於 anchor − 30 天的截止值（50/50 全中），所以截止點是可驗證的，
+只是從來沒有人驗。改成用截止點檢查之後：
+
+  宣告  只能說「這兩個量本來就不同」
+  檢查  能說「它等於它該等於的那個量」—— 而且下次有人動到快照邏輯會當場報錯
+
+同一批的 total_items_bought / return_count / coupon_used_count / cart_abandon_count
+欄位註解也寫著「（快照）」，值卻是 R.randint(...)。它們被對齊到**同一個截止點**，
+不是對齊到即時值 —— 對齊到即時值會讓同一張表一半欄位是快照、一半是即時。
 
 純 SQL，零 LLM，不寫任何東西進資料庫。
 用法：`.venv/Scripts/python.exe tools/check_derived_consistency.py`
@@ -31,6 +47,7 @@ import io
 import os
 import re
 import sys
+from datetime import timedelta
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
@@ -40,16 +57,53 @@ from loguru import logger as log  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
 from langgraph_sql.config import MYSQL_URI  # noqa: E402
+from langgraph_sql.data_anchor import DATA_ANCHOR_DATETIME  # noqa: E402
 from langgraph_sql.utils.db_manager import get_db_manager  # noqa: E402
+
+# customer_profiles 的快照截止點，與 init_db_ext.seed_customer_profiles 同源。
+SNAPSHOT_LAG_DAYS = 30
+CUTOFF = DATA_ANCHOR_DATETIME - timedelta(days=SNAPSHOT_LAG_DAYS)
+
+# 用截止點檢查的欄位。它們**刻意**與即時值不同，而那個差距本身是 #146/#147/#148
+# 的鑑別力來源 —— 所以下面另外印一段「即時 vs 快照的差距」，差距歸零要有人知道。
+# 已經有腳本負責把它們算出來的欄位（tools/fix_derived_consistency.py 的 FIXES，
+# 以及 add_wide_tables*.py 的 derive_from_parents）。
+#
+# **這些欄位不再是黃燈候選：不一致就是紅燈，不管有沒有題目引用。**
+# 黃燈的語意是「還沒有人負責這一欄」，而這些欄位已經有人負責了 ——
+# 它們對不上只有一個意思：**那一步沒有跑**（重建資料庫之後忘了跑對齊）。
+# 這正是 §8 ① 那個形狀（寫了沒接到產生鏈），差別在這次有東西會喊。
+DERIVED = {
+    "customer_profiles.total_items_bought",
+    "customer_profiles.return_count",
+    "customer_profiles.coupon_used_count",
+    "customer_profiles.cart_abandon_count",
+    "customer_profiles.last_login_at",
+    "customer_profiles.last_active_at",
+    "review_profiles.reviewer_review_count",
+    "review_profiles.reply_count",
+    "review_profiles.has_merchant_reply",
+    "support_ticket_profiles.prior_ticket_count",
+    "return_profiles.is_over_policy_window",
+    "shipment_profiles.attempt_count",
+    "product_profiles.image_count",
+    "promotion_profiles.used_count",
+}
+
+SNAPSHOT = {
+    "customer_profiles.order_count",
+    "customer_profiles.total_spent",
+    "customer_profiles.total_items_bought",
+    "customer_profiles.return_count",
+    "customer_profiles.coupon_used_count",
+    "customer_profiles.cart_abandon_count",
+}
 
 # 已宣告的刻意不一致。要進這份名單，理由必須是「這兩個量本來就不同」，
 # 不能是「對齊起來很麻煩」。沒宣告的不一致一律當缺陷處理。
 DECLARED = {
-    "customer_profiles.order_count":
-        "快照落後 30 天。init_db_ext.seed_customer_profiles 的 docstring 寫明"
-        "「實測 50 位有 27 位對不上，這是刻意的」，本掃描量到的正是 27。",
-    "customer_profiles.total_spent":
-        "同上，快照落後 30 天。",
+    # customer_profiles.order_count / total_spent 已於 2026-08-26 從這裡移出 ——
+    # 它們現在用截止點**檢查**（見 SNAPSHOT），不再是宣告的例外。
     "review_profiles.days_after_delivery":
         "reviews 沒有 order_id，評價對到哪一次到貨無法還原 —— 134 則裡 97 則連得上，"
         "其中 10 則連到 2~3 個不同到貨日（取最早 22 列、取最晚 19 列）。"
@@ -67,14 +121,16 @@ DECLARED = {
 # 也就不可能不一致、不可能誤導模型；列進來只會製造假紅燈。
 CHECKS = [
     # ---- customer_profiles：素材最齊，欄位最多（57 欄）----
-    ("customer_profiles.order_count", "COUNT(orders)", """
+    ("customer_profiles.order_count", "COUNT(orders WHERE order_date<=截止點)", """
      SELECT SUM(p.order_count=d.n), COUNT(*), SUM(p.order_count), SUM(d.n)
-     FROM customer_profiles p JOIN (SELECT c.id cid, COUNT(o.id) n FROM customers c
+     FROM customer_profiles p JOIN (SELECT c.id cid,
+       COALESCE(SUM(o.order_date<=:cut),0) n FROM customers c
        LEFT JOIN orders o ON o.customer_id=c.id GROUP BY c.id) d ON d.cid=p.customer_id
      WHERE p.order_count IS NOT NULL"""),
-    ("customer_profiles.total_spent", "SUM(orders.total_amount)", """
+    ("customer_profiles.total_spent", "SUM(orders.total_amount WHERE order_date<=截止點)", """
      SELECT SUM(ABS(p.total_spent-d.s)<0.01), COUNT(*), ROUND(SUM(p.total_spent)), ROUND(SUM(d.s))
-     FROM customer_profiles p JOIN (SELECT c.id cid, COALESCE(SUM(o.total_amount),0) s
+     FROM customer_profiles p JOIN (SELECT c.id cid,
+       COALESCE(SUM(CASE WHEN o.order_date<=:cut THEN o.total_amount END),0) s
        FROM customers c LEFT JOIN orders o ON o.customer_id=c.id GROUP BY c.id) d
        ON d.cid=p.customer_id WHERE p.total_spent IS NOT NULL"""),
     ("customer_profiles.first_order_at", "MIN(orders.order_date)", """
@@ -96,15 +152,17 @@ CHECKS = [
      SELECT SUM(ABS(p.avg_review_score-d.a)<0.05), COUNT(*), NULL, NULL
      FROM customer_profiles p JOIN (SELECT customer_id cid, AVG(rating) a FROM reviews
        GROUP BY customer_id) d ON d.cid=p.customer_id WHERE p.avg_review_score IS NOT NULL"""),
-    ("customer_profiles.return_count", "COUNT(order_returns via orders)", """
+    ("customer_profiles.return_count", "COUNT(order_returns WHERE requested_at<=截止點)", """
      SELECT SUM(p.return_count=d.n), COUNT(*), SUM(p.return_count), SUM(d.n)
-     FROM customer_profiles p JOIN (SELECT c.id cid, COUNT(orr.id) n FROM customers c
+     FROM customer_profiles p JOIN (SELECT c.id cid,
+       COALESCE(SUM(orr.requested_at<=:cut),0) n FROM customers c
        LEFT JOIN orders o ON o.customer_id=c.id
        LEFT JOIN order_returns orr ON orr.order_id=o.id GROUP BY c.id) d
        ON d.cid=p.customer_id WHERE p.return_count IS NOT NULL"""),
-    ("customer_profiles.total_items_bought", "SUM(order_items.quantity)", """
+    ("customer_profiles.total_items_bought", "SUM(order_items.quantity WHERE order_date<=截止點)", """
      SELECT SUM(p.total_items_bought=d.n), COUNT(*), SUM(p.total_items_bought), SUM(d.n)
-     FROM customer_profiles p JOIN (SELECT c.id cid, COALESCE(SUM(oi.quantity),0) n
+     FROM customer_profiles p JOIN (SELECT c.id cid,
+       COALESCE(SUM(CASE WHEN o.order_date<=:cut THEN oi.quantity END),0) n
        FROM customers c LEFT JOIN orders o ON o.customer_id=c.id
        LEFT JOIN order_items oi ON oi.order_id=o.id GROUP BY c.id) d
        ON d.cid=p.customer_id WHERE p.total_items_bought IS NOT NULL"""),
@@ -113,21 +171,29 @@ CHECKS = [
      FROM customer_profiles p JOIN (SELECT c.id cid, COUNT(b.id) n FROM customers c
        LEFT JOIN browse_logs b ON b.customer_id=c.id GROUP BY c.id) d
        ON d.cid=p.customer_id WHERE p.browse_count IS NOT NULL"""),
-    ("customer_profiles.last_login_at", "MAX(customer_login_logs.logged_in_at)", """
+    # 只算成功的登入：失敗的嘗試不是「登入過」。50 位客戶都有成功紀錄，不會產生 NULL。
+    ("customer_profiles.last_login_at", "MAX(customer_login_logs WHERE success=1)", """
      SELECT SUM(DATE(p.last_login_at)=DATE(d.m)), COUNT(*), NULL, NULL
      FROM customer_profiles p JOIN (SELECT customer_id cid, MAX(logged_in_at) m
-       FROM customer_login_logs GROUP BY customer_id) d ON d.cid=p.customer_id
+       FROM customer_login_logs WHERE success=1 GROUP BY customer_id) d ON d.cid=p.customer_id
      WHERE p.last_login_at IS NOT NULL"""),
-    ("customer_profiles.coupon_used_count", "COUNT(coupon_redemptions)", """
+    # 同列相依：它吃 last_login_at 當輸入，所以那一欄一動就必須跟著重算。
+    ("customer_profiles.last_active_at", "GREATEST(last_order_at, last_review_at, last_login_at)", """
+     SELECT SUM(p.last_active_at = GREATEST(p.last_login_at,
+                  COALESCE(p.last_order_at,p.last_login_at),
+                  COALESCE(p.last_review_at,p.last_login_at))), COUNT(*), NULL, NULL
+     FROM customer_profiles p WHERE p.last_active_at IS NOT NULL"""),
+    ("customer_profiles.coupon_used_count", "COUNT(coupon_redemptions WHERE redeemed_at<=截止點)", """
      SELECT SUM(p.coupon_used_count=d.n), COUNT(*), SUM(p.coupon_used_count), SUM(d.n)
-     FROM customer_profiles p JOIN (SELECT c.id cid, COUNT(cr.id) n FROM customers c
+     FROM customer_profiles p JOIN (SELECT c.id cid,
+       COALESCE(SUM(cr.redeemed_at<=:cut),0) n FROM customers c
        LEFT JOIN coupon_redemptions cr ON cr.customer_id=c.id GROUP BY c.id) d
        ON d.cid=p.customer_id WHERE p.coupon_used_count IS NOT NULL"""),
-    ("customer_profiles.cart_abandon_count", "COUNT(carts WHERE is_abandoned)", """
+    ("customer_profiles.cart_abandon_count", "COUNT(carts WHERE is_abandoned AND created_at<=截止點)", """
      SELECT SUM(p.cart_abandon_count=d.n), COUNT(*), SUM(p.cart_abandon_count), SUM(d.n)
      FROM customer_profiles p JOIN (SELECT c.id cid,
-       COALESCE(SUM(ca.is_abandoned),0) n FROM customers c
-       LEFT JOIN carts ca ON ca.customer_id=c.id GROUP BY c.id) d
+       COALESCE(SUM(CASE WHEN ca.created_at<=:cut THEN ca.is_abandoned END),0) n
+       FROM customers c LEFT JOIN carts ca ON ca.customer_id=c.id GROUP BY c.id) d
        ON d.cid=p.customer_id WHERE p.cart_abandon_count IS NOT NULL"""),
     ("customer_profiles.avg_order_value", "total_spent / order_count（同列）", """
      SELECT SUM(ABS(p.avg_order_value-p.total_spent/NULLIF(p.order_count,0))<0.5), COUNT(*),
@@ -249,6 +315,28 @@ def gt_columns():
     return used
 
 
+def _snapshot_gap(cut):
+    """快照族與即時值的差距 —— 這個差距**就是** #146/#147/#148 的鑑別力。
+
+    上面的檢查保證「快照等於截止點的值」，但它保證不了「快照與即時值不同」。
+    有人把快照對齊到即時值時，檢查照樣全綠，而那三題會靜默失去鑑別力。
+    §7.9 的閘門 [10] 對題目層做過同一件事：**分歧名單變短本身就是警訊。**
+    """
+    sql = """
+      SELECT SUM(p.order_count <> d.live_n), SUM(ABS(p.total_spent-d.live_s)>=0.01), COUNT(*)
+      FROM customer_profiles p JOIN (SELECT c.id cid, COUNT(o.id) live_n,
+        COALESCE(SUM(o.total_amount),0) live_s FROM customers c
+        LEFT JOIN orders o ON o.customer_id=c.id GROUP BY c.id) d ON d.cid=p.customer_id"""
+    with get_db_manager(MYSQL_URI).engine.connect() as c:
+        n_cnt, n_spent, total = c.execute(text(sql)).fetchone()
+    print(f"\n快照落差（刻意的，不是缺陷）：截止點 {cut:%Y-%m-%d}｜"
+          f"order_count 與即時值不同 {int(n_cnt)}/{total} 位｜"
+          f"total_spent 不同 {int(n_spent)}/{total} 位")
+    if not int(n_cnt) or not int(n_spent):
+        print("    !! 落差歸零 —— #146/#147/#148 正在量一個沒有落差的東西，"
+              "要嘛快照被誰對齊掉了，要嘛那三題該退役")
+
+
 def main():
     log.remove()
     used = gt_columns()
@@ -257,17 +345,17 @@ def main():
         print(f"{'':2s}{'欄位':50s} {'一致/可對照':>13s}  {'兩側合計':>17s}  引用")
         print("-" * 106)
         for name, how, sql in CHECKS:
-            agree, total, ps, ds = c.execute(text(sql)).fetchone()
+            agree, total, ps, ds = c.execute(text(sql), {"cut": CUTOFF}).fetchone()
             agree, total = int(agree or 0), int(total or 0)
             rate = agree / total if total else 0.0
             qs = used.get(name.split(".")[1], [])
             sums = f"{int(ps):>8}/{int(ds):<8}" if ps is not None else " " * 17
             if rate == 1.0:
-                mark, ok = "  ", ok + 1
+                mark, ok = ("快" if name in SNAPSHOT else "  "), ok + 1
             elif name in DECLARED:
                 mark = "宣"
                 declared.append(name)
-            elif qs:
+            elif qs or name in DERIVED:
                 mark = "紅"
                 red.append((name, how, agree, total, qs))
             else:
@@ -284,12 +372,14 @@ def main():
         for name, how, a, t in sorted(yellow, key=lambda x: x[2] / max(x[3], 1)):
             print(f"    {name:48s} {a}/{t}   ← {how}")
     if red:
-        print("\n紅燈 —— 有題目在量一個沒有唯一答案的東西。"
-              "三選一：對齊資料 / 收窄問句 / 寫進 DECLARED 說明為什麼兩個量本來就不同：")
+        print("\n紅燈 —— 有題目在量一個沒有唯一答案的東西，或衍生步驟沒有跑。"
+              "先跑 `python tools/fix_derived_consistency.py --apply`；"
+              "還是不一致才是真缺陷，三選一：對齊資料 / 收窄問句 / 寫進 DECLARED：")
         for name, how, a, t, qs in sorted(red, key=lambda x: x[2] / max(x[3], 1)):
             print(f"    {name:48s} {a}/{t}   ← {how}\n"
                   f"    {'':48s} 題號 {qs}")
         sys.exit(1)
+    _snapshot_gap(CUTOFF)
     print("\n閘門 [9] 綠燈：沒有「有題目引用且未宣告」的矛盾欄位。")
 
 

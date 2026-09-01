@@ -66,6 +66,8 @@ import os
 import random
 import re
 import threading
+import zlib
+from concurrent.futures import ThreadPoolExecutor
 
 from loguru import logger as log
 from sqlalchemy import text
@@ -128,6 +130,34 @@ _SYSTEM_PROMPT = """你是資料庫查詢的表選擇器。使用者問了一個
 
 輸出格式：只輸出一個 JSON 陣列，每個元素是 {"table": "表名", "reason": "為什麼這題需要它"}。
 reason 用一句話說明。不要輸出 JSON 以外的任何文字。"""
+
+# 「先寫草稿再選表」——RSL-SQL 那條 backward linking 的廉價版（不多花一次呼叫）。
+#
+# 為什麼可能有用：直接問「要哪些表」時，模型答得出「客戶、訂單、訂單明細」就
+# 覺得夠了；但真的動手寫 `WHERE p.name = '原子習慣'` 時，products 是躲不掉的。
+# 漏斗逐題拆開來看，+KMB 之後仍失手的題有一整類是這個形狀（#21 書名住
+# products.name、#62 單價住 products.price）——**LLM 選表時想不到，寫 SQL 時會發現**。
+#
+# ⚠️ **射程邊界：草稿只看得到表註解，看不到欄位。** 所以它吃得到「值住在哪張表」
+# （表註解會說 products 是商品主檔），吃不到「屬性藏在第三張表的欄位註解裡」——
+# #127「已經停產」寫在 product_specs 的欄位註解上，草稿無從得知。那一類要的是
+# 完整版（多一次呼叫、餵候選 40 張表的 DDL），成本完全不同，不在這個旋鈕裡。
+#
+# 預設關閉，用環境變數開：FILTER_DRAFT=1
+_SYSTEM_PROMPT_DRAFT = _SYSTEM_PROMPT.replace(
+    '輸出格式：只輸出一個 JSON 陣列',
+    """先做一件事再輸出：用一兩行寫出你會怎麼查的 SQL 草稿。草稿不必正確、不必能執行，
+目的是逼你把「這題實際要碰哪些資料」寫出來 —— 特別是問題裡出現的具體名稱、
+數值條件要拿去比對哪一張表的哪個欄位。寫完草稿，再回頭看你的草稿碰到了哪些表。
+
+輸出格式：先寫草稿，然後輸出一個 JSON 陣列""")
+
+FILTER_DRAFT = os.environ.get("FILTER_DRAFT", "0") == "1"
+
+
+def _system_prompt() -> str:
+    """這一題用哪一份 system prompt。預設是原本那份，位元相同。"""
+    return _SYSTEM_PROMPT_DRAFT if FILTER_DRAFT else _SYSTEM_PROMPT
 
 _USER_TEMPLATE = """可用的資料表：
 {catalog}
@@ -337,6 +367,92 @@ def _parse_selection(raw: str, allowed: set[str]) -> list[str]:
     return []
 
 
+# 選表要投幾票。**預設 3 = 聯集投票（2026-08-28 通過 e2e 驗收後上線，見 §2.7i）**。
+# 設回 1 就是位元相同的舊行為（votes=1 走的是與原本完全相同的那一顆 seed），
+# 對照臂契約由 scratchpad/pool_check.py 的 PC4 守住：
+#
+#     FILTER_VOTES=1 python eval/eval_retrieval.py --funnel   # 舊行為（對照）
+#
+# 為什麼是聯集不是多數決：這一層的錯是**單向**的 —— 漏一張表這題就死了，
+# 多一張表只是 Prompt 長一點。§7.x 逐題拆開看，+KMB 之後仍失手的題分成
+# 「三輪都漏同一張」（穩定）與「三輪漏一次兩次」（硬幣）兩群，聯集只動得了
+# 後者。多數決會把硬幣題的少數正確票丟掉，剛好丟掉唯一有價值的那一票。
+#
+# 上線的帳（§2.7i）：漏斗 +KMB 97.1% → 98.5%（9 救 0 丟，p=0.0020）、
+# e2e 逐題配對 7 救 0 丟（p=0.0156，只算兩臂表集合真的不同的 173 組配對）、
+# 防禦題 6 格全部 4/4。代價是**選表呼叫 1 → 3 次/題**（三票平行，延遲不變，
+# 但配額吃三倍）與**進 Prompt 的表 2.35 → 2.57 張（+9.4%）**。
+FILTER_VOTES = int(os.environ.get("FILTER_VOTES", "3"))
+VOTE_POOL = int(os.environ.get("FILTER_VOTE_POOL", "0"))  # 0=每票一執行緒；1=序列
+
+# 死票計數 —— **這道護欄是拿一場災難換來的。**
+# few-shot 那次全庫兩臂比較，B 臂第 2 輪撞上 rate limit，288/309 題整個掛掉，
+# 而過程中沒有任何東西喊停；要不是總分低到不可能，那一輪會被當成有效資料。
+# 投票制把這個風險放大三倍：一票死掉時 filter_tables_union 仍然回得出東西，
+# B 臂會**安靜地退化成 A 臂**，而退化的方向剛好是「效果變小」——
+# 也就是說限流會偽裝成「這個改動沒有用」。所以要能事後查驗有多少票是死的。
+VOTE_TALLY = {"cast": 0, "dead": 0, "questions": 0, "degraded": 0}
+_tally_lock = threading.Lock()
+
+
+def reset_vote_tally() -> dict:
+    """取出並歸零。評估程式每一輪呼叫一次，把死票率跟那一輪的分數存在一起。"""
+    global VOTE_TALLY
+    with _tally_lock:
+        old, VOTE_TALLY = dict(VOTE_TALLY), {"cast": 0, "dead": 0, "questions": 0, "degraded": 0}
+    return old
+
+
+def _vote_seeds(query: str, votes: int) -> list[int]:
+    """每一票一顆 seed。**第 0 顆必須等於原本的 crc32(query)。**
+
+    production 原本用 `crc32(query)` 當打散 seed（§7.12：固定順序 vs 打散，
+    兩組區間不重疊）。同一顆 seed 重跑只會拿到 MoE 那一點分歧；換 seed 會換
+    整個候選順序，也就換掉位置偏誤的落點 —— 那才是這幾票該有的獨立性來源。
+    """
+    return [zlib.crc32((query if i == 0 else f"{query}#{i}").encode("utf-8"))
+            for i in range(votes)]
+
+
+def filter_tables_union(query: str, candidates: list[str],
+                        votes: int | None = None) -> list[str]:
+    """跑 `votes` 次選表，取**聯集**。votes=1 時等同直接呼叫 filter_tables。
+
+    降級契約不變：某一票掛掉就當它沒投，其餘照算；全部掛掉才回空陣列，
+    呼叫端仍然退回相似度。**一票失敗不會讓這一題答不出來。**
+    """
+    votes = FILTER_VOTES if votes is None else votes
+    seeds = _vote_seeds(query, max(1, votes))
+
+    # VOTE_POOL<=0：每票一條執行緒（現行）。設成 1 就是序列投票。
+    # 加這個旋鈕是因為 2026-08-27 那次漏斗 A/B 被 429 打爛：votes=3 × workers=2
+    # 等於 6 個並發選表呼叫，再加重試，配額直接見底。concurrency 不是限流的
+    # 成因（RPM 才是），但序列化是唯一不必先知道 RPM 上限就能壓住它的手段。
+    pool_n = len(seeds) if VOTE_POOL <= 0 else min(VOTE_POOL, len(seeds))
+    if pool_n <= 1:
+        ballots = [filter_tables(query, candidates, shuffle_seed=sd) for sd in seeds]
+    else:
+        with ThreadPoolExecutor(max_workers=pool_n) as pool:
+            ballots = list(pool.map(
+                lambda sd: filter_tables(query, candidates, shuffle_seed=sd), seeds))
+
+    merged: list[str] = []
+    for b in ballots:
+        for t in b:
+            if t not in merged:
+                merged.append(t)
+    dead = sum(1 for b in ballots if not b)
+    if dead and len(seeds) > 1:
+        log.warning(f"[Filter] {len(seeds)} 票裡有 {dead} 票失效，用剩下的取聯集")
+    with _tally_lock:
+        VOTE_TALLY["cast"] += len(seeds)
+        VOTE_TALLY["dead"] += dead
+        VOTE_TALLY["questions"] += 1
+        if dead:
+            VOTE_TALLY["degraded"] += 1
+    return merged
+
+
 def filter_tables(query: str, candidates: list[str],
                   shuffle_seed: int | None = None) -> list[str]:
     """
@@ -349,7 +465,7 @@ def filter_tables(query: str, candidates: list[str],
     allowed = {t.lower() for t in candidates}
     content, error = invoke_with_retry(
         llm_filter,
-        [{"role": "system", "content": _SYSTEM_PROMPT},
+        [{"role": "system", "content": _system_prompt()},
          {"role": "user", "content": _USER_TEMPLATE.format(
              catalog=format_catalog(candidates, shuffle_seed, query=query),
              query=query)}],

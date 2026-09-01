@@ -596,6 +596,12 @@ def derive_from_parents(conn, data: dict[str, list[dict]]) -> list[str]:
     **必須留在原地**，少抽一次整條亂數序列就會平移，30 題 GT 全毀。
     這裡覆寫的是產生出來的值，抽樣次數一次都沒變。
 
+    **customer_profiles 的同類欄位不在這裡，也不在 init_db_ext 裡**：它要的母表
+    （customer_login_logs、coupon_redemptions）是 init_db.py 跑完之後才由
+    add_distractor_tables.py 建的，seed_customer_profiles 執行時根本還不存在。
+    那 6 欄由 tools/fix_derived_consistency.py 負責，而閘門 [9] 的 DERIVED 名單
+    會在「重建了卻忘記跑對齊」時亮紅燈。
+
     只收「母表唯一決定」的欄位。review_profiles.days_after_delivery 不在這裡 ——
     reviews 沒有 order_id，評價對到哪一次到貨無法還原，母表算不出唯一答案，
     所以那一欄就是真相來源，改的是 #287 的問句（收窄到「評價內容檔案上登記的」）。
@@ -613,12 +619,44 @@ def derive_from_parents(conn, data: dict[str, list[dict]]) -> list[str]:
         ("promotion_profiles", "used_count",
          "SELECT pr.id, COUNT(op.id) FROM promotions pr "
          "LEFT JOIN order_promotions op ON op.promotion_id = pr.id GROUP BY pr.id"),
+        # ---- 2026-08-26 第二輪：閘門 [9] 的黃燈（§7.9）----
+        ("review_profiles", "reply_count",
+         "SELECT r.id, COUNT(rr.id) FROM reviews r "
+         "LEFT JOIN review_replies rr ON rr.review_id = r.id GROUP BY r.id"),
+        ("support_ticket_profiles", "prior_ticket_count",
+         "SELECT t1.id, COUNT(t2.id) FROM support_tickets t1 "
+         "LEFT JOIN support_tickets t2 ON t2.customer_id = t1.customer_id "
+         "AND t2.created_at < t1.created_at GROUP BY t1.id"),
     ):
         real = dict(q(sql))
         moved = sum(1 for k, r in idx[table].items() if r[col] != real.get(k, 0))
         for k, r in idx[table].items():
             r[col] = real.get(k, 0)
         out.append(f"{table}.{col}：{moved} 列改為母表實數，合計 {sum(real.values())}")
+
+    # 這位客戶累計寫過幾則評價：review_id → reviews.customer_id，路徑唯一。
+    # 原本是 R.randint(1, 9)，134 則只有 15 則對得上。
+    per_cust = dict(q("SELECT customer_id, COUNT(*) FROM reviews GROUP BY customer_id"))
+    cust_of = dict(q("SELECT id, customer_id FROM reviews"))
+    moved = 0
+    for rid, r in idx["review_profiles"].items():
+        want = per_cust.get(cust_of[rid], 0)
+        moved += r["reviewer_review_count"] != want
+        r["reviewer_review_count"] = want
+    out.append(f"review_profiles.reviewer_review_count：{moved} 列改為母表實數")
+
+    # 商家回覆：旗標、次數、時間原本是三個獨立亂數，彼此也對不起來
+    # （旗標 57 列為 1，而 review_replies 只有 33 列）。三欄一起從母表推。
+    reply = {rid: t for rid, t in q(
+        "SELECT review_id, MIN(replied_at) FROM review_replies GROUP BY review_id")}
+    moved = 0
+    for rid, r in idx["review_profiles"].items():
+        want = 1 if rid in reply else 0
+        moved += r["has_merchant_reply"] != want
+        r["has_merchant_reply"] = want
+        r["merchant_reply_at"] = reply.get(rid)
+    n = sum(r["has_merchant_reply"] for r in idx["review_profiles"].values())
+    out.append(f"review_profiles.has_merchant_reply：{moved} 列改為母表實數，有回覆 {n} 則")
 
     # 退貨超期：requested_at 與母表完全相同、return→order 一對一，路徑唯一。
     order_date = dict(q("SELECT orr.id, o.order_date FROM order_returns orr "
