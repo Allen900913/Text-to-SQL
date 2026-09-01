@@ -2026,7 +2026,7 @@ python eval/eval_stability.py --ids <上一行印出的錯題>
 **重建資料庫之後必跑的兩步**（順序不能反）：
 
 ```bash
-python tools/fix_derived_consistency.py --apply   # 對齊（34 條：縱向 16 ＋ 橫向 18）
+python tools/fix_derived_consistency.py --apply   # 對齊（35 條：縱向 14 ＋ 橫向 21）
 python tools/check_derived_consistency.py         # 閘門 [9]：忘了上一步這裡會紅
 python tools/check_predicate_collisions.py        # 閘門 [11]：平行表的同義謂詞
 ```
@@ -3102,7 +3102,7 @@ except Exception:
   三個欄位有兩個說「還在」、一個說「結束了」。
 
 安全性同前兩輪：**只有 UPDATE**，93 張表 12 張指紋變動、**列數 0 變動**，
-`fix_derived_consistency.py` 再跑一次 34 條全部報「要改 0 列」（可重複執行）。
+`fix_derived_consistency.py` 再跑一次 35 條全部報「要改 0 列」（可重複執行）。
 
 #### 掃到、但**不改**的六組（附理由）
 
