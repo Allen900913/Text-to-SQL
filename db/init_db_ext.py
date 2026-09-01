@@ -292,7 +292,7 @@ EXT_DDL = [
         registered_at DATETIME NULL COMMENT '會員系統的註冊時間。與 customers.created_at 是不同系統的紀錄，可能有落差',
         first_order_at DATETIME NULL COMMENT '首次下單時間（快照）',
         last_order_at DATETIME NULL COMMENT '最近一次下單時間（快照）',
-        last_login_at DATETIME NULL COMMENT '最近一次登入時間',
+        last_login_at DATETIME NULL COMMENT '最近一次成功登入的時間（失敗的嘗試不算；每一次登入含失敗都記在 customer_login_logs）',
         last_active_at DATETIME NULL COMMENT '最近一次任何活動時間（登入、瀏覽、加購物車皆算）',
         last_cart_at DATETIME NULL COMMENT '最近一次加入購物車時間',
         last_review_at DATETIME NULL COMMENT '最近一次留評論時間',
@@ -303,14 +303,14 @@ EXT_DDL = [
         order_count INT NULL COMMENT '累計訂單數（每日結算快照，與即時 COUNT(orders) 可能不同）',
         avg_order_value DECIMAL(12,2) NULL COMMENT '平均訂單金額（快照）',
         max_order_value DECIMAL(12,2) NULL COMMENT '最大單筆訂單金額（快照）',
-        total_items_bought INT NULL COMMENT '累計購買件數（快照）',
-        return_count INT NULL COMMENT '退貨次數（快照）',
+        total_items_bought INT NULL COMMENT '累計購買件數（每日結算快照，不含最近數日訂單，與即時 SUM(order_items.quantity) 可能不同）',
+        return_count INT NULL COMMENT '退貨次數（每日結算快照，不含最近數日，與即時 COUNT(order_returns) 可能不同）',
         refund_total DECIMAL(12,2) NULL COMMENT '累計退款金額（快照）',
         review_count INT NULL COMMENT '評論則數（快照）',
         avg_review_score DECIMAL(3,2) NULL COMMENT '平均給分（快照）',
         browse_count INT NULL COMMENT '瀏覽次數（快照）',
-        cart_abandon_count INT NULL COMMENT '購物車放棄次數（快照）',
-        coupon_used_count INT NULL COMMENT '使用過的優惠券次數（快照）',
+        cart_abandon_count INT NULL COMMENT '購物車放棄次數（每日結算快照，不含最近數日，與即時 COUNT(carts WHERE is_abandoned) 可能不同）',
+        coupon_used_count INT NULL COMMENT '使用過的優惠券次數（每日結算快照，不含最近數日，與即時 COUNT(coupon_redemptions) 可能不同）',
         email_opt_in TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否同意 Email 行銷',
         sms_opt_in TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否同意簡訊行銷',
         push_opt_in TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否同意推播',
@@ -639,6 +639,12 @@ def seed_extended(conn) -> dict[str, int]:
             "package_contents": "主機、說明書、保固卡",
             "model_no": f"MD-{pid:03d}-{random.randint(100, 999)}",
             "release_year": random.randint(2022, 2026),
+            # ⚠️ 這一顆骰子**不是真相來源**。「這個商品停產了沒」的真相在
+            # product_profiles.lifecycle_stage='EOL'，由 tools/add_wide_tables*.py
+            # 在本檔跑完之後才建 —— 所以這裡結構上無法對齊，只能事後補
+            # （tools/fix_derived_consistency.py，閘門 [11]，§7.10／§7.11）。
+            # **不要改成從 product_profiles 讀**：那張表此刻還不存在，而且
+            # 少抽一次 random 會讓整條亂數序列平移，309 題 GT 全毀。
             "is_discontinued": 1 if random.random() < 0.1 else 0,
             "updated_by": random.choice(["admin", "editor01", "sys_batch"]),
             "updated_at": anchor - timedelta(days=random.randint(1, 200)),
@@ -672,6 +678,19 @@ def seed_customer_profiles(conn) -> int:
                      total_spent != SUM(orders.total_amount)。實測 50 位客戶
                      有 27 位對不上 —— 這是刻意的：#62 的教訓是「兩欄永遠相等」
                      等於這個陷阱根本不存在，任何測試都分辨不出來。
+
+    ⚠️ **底下有 6 欄的 rnd.* 只是佔位，最終值由 tools/fix_derived_consistency.py
+    覆寫**（2026-08-26，閘門 [9] 的黃燈，見 ARCHITECTURE §7.9）：
+      total_items_bought / return_count / coupon_used_count / cart_abandon_count
+      last_login_at（＋連帶重算的 last_active_at）
+
+    為什麼不在這裡直接算：它們的母表 customer_login_logs 與 coupon_redemptions
+    是 init_db.py 跑完之後才由 add_distractor_tables.py 建的，**這個函式執行時
+    那些表還不存在**。而 rnd.* 呼叫必須留在原地 —— 少抽一次整條亂數序列就平移，
+    GT 全毀。所以是「照抽、事後覆寫」，抽樣次數一次都沒變。
+
+    重建資料庫之後**一定要跑對齊**，否則這 6 欄會回到亂數。忘了跑不會靜默：
+    閘門 [9] 的 DERIVED 名單會亮紅燈（exit 1），不管有沒有題目引用。
     """
     anchor = DATA_ANCHOR_DATETIME
     customers = conn.execute(
@@ -733,6 +752,7 @@ def seed_customer_profiles(conn) -> int:
             "registered_at": created - timedelta(days=rnd.randint(0, 45)),
             "first_order_at": mine[0][0] if mine else None,
             "last_order_at": last_order,
+            # ↓ 佔位，由 fix_derived_consistency.py 覆寫成 MAX(登入成功紀錄)
             "last_login_at": last_login,
             "last_active_at": last_active,
             "last_cart_at": anchor - timedelta(days=rnd.randint(0, 200)),
@@ -746,6 +766,7 @@ def seed_customer_profiles(conn) -> int:
             "order_count": len(snap),
             "avg_order_value": round(spent / len(snap), 2) if snap else 0,
             "max_order_value": round(max(amounts), 2) if amounts else 0,
+            # ↓ 以下 4 欄都是佔位，覆寫成截止點之前的母表實數（見 docstring）
             "total_items_bought": len(snap) * rnd.randint(1, 4),
             "return_count": rnd.choices([0, 1, 2], weights=[70, 22, 8])[0],
             "refund_total": round(spent * rnd.choice([0, 0, 0, 0.05, 0.2]), 2),

@@ -163,6 +163,11 @@ def gen_order_returns(s, plan):
         if RNG.random() >= 0.12:
             continue
         pid, qty = RNG.choice(items[oid])
+        # ⚠️ status 這一顆骰子**不是真相來源**。「倉庫收到了沒」的真相在
+        # return_shipments.received_at，而那是第二波 gen_return_shipments（RNG_LATE）
+        # 才產生的 —— 前後兩波，這裡結構上無法對齊，只能事後補
+        # （tools/fix_derived_consistency.py，閘門 [11]，§7.10／§7.11）。
+        # **不要改動這裡的 RNG 呼叫次數或順序**：序列一平移，309 題 GT 全毀。
         out.append((oid, pid, RNG.randint(1, max(1, qty)), RNG.choice(dom),
                     after(odate, 24, 720)))
     return ("order_id", "product_id", "quantity", "status", "requested_at"), out

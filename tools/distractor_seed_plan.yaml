@@ -198,7 +198,7 @@ promotion_rules:
   rows: "promotions x1"
   parent: promotions
   values:
-    applies_to: [ALL, CATEGORY, PRODUCT]
+    applies_to: [ALL, CATEGORY, PRODUCT, BRAND]
     stackable: [0, 1]
     min_amount: [0, 5000]
 

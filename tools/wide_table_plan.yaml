@@ -323,7 +323,7 @@ tables:
       - {name: employee_scale, type: VARCHAR(20), comment: "員工規模級距：1-50／51-200／201-1000／1000+"}
       - {name: bank_name, type: VARCHAR(60), comment: 往來銀行名稱}
       - {name: bank_account_last4, type: VARCHAR(10), comment: 匯款帳號末四碼}
-      - {name: payment_terms, type: VARCHAR(30), comment: "付款條件：NET30／NET60／PREPAID 預付"}
+      - {name: payment_terms, type: VARCHAR(30), comment: "付款條件：NET30 月結30天／NET60 月結60天／PREPAID 預付／COD 貨到付款"}
       - {name: invoice_method, type: VARCHAR(20), comment: "請款方式：EINVOICE 電子／PAPER 紙本"}
       - {name: contact_sales_name, type: VARCHAR(40), comment: 業務窗口姓名}
       - {name: contact_sales_phone, type: VARCHAR(30), comment: 業務窗口電話}

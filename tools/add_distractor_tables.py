@@ -180,7 +180,7 @@ DISTRACTORS: list[tuple[str, str, str]] = [
         promotion_id INT NOT NULL COMMENT '所屬促銷活動ID',
         min_amount DECIMAL(10,2) COMMENT '最低消費門檻',
         stackable TINYINT(1) DEFAULT 0 COMMENT '是否可與其他活動疊加',
-        applies_to VARCHAR(30) COMMENT '適用範圍 (ALL/CATEGORY/PRODUCT)',
+        applies_to VARCHAR(30) COMMENT '適用範圍 (ALL/CATEGORY/PRODUCT/BRAND)',
         FOREIGN KEY (promotion_id) REFERENCES promotions(id)"""),
     ("supplier_contracts", "供應商合約：合約期間與付款條件。單一商品的進貨價在 product_suppliers", """
         id INT AUTO_INCREMENT PRIMARY KEY COMMENT '合約唯一ID',

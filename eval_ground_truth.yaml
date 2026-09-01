@@ -2081,12 +2081,22 @@
     \ s.id, s.name\nHAVING COUNT(*) = (SELECT MAX(c) FROM (SELECT COUNT(*) AS c\n                   FROM\
     \ store_pickups GROUP BY store_id) x)\n"
 - id: 202
-  question: 有幾張訂單選了到店取貨但還沒有去取？
+  question: 有到店取貨紀錄的訂單裡，有幾張還沒有被取走？
   expect: rows
   sql: 'SELECT COUNT(*) AS n FROM store_pickups WHERE picked_up_at IS NULL
 
     '
-  note: 測 NULL 語意。到店取貨是 store_pickups，宅配出貨在 shipments。
+  note: '測 NULL 語意。到店取貨是 store_pickups，宅配出貨在 shipments。
+
+    2026-09-01 改寫問句（閘門 [11]，§7.10）：原本寫「有幾張訂單**選了**到店取貨」，
+
+    而「選了」逐字指向 order_profiles.delivery_preference「配送偏好：STORE 門市取貨」。
+
+    那是**偏好**，store_pickups 是**實際**，兩者 phi = +0.006（完全獨立）——
+
+    模型把偏好當成保險再 AND 一次就得到 0 列。改用 #221 已在用的「有…紀錄」句式。
+
+    '
 - id: 203
   question: 優惠券總共被使用了幾次？
   expect: rows
@@ -2473,12 +2483,24 @@
 
     '
 - id: 249
-  question: 有幾筆退貨的商品倉庫還沒有收到？
+  question: 已經寄回的退貨裡，有幾筆倉庫還沒有收到？
   expect: rows
   sql: 'SELECT COUNT(*) AS n FROM return_shipments WHERE received_at IS NULL
 
     '
-  note: 退貨物流是 return_shipments；退貨申請在 order_returns，退款在 refunds。
+  note: '退貨物流是 return_shipments；退貨申請在 order_returns，退款在 refunds。
+
+    2026-09-01 收窄問句（§7.10）：原本沒有講清楚母體是「全部退貨」還是「已寄回的退貨」。
+
+    18 筆退貨裡有 4 筆連物流單都還沒建，模型用 LEFT JOIN 把它們也算進去得到 8，
+
+    GT 用 return_shipments 只算 4 —— **兩種讀法都合理，而「沒寄出的當然也還沒收到」
+
+    甚至更說得通**。不補 alt_sql 而是收窄母體，因為這題要測的是 NULL 語意，
+
+    母體含糊會讓它同時在測兩件事（§5.1「平手題不能用」的近親）。
+
+    '
 - id: 250
   question: 有多少筆退貨申請已經寄出物流了？
   expect: rows
@@ -2766,7 +2788,7 @@
 
     '
 - id: 275
-  question: 有哪幾檔廣告後來被停掉了？為什麼停、當初是誰核准的、什麼時候核的、已經花掉多少錢？
+  question: 有哪幾檔廣告投放活動後來被停掉了？為什麼停、當初是誰核准的、什麼時候核的、已經花掉多少錢？
   expect: rows
   sql: 'SELECT paused_reason, approved_by, approved_at, spend_total
 
@@ -2774,6 +2796,18 @@
 
     '
   note: '同 #274，活動名稱有重複所以不入 GT。
+
+    2026-09-01 收窄問句（閘門 [11]，§7.10）：原本寫「哪幾檔**廣告**」，而「檔」是
+
+    促銷檔期的量詞。promotion_profiles 有幾乎同名的欄位（pause_reason vs
+
+    paused_reason、approved_by、approved_at），is_paused=1 也剛好各 5 筆 ——
+
+    模型整題走 promotion_profiles 是完全合理的讀法。**這兩張表不是矛盾，
+
+    是兩個真實體**（廣告投放 vs 站上折扣檔期），所以修問句不修資料。
+
+    改法沿用 §7.9 對 #279 的處置：把主體講明。
 
     '
 - id: 276

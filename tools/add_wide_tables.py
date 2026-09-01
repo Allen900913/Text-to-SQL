@@ -357,7 +357,7 @@ def gen_supplier_profile(sid: int, i: int) -> dict:
         "employee_scale": _pick(["1-50", "51-200", "201-1000", "1000+"]),
         "bank_name": _pick(["第一銀行", "國泰世華", "中國信託", "玉山銀行"]),
         "bank_account_last4": f"{R.randint(0, 9999):04d}",
-        "payment_terms": _pick(["NET30", "NET60", "PREPAID"], [50, 35, 15]),
+        "payment_terms": _pick(["NET30", "NET60", "PREPAID", "COD"], [45, 30, 15, 10]),
         "invoice_method": _pick(["EINVOICE", "PAPER"], [70, 30]),
         "contact_sales_name": _pick(["周經理", "許協理", "蔡專員", "何副理"]),
         "contact_sales_phone": f"0{R.randint(2, 7)}-{R.randint(20000000, 89999999)}",
