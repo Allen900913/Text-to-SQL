@@ -29,6 +29,7 @@ _RESULTS = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "results"
 
 import glob
 import json
+import re
 import sys
 from collections import Counter
 from datetime import date, datetime
@@ -202,6 +203,14 @@ def main() -> int:
     failures: list[str] = []
     wrong_ids: list[int] = []
     defence_leaks: list[str] = []
+    # 「防禦題 4/4」只查得到「該拒答的有沒有拒答」，查不到反方向 ——
+    # 不該拒答的拒答了。§7.10 量到 schema 大到一定程度模型反而不敢答它
+    # 答得出來的題，而當時沒有任何指標在盯（2026-09-02 補上）。
+    over_refusals: list[str] = []
+    # 列數相同的錯題：#260／#309 的形狀是「同樣的列、不同的欄」——
+    # 模型回寬表自帶的 name_en，GT 要母表的 name。這是旗標不是判決，
+    # 方向與「僥倖候選」相反：那邊是答對但 schema 不符，這邊是 schema 對但判錯。
+    same_rows: list[str] = []
 
     for qid in sorted(gt):
         entry = gt[qid]
@@ -225,9 +234,17 @@ def main() -> int:
                 defence_leaks.append(
                     f"#{qid:<4} {entry['question']}\n"
                     f"        產出: {' '.join((result.get('sql') or '').split())[:150]}")
+        else:
+            # 非防禦題卻觸發拒答 = 過度拒答。用 outcome 不用 verdict：
+            # verdict 只說「錯了」，說不出「是拒答造成的錯」。
+            if result.get("outcome") == "schema_unsupported":
+                over_refusals.append(f"#{qid:<4} {entry['question']}")
         if verdict != "correct":
             failures.append(f"#{qid:<3} [{verdict}] {entry['question']}\n        {detail}")
             wrong_ids.append(qid)
+            m = re.search(r"系統 (\d+) 列 / GT (\d+) 列", detail or "")
+            if m and m.group(1) == m.group(2) and m.group(1) != "0":
+                same_rows.append(f"#{qid:<4} 各 {m.group(1)} 列｜{entry['question'][:46]}")
         miss, luck = audit_one(entry, result, known, verdict)
         if miss:
             misses.append(f"#{qid:<4} {miss}")
@@ -259,8 +276,24 @@ def main() -> int:
             print("  這比一般答錯嚴重：SQL 合法、EXPLAIN 會過，"
                   "使用者看不出那個數字是憑空來的。")
 
+    # 過度拒答 —— 防禦題那格的反方向，兩格都要看才知道守衛校準得對不對
+    n_ord = total - n_def
+    print(f"\n過度拒答: {len(over_refusals)}/{n_ord} 題（非防禦題卻拒答）")
+    if over_refusals:
+        print("\n".join("  " + x for x in over_refusals))
+        print("  守衛開火開錯地方。這與「守衛沒開火」是同一個校準的兩端 ——")
+        print("  只盯防禦題 4/4 看不到這一邊（§7.10）。")
+
     print(f"\n{'=' * 70}\nschema 稽核（§9.2）:\n")
     report(misses, lucky)
+
+    if same_rows:
+        print(f"\n⚠️  列數相同的錯題（{len(same_rows)} 題，可能是欄位選擇而非答案錯）:")
+        print("\n".join("  " + x for x in same_rows))
+        print("\n  這是旗標不是判決，方向與上面的「僥倖候選」相反 ——")
+        print("  那邊是答案對但 schema 不符，這邊是列數對但判錯。")
+        print("  典型形狀：模型回寬表自帶的 name_en，GT 要母表的 name（§9 的 #258／#260 家族）。")
+        print("  確認之後補 alt_sql 或修 GT，不要直接改判。")
 
     # 單輪分數會把「穩定答對」與「八次中四次」混為一談（§5.2、§9.3）
     print(f"\n{'=' * 70}")
