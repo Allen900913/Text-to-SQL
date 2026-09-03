@@ -93,7 +93,7 @@ def init_database():
                     price DECIMAL(10, 2) NOT NULL COMMENT '商品價格',
                     stock INT NOT NULL DEFAULT 0 COMMENT '庫存數量',
                     description TEXT COMMENT '商品描述'
-                ) COMMENT '商品資訊表：一項商品一列，記錄品名、售價、庫存與分類。category 是反正規化的字串欄位，與 categories 關聯表並存';
+                ) COMMENT '商品資訊表：一項商品一列，記錄品名、售價、庫存與分類。具體的商品名稱（例如「被討厭的勇氣」「空氣清淨機」「MacBook Air」這種被點名的東西）就存在 name 欄。category 是反正規化的字串欄位，與 categories 關聯表並存';
             """))
 
             # 建立 orders 表
