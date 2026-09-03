@@ -78,7 +78,7 @@ if not NVIDIA_API_KEY:
 
 # Generator 模型 (120B) — 單次生成 1 條高品質 SQL
 llm_fast = ChatOpenAI(
-    model="openai/gpt-oss-120b",
+    model="nemotron-3-super-120b-a12b",
     api_key=NVIDIA_API_KEY,
     base_url="https://integrate.api.nvidia.com/v1",
     temperature=0,
@@ -106,7 +106,7 @@ llm_summarizer = ChatOpenAI(
 #             平均 1.71s vs 2.55s）。小模型比較快在這裡不成立，量過才知道。
 # 每題多一次呼叫約 1.5 秒是這一層的固定成本，換到召回 91.4% → 99.3%。
 llm_filter = ChatOpenAI(
-    model="openai/gpt-oss-120b",
+    model="nemotron-3-super-120b-a12b",
     api_key=NVIDIA_API_KEY,
     base_url="https://integrate.api.nvidia.com/v1",
     temperature=0,
