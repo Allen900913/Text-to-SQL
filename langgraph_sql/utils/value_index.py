@@ -160,6 +160,12 @@ def matches(question: str) -> list[tuple[str, frozenset[tuple[str, str]]]]:
       「2026Q2 SOCIAL 投放」命中時就不要再報「SOCIAL」，
       「iPhone 15」命中時就不要再報 `search_logs` 裡的「iphone」。
 
+      **包含比對要忽略大小寫**：`search_logs.keyword` 存的是「iphone」、
+      `products.name` 存的是「iPhone 15」，用大小寫敏感的比對會判定
+      「iphone 不是 iPhone 15 的子字串」而兩個都報出去 —— 那不是攤開歧義，
+      是同一件事報兩次。**真正的歧義是「同一個值住在兩張表」**
+      （「書籍」在 `categories.name` 也在 `products.category`），那種要留。
+
     比對方向是「值是問句的子字串」，不是反過來 —— 所以縮寫與換句話說
     （「蘋果的平板」對 `iPad Pro`）命中不了。**這是這條通道的天花板**，
     CHESS 用 LSH 容忍英文拼字錯誤，這裡刻意不做：中文沒有拼字錯誤，
@@ -172,7 +178,8 @@ def matches(question: str) -> list[tuple[str, frozenset[tuple[str, str]]]]:
     hit = [(v, tc) for v, tc in idx.items()
            if v.lower() in q and len(tc) <= VALUE_MAX_TABLES]
     return [(v, tc) for v, tc in hit
-            if not any(v != other and v in other for other, _ in hit)]
+            if not any(v != other and v.lower() in other.lower()
+                       for other, _ in hit)]
 
 
 def value_hits(question: str) -> dict[str, int]:
