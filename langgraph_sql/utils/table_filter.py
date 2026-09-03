@@ -323,13 +323,20 @@ def format_catalog(tables: list[str], shuffle_seed: int | None = None,
     if shuffle_seed is not None:
         tables = list(tables)
         random.Random(shuffle_seed).shuffle(tables)
-    hints = {}
+    hints, evid = {}, {}
     if query:
         # 在函式內 import：column_hints → embedding → config 這條鏈與 table_filter
         # 無關，但 table_filter 是 table_retriever 的相依，放頂層會讓相依圖更難讀。
         from langgraph_sql.utils.column_hints import hints_for
+        from langgraph_sql.utils.value_index import evidence_for
         hints = hints_for(query, list(tables))
-    return "\n".join(f"- {t}: {briefs.get(t, '')}{hints.get(t, '')}" for t in tables)
+        # 值命中的**事實**（§2.7n）：問句裡的哪個字串，是本表哪個欄位的值。
+        # 與 hints 的差別是「查到的」與「猜的」—— hints 用餘弦挑欄位，
+        # 每題每表都要付文字；證據只在真的命中時出現（實測 13/305 題），
+        # 所以它踩不到 §8.9 那條「目錄變長 → 錨點召回下降」的曲線。
+        evid = evidence_for(query, list(tables))
+    return "\n".join(f"- {t}: {briefs.get(t, '')}{hints.get(t, '')}{evid.get(t, '')}"
+                     for t in tables)
 
 
 def _json_arrays(raw: str) -> list[list]:

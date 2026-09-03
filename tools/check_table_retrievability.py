@@ -27,6 +27,21 @@
 **不給 KMB 的救援算分。** KMB 補回來是好事，但它遮住的正是這一支要看的東西 ——
 §7.2 的「錨點 @40 = 98.9%、+KMB = 100.0%」就是這個遮蔽的原始紀錄。
 
+**值索引（§2.7n）判得不一樣，理由要說清楚。** 它跟 KMB 有一個關鍵差別：
+KMB 救到 `products` 是**偶然**的（它剛好在某條 join path 上，與「為什麼撈不到」
+無關），值索引救到 `products` 是**對症**的（問句點名了商品的值，那正是失敗原因）。
+所以：
+
+    紅燈  判在 **production 組態**（`VALUE_BETA>0` 就含值索引）—— 紅燈要代表
+          「今天真的救不回來」。判在純 dense 會讓它上線後永遠紅，
+          而**被忽略的閘門比沒有閘門糟**。
+    橙燈  production 過得去，但**純 dense 掉出候選** —— 這張表現在靠值索引撐著。
+          不 exit 1，但一定點名：值索引只在 4.3% 的題有值可命中，
+          題型一換這張表就裸露。
+
+橙燈這一級就是 KMB 那個教訓的落實 —— 當年的問題不是「有救援」，
+是**沒有人把救援印出來**，於是 98.9% 看起來像 100%。
+
 用法：
     python tools/check_table_retrievability.py
     python tools/check_table_retrievability.py --all      # 連綠燈的表一起印
@@ -49,6 +64,7 @@ from langgraph_sql.utils.table_filter import get_candidate_n
 from langgraph_sql.utils.table_retriever import (
     _cosine, _embed_query, get_table_vectors,
 )
+from langgraph_sql.utils.value_index import VALUE_BETA, value_hits
 
 GT_PATH = _os.path.join(_ROOT, "eval_ground_truth.yaml")
 # FROM/JOIN 後面的識別字。子查詢別名會被一起抓進來，靠「必須是真的表名」濾掉。
@@ -80,33 +96,50 @@ def main() -> int:
     req_by_q = gt_required(tables)
 
     ranks: dict[str, list[tuple[int, int]]] = {t: [] for t in tables}
+    # 值索引之後的排名。**只用來標註「這是救回來的」，不參與紅黃燈判定。**
+    vranks: dict[str, dict[int, int]] = {t: {} for t in tables}
     for e in gt:
         req = req_by_q.get(e["id"])
         if not req:
             continue
         qv = _embed_query(e["question"])
-        order = sorted(tables, key=lambda t: -_cosine(qv, vecs[t]))
+        sc = {t: _cosine(qv, vecs[t]) for t in tables}
+        order = sorted(tables, key=lambda t: -sc[t])
         pos = {t: i + 1 for i, t in enumerate(order)}
         for t in req:
             ranks[t].append((pos[t], e["id"]))
+        if VALUE_BETA:
+            vs = dict(sc)
+            for t, n in value_hits(e["question"]).items():
+                if t in vs:
+                    vs[t] += VALUE_BETA * min(n, 3)
+            vorder = sorted(tables, key=lambda t: (-vs[t], t))
+            vpos = {t: i + 1 for i, t in enumerate(vorder)}
+            for t in req:
+                vranks[t][e["id"]] = vpos[t]
 
     # 零筆結果有兩種意思 ——「查過了沒問題」與「根本沒查」。分開報（§8②）
     measured = {t: v for t, v in ranks.items() if v}
     unmeasured = sorted(t for t, v in ranks.items() if not v)
 
-    red, yellow, green = [], [], []
+    red, orange, yellow, green = [], [], [], []
     for t, v in measured.items():
         rs = [r for r, _ in v]
         worst, worst_q = max(v)
         med = statistics.median(rs)
         row = (t, len(rs), med, worst, worst_q)
-        if worst > N:
+        # production 組態下的最差排名：值索引開著就算它，關著就等於純 dense
+        worst_prod = max(vranks[t].values()) if VALUE_BETA and vranks[t] else worst
+        if worst_prod > N:
             red.append(row)
+        elif worst > N:
+            orange.append(row)          # production 過，但純 dense 掉出候選
         elif med > N / 2:
             yellow.append(row)
         else:
             green.append(row)
     red.sort(key=lambda r: -r[3])
+    orange.sort(key=lambda r: -r[3])
     yellow.sort(key=lambda r: -r[2])
 
     print(f"候選上限 CANDIDATE_N = {N}｜全庫 {len(tables)} 張表"
@@ -117,12 +150,20 @@ def main() -> int:
             return
         print(title)
         for t, n, med, worst, wq in rows:
+            # 值索引把這一題的最差排名救到哪 —— 標註用，不影響上面的燈號
+            rescue = ""
+            if VALUE_BETA and wq in vranks[t]:
+                v = vranks[t][wq]
+                if v < worst:
+                    rescue = f"｜值索引救到 {v:3d}" + ("（仍在候選外）" if v > N else "")
             print(f"  {t:28s} 被需要 {n:3d} 次｜中位數 {med:5.1f}｜"
-                  f"最差 {worst:3d}（#{wq}）")
+                  f"最差 {worst:3d}（#{wq}）{rescue}")
         print()
 
     show(red, f"🔴 最差排名掉出候選（> {N}）—— 後面兩段救不回來，"
               f"KMB 補得回也不算數:")
+    show(orange, f"🟠 純 dense 掉出候選（> {N}），靠值索引撐著 —— "
+                 f"值索引只在問句點名實際的值時作用，題型一換這張表就裸露:")
     show(yellow, f"🟡 中位數落在後半段（> {N // 2}）—— 還沒掉出去，但在邊緣:")
     if args.all:
         show(sorted(green, key=lambda r: -r[2]), "🟢 其餘:")
@@ -133,6 +174,15 @@ def main() -> int:
     print(f"候選召回 @{N}（純 dense，不含 KMB）："
           f"{sum(all(p <= N for p in [r for r, _ in ranks[t]]) for t in measured)}"
           f"/{len(measured)} 張表全數落在候選內")
+
+    if VALUE_BETA:
+        vall = [r for t in measured for r in vranks[t].values()]
+        vok = sum(all(v <= N for v in vranks[t].values()) for t in measured)
+        print(f"　　＋值索引（β={VALUE_BETA}）：平均 {statistics.mean(vall):.2f}｜"
+              f"{vok}/{len(measured)} 張表全數落在候選內"
+              f"　← **這是救援，不是燈號**（§2.7n）")
+    else:
+        print("　　（值索引關閉：VALUE_BETA=0，這一欄沒有量）")
 
     if unmeasured:
         # 沒有題目用到的表，這一支看不見 —— 說出來，不要讓它看起來像通過
@@ -146,7 +196,12 @@ def main() -> int:
               f"修法看 §2.7m：把表註解寫成「宣告自己回答什麼問題」，"
               f"舉例只能取自資料、不能取自題目。")
         return 1
-    print(f"✅ 沒有表在被需要時掉出候選層（黃燈 {len(yellow)} 張，觀察用）")
+    if orange:
+        print(f"✅ 沒有表在 production 組態下掉出候選層，"
+              f"但 **{len(orange)} 張靠值索引撐著**（橙燈，見上）——"
+              f"擴表或換題型時第一個要回頭看的就是它們。")
+    else:
+        print(f"✅ 沒有表在被需要時掉出候選層（黃燈 {len(yellow)} 張，觀察用）")
     return 0
 
 

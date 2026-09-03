@@ -239,9 +239,23 @@ def rank_tables(query: str) -> list[tuple[str, float]]:
     except Exception as e:
         log.warning(f"[Retriever] 嵌入失敗（{type(e).__name__}: {e}），退回全表")
         return []
+    scores = {t: _cosine(qvec, v) for t, v in vectors.items()}
+
+    # 值索引：問句點名了儲存格裡的值時，把擁有那個值的表推上來（§2.7n）。
+    # 嵌入不知道「iPhone 15」是商品，但 products.name 裡就有這個值。
+    # VALUE_BETA 預設 0 —— 關閉時這整段是 no-op，與加這段之前位元相同。
+    # 這條通道失敗只降級成「沒有這個加分」，不讓它變成新的單點故障。
+    try:
+        from langgraph_sql.utils.value_index import VALUE_BETA, value_hits
+        if VALUE_BETA:
+            for t, n in value_hits(query).items():
+                if t in scores:
+                    scores[t] += VALUE_BETA * min(n, 3)
+    except Exception as e:
+        log.warning(f"[Retriever] 值索引加權失敗（{type(e).__name__}），只用餘弦")
+
     # 分數並列時以表名排序，確保同一個問題每次得到同一組錨點
-    return sorted(((t, _cosine(qvec, v)) for t, v in vectors.items()),
-                  key=lambda x: (-x[1], x[0]))
+    return sorted(scores.items(), key=lambda x: (-x[1], x[0]))
 
 
 def pick_anchors(
