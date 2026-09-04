@@ -495,6 +495,29 @@ FIXES = [
                                       CEIL(ps.width_mm/10)+1,  pp.package_width_cm),
             pp.package_height_cm = IF(pp.package_height_cm*10 < ps.height_mm,
                                       CEIL(ps.height_mm/10)+1, pp.package_height_cm)"""),
+
+    # =============== 第三輪：軟衍生的矛盾（2026-09-04，#143）===============
+    #
+    # **閘門 [9] 結構上看不到這一條。** 它比對的是「衍生欄位 vs 母表算出來的值」，
+    # 而 sentiment_label 不是 rating 的嚴格衍生欄 —— 母表算不出「情緒標籤」。
+    # 所以 [9] 一直是綠的，這個矛盾要靠 e2e 疊六輪才浮得出來（§9）。
+    #
+    # 但對題庫而言那就是矛盾（[[redundancy-ok-contradiction-not]]）：
+    # 「一星負評有幾則？」照星等算 7、照情緒標籤算 2 —— **這題沒有唯一答案**。
+    ("review_profiles", "sentiment_label",
+     "【軟衍生】情緒標籤在極端星等上必須與星等一致。"
+     "原本是 _pick([POSITIVE, POSITIVE, POSITIVE, NEUTRAL, NEGATIVE])，"
+     "一個與 rating **完全獨立**的 3:1:1 抽樣，於是出現一星標 POSITIVE、"
+     "五星標 NEGATIVE。#143 六輪全錯就是踩在這裡：模型加上"
+     "sentiment_label='NEGATIVE' 是完全站得住的讀法。"
+     "判準：**rating<=2 → NEGATIVE、rating>=4 → POSITIVE，rating=3 不動。**"
+     "只釘極端不釘中間 —— NEUTRAL 的語意本來就是「中評」，它該只住在三星。"
+     "這樣「N 星＋情緒詞」的任何問法（一星負評／五星好評）都只有一個答案，"
+     "而三星那 32 列保留了 rating 給不出的資訊，#286 不會退化成查表。",
+     """UPDATE review_profiles p
+        JOIN reviews r ON r.id = p.review_id
+        SET p.sentiment_label = IF(r.rating <= 2, 'NEGATIVE', 'POSITIVE')
+        WHERE r.rating <= 2 OR r.rating >= 4"""),
 ]
 
 TOUCHED = {t for t, _c, _w, _s in FIXES}
@@ -711,6 +734,13 @@ def preview(conn):
                     OR pp.package_width_cm*10  < ps.width_mm
                     OR pp.package_height_cm*10 < ps.height_mm), NULL, NULL
             FROM product_profiles pp JOIN product_specs ps ON ps.product_id=pp.product_id""",
+        # ---- 第三輪：軟衍生（2026-09-04）----
+        "review_profiles.sentiment_label": """
+            SELECT SUM(p.sentiment_label COLLATE utf8mb4_unicode_ci
+                       <> IF(r.rating<=2,'NEGATIVE','POSITIVE') COLLATE utf8mb4_unicode_ci),
+                   NULL, NULL
+            FROM review_profiles p JOIN reviews r ON r.id=p.review_id
+            WHERE r.rating<=2 OR r.rating>=4""",
     }
     # 護欄：preview 的清單曾經與 FIXES 脫節，害 --dry-run 少報兩條。
     missing = {f"{t}.{c}" for t, c, _w, _s in FIXES} - set(q)
