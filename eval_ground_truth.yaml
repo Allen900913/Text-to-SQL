@@ -2679,9 +2679,17 @@
 - id: 265
   question: 訪客結帳的訂單，其流量來源、媒介、導流網域與落地頁分別是什麼？
   expect: rows
-  sql: 'SELECT order_id, utm_source, utm_medium, referrer_domain, landing_page
+  sql: 'SELECT utm_source, utm_medium, referrer_domain, landing_page
 
     FROM order_profiles WHERE is_guest_checkout = 1
+
+    '
+  note: '2026-09-04 拿掉 GT 的前導 order_id（閘門 [13] 的 [E]）。問句列舉了四樣東西，
+    GT 卻投影五欄 —— 模型照字面只給四欄，45 列全對卻被判錯，六輪皆然。
+
+    拿掉之後兩種答案都通過：eval_score 本來就「忽略欄位名稱與順序、允許系統多帶欄位」，
+    所以帶 order_id 的寫法仍然算對。**收窄 GT 比補 alt_sql 更收斂** ——
+    它不是列舉第二種形狀，是讓 GT 只主張問句真的問了的東西。
 
     '
 - id: 266
@@ -3130,7 +3138,7 @@
 - id: 296
   question: 有哪些工單結案之後又被客戶重新開啟過？
   expect: rows
-  sql: 'SELECT ticket_id, reopened_count FROM support_ticket_profiles WHERE reopened_count > 0
+  sql: 'SELECT ticket_id FROM support_ticket_profiles WHERE reopened_count > 0
 
     '
   alt_sql:
@@ -3139,6 +3147,15 @@
 
     '
   note: '識別方式有歧義（ticket_id 或工單主旨），補 alt_sql。
+
+    2026-09-04 拿掉 GT 的 reopened_count（閘門 [13] 的 [A]）。問句只問「有哪些工單」，
+    沒有問「重開幾次」—— 那一欄是 GT 自己多主張的。模型六輪都給 ticket_id、
+    4 列與 GT 完全相同，而且條件比 GT 更貼合「結案**之後**又被重開」
+    （多了 closed_at IS NOT NULL AND last_reopened_at > closed_at），卻被判錯。
+
+    拿掉之後 (ticket_id) 與 (ticket_id, reopened_count) 兩種都通過 ——
+    eval_score 允許系統多帶欄位。alt_sql 的 subject 那條保留，管的是另一個軸
+    （編號還是名稱），跟這次拿掉的是不同的東西。
 
     '
 - id: 297
@@ -3325,6 +3342,24 @@
     FROM return_profiles WHERE is_exchange = 1
 
     '
+  alt_sql:
+  - 'SELECT p.name, rp.exchange_shipped_at, rp.compensation_type, rp.compensation_note,
+    rp.is_goodwill
+
+    FROM return_profiles rp LEFT JOIN products p ON p.id = rp.exchange_product_id
+
+    WHERE rp.is_exchange = 1
+
+    '
   note: '4 筆，全部 exchange_product_id 非 NULL（矛盾檢查保證）。
+
+    2026-09-04 補「商品名稱」那條 alt_sql（閘門 [13] 的 [D]）。問句說的是
+    「換成的**商品**」，沒說編號 —— 模型六輪都 LEFT JOIN products 回「除濕機」，
+    其餘四欄逐位元相同。中文的「商品」指名稱其實比指編號更自然。
+
+    **這裡補 alt_sql 是對的，補在 #287 就不對**：這一題的空間是封閉的兩個元素
+    （同一個形狀、同一欄的兩種呈現：編號或名稱），而 #287 的「有沒有」
+    是明細／筆數／布林三種**不同形狀**，列舉了兩種模型就找到第三種。
+    可列舉的補 alt_sql，不可列舉的收窄問句。
 
     '
