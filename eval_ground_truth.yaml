@@ -256,7 +256,7 @@
 
     '
 - id: 34
-  question: 比較 2026 年 7 月和 8 月的訂單數量，哪個月比較多？各有幾張？
+  question: 列出 2026 年 7 月與 8 月各自的訂單張數。
   expect: rows
   sql: 'SELECT DATE_FORMAT(order_date, ''%Y-%m'') AS mo, COUNT(*) AS n FROM orders
 
@@ -271,6 +271,17 @@
     WHERE order_date >= ''2026-07-01'' AND order_date < ''2026-09-01''
 
     GROUP BY 1 ORDER BY 1
+
+    '
+  note: '2026-09-04 收窄問句（閘門 [13] 的 [B]）。原問句是「…哪個月比較多？各有幾張？」——
+    **一句話要了兩種塞不進同一個結果集的形狀**：「哪個月比較多」是在全集裡挑一個
+    （1 列 1 欄），「各有幾張」要每個月一列（2 列 2 欄）。模型六輪都做橫向 pivot
+    回 [37, 17, ''July''] —— 那其實兩件事都答了，比 GT 還多，但形狀對不上。
+
+    這一題不能靠補 alt_sql 解決：pivot 只是模型挑的其中一種併法，
+    要列舉就列舉不完。**問句自己有缺陷就修問句。**
+
+    ⚠️ 改了問句，2026-09-03/04 那六輪對這一題的結果作廢 —— 那是回答舊問句的答案。
 
     '
 - id: 35
@@ -3026,16 +3037,24 @@
 
     '
 - id: 287
-  question: 有沒有評價，在評價內容檔案上登記的「到貨後天數」超過三十天？
+  question: 列出評價內容檔案上登記的「到貨後天數」超過三十天的評價，含評價編號與到貨後天數。
   expect: rows
   sql: 'SELECT p.review_id, p.days_after_delivery FROM review_profiles p JOIN reviews r ON r.id = p.review_id WHERE p.days_after_delivery > 30 AND r.is_deleted = 0
 
     '
-  alt_sql:
-  - 'SELECT COUNT(*) FROM review_profiles p JOIN reviews r ON r.id = p.review_id WHERE p.days_after_delivery > 30 AND r.is_deleted = 0
+  note: '2026-09-04 收窄問句並**移除 COUNT 那條 alt_sql**（閘門 [13] 的 [C]）。
+    這一題是「補 alt_sql 追不上形狀」最乾淨的證據：note 自己列舉了明細與筆數兩種，
+    模型六輪都給了**第三種** —— `SELECT CASE WHEN EXISTS(...) THEN 1 ELSE 0 END`。
+    中文的「有沒有 X？」在語意上就同時容許明細／筆數／布林，**形狀空間不是有限集合**。
 
-    '
-  note: '「有沒有」可以答成清單也可以答成筆數，兩種都合法，補 alt_sql。嚴格大於 30 —— 「超過三十天」不含第 30 天。
+    處置：把問句從存在性問法改成明確的列舉問法，並拿掉 COUNT ——
+    問句既然說了「列出…含評價編號與到貨後天數」，筆數就不再是合法答案了。
+    留著 COUNT 會讓一個明確要明細的題目仍然接受一個數字，那是自相矛盾的 GT。
+
+    ⚠️ 改了問句，2026-09-03/04 那六輪對這一題的結果作廢。
+
+    ---- 以下是改問句之前的紀錄，保留 ----
+    「有沒有」可以答成清單也可以答成筆數，兩種都合法，補 alt_sql。嚴格大於 30 —— 「超過三十天」不含第 30 天。
     2026-08-25 問句加「評價內容檔案上登記的」：reviews 沒有 order_id，評價對到哪一次到貨無法還原 ——
     134 則裡 97 則連得上，其中 10 則連到 2~3 個不同到貨日（取最早 22 列、取最晚 19 列）。
     母表算不出唯一答案，所以 profile 欄位就是真相來源，只是原問句沒說。
