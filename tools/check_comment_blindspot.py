@@ -95,7 +95,27 @@ def load_meta():
 
 
 def terms_of(blob: str) -> set[str]:
-    out = {m for m in _CJK.findall(blob)} | {m for m in _EN.findall(blob)}
+    """問句裡所有 2~6 字的中文子字串（真的滑動視窗）＋ 3 字以上的英文詞。
+
+    ⚠️ 2026-09-04 修正一個從第一版就在的缺陷。原本是 `_CJK.findall(...)`，
+    而 `findall` 對 `[一-鿿]{2,6}` 取的是**貪婪、不重疊的定長切塊**，
+    不是 n-gram —— 一個概念抓不抓得到，取決於它在問句裡的**位元組位置**：
+
+        「有哪些付款到現在還沒跟對帳單勾稽完成？」
+            → ['有哪些付款到', '現在還沒跟對', '帳單勾稽完成']
+
+    「對帳單勾稽」被切在兩塊中間，兩塊都不存在於任何註解，於是 `#292` 靜默漏掉。
+    這也解釋了為什麼舊輸出裡的概念詞長得那麼怪 ——「戶姓名」「易幣別」「冊時間」
+    「的商品」「有人」全都是切塊的殘骸，不是概念。
+
+    改成真的滑動視窗之後碎片會變多，但**後面兩道過濾本來就是為此設計的**
+    （必須出現在正解表的欄位註解裡、且不在表註解裡），再加上 audit() 只留極大詞。
+    """
+    out = set(_EN.findall(blob))
+    for run in re.findall(r"[一-鿿]+", blob):
+        for n in range(2, 7):
+            for i in range(len(run) - n + 1):
+                out.add(run[i:i + n])
     return {t for t in out if t.lower() not in {s.lower() for s in _STOP}}
 
 
@@ -124,9 +144,24 @@ def audit(tbl: dict[str, str], colblob: dict[str, str], cases) -> list[tuple]:
     再要求它出現在正解表的欄位註解裡 —— 那一步同時濾掉了碎片詞：
     「款方式」不會出現在任何欄位註解裡，「Email 驗證」會。
     """
+    # 一個詞住在幾張表的欄位註解裡。**跨太多張就沒有鑑別力** ——
+    # 「完成」「的付款」「不符合」在幾十張表的欄位註解裡都有，報出來只是噪音。
+    # 上限沿用 value_index.VALUE_MAX_TABLES 的 2，不新開一個旋鈕
+    # （[[discriminative-not-just-nonempty]]、§10「停止調常數」）。
+    from langgraph_sql.utils.value_index import VALUE_MAX_TABLES
+    spread: dict[str, int] = {}
+
+    def discriminative(c: str) -> bool:
+        if c not in spread:
+            lc = c.lower()
+            spread[c] = sum(1 for b in colblob.values() if lc in b.lower())
+        return spread[c] <= VALUE_MAX_TABLES
+
     findings = []
     for qid, q, need in cases:
         for c in sorted(terms_of(q)):
+            if not discriminative(c):
+                continue
             for t in sorted(need):
                 if c.lower() not in colblob.get(t, "").lower():
                     continue                     # 這張表的欄位沒這個概念
@@ -135,7 +170,19 @@ def audit(tbl: dict[str, str], colblob: dict[str, str], cases) -> list[tuple]:
                 rivals = sorted(u for u, uc in tbl.items()
                                 if u not in need and c.lower() in uc.lower())
                 findings.append(("HIGH" if rivals else "MED", qid, t, c, rivals))
-    return sorted(findings, key=lambda f: (f[0] != "HIGH", -len(f[4]), f[1]))
+
+    # 真滑動視窗會讓同一個概念以「對帳單」「帳單勾」「對帳單勾稽」…重複出現。
+    # 同一個 (題, 表) 底下只留**極大詞** —— 被更長的命中詞包住的一律丟掉。
+    # 這與 value_index.matches() 的最長匹配優先是同一條紀律。
+    by_case: dict[tuple, list[tuple]] = defaultdict(list)
+    for f in findings:
+        by_case[(f[1], f[2])].append(f)
+    maximal = []
+    for group in by_case.values():
+        words = {g[3] for g in group}
+        maximal += [g for g in group
+                    if not any(w != g[3] and g[3] in w for w in words)]
+    return sorted(maximal, key=lambda f: (f[0] != "HIGH", -len(f[4]), f[1]))
 
 
 def main() -> int:
@@ -154,14 +201,34 @@ def main() -> int:
     print(f"全庫 {len(tbl)} 張表 / {len(cases)} 題；"
           f"誘餌 {len(hi)} 個、盲區 {len(findings) - len(hi)} 個\n")
 
-    for level, qid, t, c, rivals in findings[:40]:
+    # 逐表彙總先印 —— 只印前 40 筆時，**最重要的兩筆可能正好在摺線下面**。
+    # 2026-09-04 的實測就是這樣：修好 n-gram 之後 #292 與 #308 終於被抓到，
+    # 但全庫 302 筆排下來它們在 40 名之外，`grep '#292'` 一無所獲
+    # （[[silent-pass-is-not-a-pass]]：被截斷的輸出跟沒報一樣）。
+    per_table: dict[str, list] = defaultdict(list)
+    for f in findings:
+        per_table[f[2]].append(f)
+    print(f"{'表':26s} {'誘餌':>4s} {'盲區':>4s}  題號")
+    for t in sorted(per_table, key=lambda x: -len(per_table[x])):
+        g = per_table[t]
+        n_hi = sum(1 for f in g if f[0] == "HIGH")
+        qs = sorted({f[1] for f in g})
+        print(f"  {t:24s} {n_hi:>4d} {len(g) - n_hi:>4d}  "
+              f"{','.join(f'#{q}' for q in qs[:8])}"
+              f"{f' …+{len(qs) - 8}' if len(qs) > 8 else ''}")
+    print()
+
+    shown = findings if only else findings[:40]
+    for level, qid, t, c, rivals in shown:
         tag = "誘餌" if level == "HIGH" else "盲區"
         print(f"[{tag}] #{qid} 需要 {t}，但它的表註解沒有「{c}」")
         print(f"        問句 → {qtext[qid][:44]}")
         if rivals:
             print(f"        這些非正解表的註解裡有「{c}」→ {rivals[:5]}")
-    if len(findings) > 40:
-        print(f"\n…另有 {len(findings) - 40} 個未列出")
+    if len(shown) < len(findings):
+        print(f"\n⚠️ 只印了前 {len(shown)} 筆，另有 {len(findings) - len(shown)} 筆沒印出來 ——\n"
+              f"   **不要用 grep 在這份輸出上找某一題**，會得到假的「沒問題」。\n"
+              f"   要看某一張表的全部：--table <表名>（指定表時不截斷）。")
 
     print("\n" + "=" * 70)
     print("這是候選不是處方。修之前照 §6.4 六步走 ——\n"
