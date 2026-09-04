@@ -3399,17 +3399,36 @@
 
     '
 - id: 308
-  question: 有沒有客人是超過可退期限才申請退貨的，最後還是讓他退了？
+  question: 列出超過可退期限才申請、最後仍然核准的退貨單，含退貨單號、申請時間、核准時間與當時可退的天數。
   expect: rows
   sql: 'SELECT return_id, requested_at, approved_at, policy_window_days FROM return_profiles WHERE is_over_policy_window
     = 1 AND approved_at IS NOT NULL
 
     '
-  alt_sql:
-  - 'SELECT COUNT(*) FROM return_profiles WHERE is_over_policy_window = 1 AND approved_at IS NOT NULL
+  note: '2026-09-04 晚上：收窄問句並移除 COUNT alt_sql（閘門 [13] 的 [A]＋[C]）。
 
-    '
-  note: '「最後還是讓他退了」= approved_at IS NOT NULL，兩個條件都要 —— 只查超期限會多出沒核准的那些。
+    **這一題是「閘門事前寫下的預測被實驗證實」的紀錄，處置不是看到結果才想出來的。**
+    早上裁決閘門 [13] 時，`#308` 被判成「[A][C] 屬實但無關 —— 六輪失敗全是誤觸防禦暗號，
+    病在檢索／選表層，**形狀問題是潛在的，等檢索層修好之後要回頭再看一次**」，
+    這段話寫在 commit `6c94f29`，早於當晚的 A/B。
+
+    當晚的欄位提示 A/B **把檢索層修好了**（實測選表：A 臂選不到 `return_profiles`、
+    B 臂選得到），於是潛在的形狀缺陷**照預測浮出來**：B 臂不再拒答，開始作答，
+    而且**列數 4/4 全對** —— 但回的是 `[[林柏翰],[洪阿華],[蔡柏翰]]` **客人姓名**。
+    問句主詞就是「有沒有**客人**…」，GT 投影卻是退貨單明細四欄。
+    **模型答的是問句真正問的東西，被 GT 判錯。**
+
+    處置：主詞從「客人」改成「退貨單」，並把四個欄位明確列出來；
+    「退貨單號」點名了識別欄（[A] 消失），沒有存在性問法（[C] 消失）。
+    既然說了「列出…含四項」，筆數就不是合法答案，COUNT alt 一併移除（同 #287 #260）。
+
+    ⚠️ **刻意保留問句原本的「可退期限」，沒有改成欄位註解裡的「可退貨期限」。**
+    差一個字是這一題檢索難度的來源，對齊它等於把答案抄進題目
+    （[[comment-examples-from-data-not-questions]]）。檢索要靠欄位提示解決，不是靠改問句。
+
+    「最後還是讓他退了」= approved_at IS NOT NULL，兩個條件都要 —— 只查超期限會多出沒核准的那些。
+
+    ⚠️ 改了問句，先前所有輪次（含當晚 A/B 的 #308 那 16 格）對這一題作廢。
 
     '
 - id: 309
