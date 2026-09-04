@@ -750,11 +750,23 @@
 
     '
 - id: 74
-  question: 有沒有客戶下過超過 20 張訂單？
+  question: 列出下過超過 20 張訂單的客戶編號。
   expect: empty
   sql: 'SELECT customer_id FROM orders GROUP BY customer_id HAVING COUNT(*) > 20
 
     '
+  note: '2026-09-04 閘門 [13] 的 [C]（閘門標成 [D]，理由標錯、題選對了）。收窄問句。
+
+    舊問句「有沒有客戶下過超過 20 張訂單？」配上 expect: empty 是一個**自相矛盾的組合**：
+    正確答案是「沒有」，而中文回答「沒有」最自然的 SQL 形狀就是布林。
+    模型六輪有一輪回 `SELECT CASE WHEN COUNT(*)>0 THEN 1 ELSE 0 END` → 得到 `[[0]]`，
+    語意上完全正確，卻被 judge() 的 `expect == "empty"` 分支判錯（那一支只認 0 列）。
+
+    這不是為單題改：全庫 8 題 expect: empty 裡，**7 題用「列出／有哪些／找出」**
+    （#25 #73 #75 #76 #104 #130 #159），只有 #74 用存在性問法。
+    改它是把唯一的例外拉回它自己那一類已經成立的慣例。
+
+    ⚠️ 改了問句，2026-09-03/04 六輪對這一題的結果作廢。當天重跑 n=8：**8/8 穩定過**。'
 - id: 75
   question: 找出訂單金額超過 200000 元的訂單。
   expect: empty
@@ -2621,20 +2633,30 @@
 
     '
 - id: 260
-  question: 有沒有商品的安全認證其實已經過期了？我怕有合規風險。
+  question: 列出安全認證已經過期的商品名稱，我怕有合規風險。
   expect: rows
   sql: 'SELECT p.name FROM product_profiles pp JOIN products p ON p.id = pp.product_id
 
     WHERE pp.safety_cert_expiry < ''2026-08-15''
 
     '
-  alt_sql:
-  - 'SELECT COUNT(*) FROM product_profiles WHERE safety_cert_expiry < ''2026-08-15''
+  note: '2026-09-04 閘門 [13] 的 [C]，收窄問句並**移除 COUNT 那條 alt_sql**（同 #287 的修法）。
 
-    '
-  note: '「有沒有」可以回名單也可以回筆數，兩式都收。
+    舊問句「有沒有商品的安全認證其實已經過期了？」六輪 3/6，三次失敗是**兩種不同的形狀**：
+
+    · 一次回布林 `SELECT EXISTS(...)` → 1 列。note 列舉了名單與筆數兩種，模型給第三種。
+    · 兩次回 `pp.product_id, pp.name_en, pp.safety_cert_expiry` → 列數對、欄位全錯。
+    「商品」在這個 schema 有三個名字欄（`products.name` 商品名稱／`name_en` 英文品名／
+    `name_ja` 日文品名），舊問句沒說要哪一個。
+
+    處置：問句改成「列出…的商品名稱」。「商品名稱」字面等於 `products.name` 的欄位註解，
+    英文品名與日文品名的註解都不是這四個字 —— 形狀與欄位一次釘死。
+    既然說了「列出…名稱」，筆數就不再是合法答案，COUNT 那條 alt 留著會讓
+    一個明確要名單的題目仍然接受一個數字，那是自相矛盾的 GT。
 
     過期基準用資料錨點 2026-08-15，不用 CURDATE()。
+
+    ⚠️ 改了問句，2026-09-03/04 六輪對這一題的結果作廢。當天重跑 n=8：**8/8 穩定過**（3/6 → 8/8）。
 
     '
 - id: 261
@@ -2665,11 +2687,23 @@
 - id: 263
   question: 那些被系統擋下來說要人工看過的單子，最後審的結果是什麼？誰審的、什麼時候審的、客人有沒有抱怨？
   expect: rows
-  sql: 'SELECT order_id, fraud_review_result, reviewed_by, reviewed_at, has_complaint
+  sql: 'SELECT fraud_review_result, reviewed_by, reviewed_at, has_complaint
 
     FROM order_profiles WHERE fraud_review_required = 1
 
     '
+  note: '2026-09-04 閘門 [13] 的 [A]，收窄 GT 拿掉前導 order_id（同 #265 #296 的修法）。
+
+    問句問的是四件事（審的結果／誰審的／什麼時候審的／有沒有抱怨），沒有一句要求列出單子本身
+    —— 「那些…單子」是**條件的主詞**，不是被要求的輸出。GT 投影五欄是一個問句從來沒支持過的主張。
+
+    六輪實測 3/6：三次失敗全部是「23 列全對、值逐位元相同，只差 GT 多一個前導 order_id」。
+
+    收窄比補 alt_sql 收斂：eval_score 本來就允許系統多帶欄位，所以拿掉之後
+    **帶與不帶 order_id 的兩種寫法同時通過**。
+
+    ⚠️ 同一句構的 #291「分期付款的訂單，各自分幾期、…」六輪 5/6，
+    結構幾乎相同卻沒發作 —— 6/6 不代表沒有暴露，只代表這六輪沒擲到。'
 - id: 264
   question: 有多少客人下單的時候有特別交代說送到之前要先打電話給他？
   expect: rows
@@ -3042,7 +3076,31 @@
   sql: 'SELECT p.review_id, p.days_after_delivery FROM review_profiles p JOIN reviews r ON r.id = p.review_id WHERE p.days_after_delivery > 30 AND r.is_deleted = 0
 
     '
-  note: '2026-09-04 收窄問句並**移除 COUNT 那條 alt_sql**（閘門 [13] 的 [C]）。
+  note: '2026-09-04 傍晚：改問句後 5/8，**那 3 次失敗已歸因，是單一原因、100% 同構**——
+    三次都是「系統 36 列 / GT 34 列」，前三列逐位元相同，**少的就是 `r.is_deleted = 0`**
+    那 2 則已刪除的評價。三層都排除掉了，剩下的只有模型：
+
+    · **不是題庫層**：全庫觸及 reviews 家族的 10 題，GT **10/10 都濾 is_deleted**，
+      而且 10 題的問句**沒有一題**提到「刪除」。慣例完全一致，沒有矛盾可鑽。
+    · **不是檢索層**：`reviews` 在 dense 排名第 3，六輪的 `retrieved_tables`
+      每一輪都是 `[review_profiles, reviews]` —— 表一直都在 Prompt 裡。
+    · **不是註解層**：`reviews.is_deleted` 的欄位註解就寫著「1 表示已被刪除**不應顯示**」，
+      `utils/semantic_layer.yaml` 還有一則 few-shot 專講這條。
+
+    同家族三題 `#285` `#286` `#288` 六輪 **6/6 全過**，其中 `#286` 的 join 純粹是
+    為了濾 is_deleted（投影全在 profile 表），模型六輪照做不誤。
+
+    > **所以 `#287` 現在是「模型真的沒套用一條它看得到的慣例」，不是題庫欠的債。**
+    > 5/8 是有效的評估點，不要再修它。
+
+    舊問句時代的六輪 SQL 顯示一個更細的機制：**模型退化成布林 EXISTS 的那幾次，
+    同時也把 join 丟掉了**（`SELECT EXISTS(SELECT 1 FROM review_profiles WHERE …)`），
+    寫成明細或 COUNT 的那幾次則 100% 帶著 `r.is_deleted = 0`。
+    形狀一縮，附帶的條件就一起掉了 —— 這也是收窄問句本身有價值的另一個理由。
+
+    ---- 以下是改問句當下的紀錄 ----
+
+    2026-09-04 收窄問句並**移除 COUNT 那條 alt_sql**（閘門 [13] 的 [C]）。
     這一題是「補 alt_sql 追不上形狀」最乾淨的證據：note 自己列舉了明細與筆數兩種，
     模型六輪都給了**第三種** —— `SELECT CASE WHEN EXISTS(...) THEN 1 ELSE 0 END`。
     中文的「有沒有 X？」在語意上就同時容許明細／筆數／布林，**形狀空間不是有限集合**。
