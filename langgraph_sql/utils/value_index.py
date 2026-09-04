@@ -37,8 +37,16 @@ LLM 讀表註解、KMB 走外鍵。但有一整類問句給的既不是概念也
 一個會無聲失效的快取比沒有快取糟（[[silent-pass-is-not-a-pass]]）。
 行程內記憶一次就夠：評估與 pipeline 都是單行程長時間跑。
 
-預設全關（`VALUE_BETA=0`、`VALUE_EVIDENCE=0`），開關走環境變數，
-理由同 `column_hints.HINT_K`：A/B 兩臂要落在同一個 commit 上。
+**2026-09-04 起預設全開**（`VALUE_BETA=0.05`、`VALUE_EVIDENCE=1`）。
+
+採用的依據**不是 e2e 分數**：兩臂各三輪，區間重疊，事前登記的判準判平手
+（§2.7n）。依據是零 LLM 那組硬指標 —— 候選@40 與對照臂同為 305/305，
+但不必付 `products` 表註解那句泛稱的漏出代價；閘門 [12] 的 `products`
+最差名次 62 → 33。**買的是斜率不是截距**：今天 93 張表撈得到的，
+明天 200 張表撈不到。
+
+開關仍留在環境變數上：`VALUE_BETA=0 VALUE_EVIDENCE=0` 可還原成與這支
+存在之前位元相同的行為 —— A/B 兩臂要落得進同一個 commit。
 """
 import os
 import threading
@@ -49,14 +57,14 @@ from sqlalchemy import text
 from langgraph_sql.config import MYSQL_URI
 from langgraph_sql.utils.db_manager import get_db_manager
 
-# dense 層的加權。**預設 0 = 關閉**，關閉時 rank_tables() 與改動前位元相同。
+# dense 層的加權。**2026-09-04 起預設 0.05 = 開啟**；設成 0 可完全還原。
 #
 # 0.05 是 §2.7 掃出來的曲線上的點（β=0.02/0.05/0.10 三點，0.05 與 0.10 同分），
 # **不是調出來的旋鈕**。要動它請重掃整條曲線，不要單點微調（§10「停止調常數」）。
-VALUE_BETA = float(os.environ.get("VALUE_BETA", "0"))
+VALUE_BETA = float(os.environ.get("VALUE_BETA", "0.05"))
 
-# 候選目錄要不要附「這個值住在哪」。**預設 0 = 關閉**。
-VALUE_EVIDENCE = int(os.environ.get("VALUE_EVIDENCE", "0"))
+# 候選目錄要不要附「這個值住在哪」。**2026-09-04 起預設 1 = 開啟**。
+VALUE_EVIDENCE = int(os.environ.get("VALUE_EVIDENCE", "1"))
 
 # 一個值最多跨幾張表才算有鑑別力。
 #

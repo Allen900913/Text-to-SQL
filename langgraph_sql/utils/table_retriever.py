@@ -243,7 +243,7 @@ def rank_tables(query: str) -> list[tuple[str, float]]:
 
     # 值索引：問句點名了儲存格裡的值時，把擁有那個值的表推上來（§2.7n）。
     # 嵌入不知道「iPhone 15」是商品，但 products.name 裡就有這個值。
-    # VALUE_BETA 預設 0 —— 關閉時這整段是 no-op，與加這段之前位元相同。
+    # VALUE_BETA 2026-09-04 起預設 0.05；設成 0 時這整段是 no-op，位元還原。
     # 這條通道失敗只降級成「沒有這個加分」，不讓它變成新的單點故障。
     try:
         from langgraph_sql.utils.value_index import VALUE_BETA, value_hits

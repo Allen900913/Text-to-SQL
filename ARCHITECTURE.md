@@ -2689,7 +2689,8 @@ python tools/check_derived_consistency.py     # 閘門 [9]：縱向，衍生欄 
 python tools/check_question_ambiguity.py      # 閘門 [10]：題目層的多來源歧義
 python tools/check_predicate_collisions.py    # 閘門 [11]：橫向，兩張平行表的同義謂詞
 python tools/check_table_retrievability.py    # 閘門 [12]：逐表，被需要時排第幾名
-#   VALUE_BETA=0.05 開著跑才會印橙燈（純 dense 掉出候選、靠值索引撐著的表）
+#   預設就是 production 組態（值索引開）。橙燈 = 純 dense 撈不到、靠值索引撐著的表。
+#   要看「沒有值索引會怎樣」：VALUE_BETA=0 python tools/check_table_retrievability.py
 python eval/eval_gt_check.py                  # GT 自檢：SQL 跑得動、alt_sql 同值
 python eval/test_runner.py                    # 完整 e2e（309 題）→ eval/results/
 python eval/eval_score.py                     # 對帳 + 防禦題稽核 + 僥倖偵測
