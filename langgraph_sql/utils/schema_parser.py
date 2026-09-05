@@ -94,7 +94,10 @@ class SchemaParser:
                 continue
             lines.append(f"  {field} ({info.get('description', '')})")
             for val, desc in (info.get("values") or {}).items():
-                lines.append(f"    - '{val}' = {desc}")
+                # 沒有中文注解就只列值。印成 `- 'APP' = ` 會讀起來像
+                # 「等於空字串」—— 註解本來就沒寫的東西不要硬湊一個等號。
+                # gen_enum_fields 產的項目有一部分是這種（原註解只列了代碼）。
+                lines.append(f"    - '{val}' = {desc}" if desc else f"    - '{val}'")
         return "\n".join(lines)
 
     # ------------------------------------------------------------------

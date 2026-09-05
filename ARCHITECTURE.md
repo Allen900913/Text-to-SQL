@@ -4970,7 +4970,7 @@ B（K=2）      98.36%     2.34      68.7%     0.73 張
 ⚠️ 這也是一個現成的陷阱：**用漏斗召回當守門員時，核心窄表的漏失會被高估成缺陷。**
 `eval_retrieval --funnel` 的數字不能單獨判生死，要跟 e2e 一起看（§5.2 的另一種形狀）。
 
-### 9.12 49 個代碼欄位的合法值，只活在註解的散文裡（2026-09-05，未修）
+### 9.12 代碼欄位的合法值，只活在註解的散文裡（2026-09-05；產生器 2026-09-06 完成）
 
 追 `#262` 的一次失敗（`channel = 'APP 行動應用'`，實際值是 `'APP'`）挖出來的。
 **同一種錯在兩次不同實驗的不同臂各出現過一次**，不是單點。
@@ -5003,6 +5003,96 @@ enum_fields 現有的欄位                   6 個   → 全在原本的窄表�
 `get_enum_text(scoped)` 本來就依選中的表剪裁，所以每題成本很小。
 **是 prompt 層介入，要照 §9.10 的做法事前登記再量**，
 現在有 `SEMANTIC_LAYER_PATH` 可以在同一個 commit 上跑兩臂。
+
+#### 產生器做好了（2026-09-06，`tools/gen_enum_fields.py`）
+
+    python tools/gen_enum_fields.py                                       # 預覽 ＋ 落差報告
+    python tools/gen_enum_fields.py --out utils/semantic_layer_enum.yaml  # 產 B 臂
+    python tools/gen_enum_fields.py --write                               # 量完才翻預設
+
+產 **74 個** enum 欄位（手寫 6 個逐字保留，含四個同名 `status` 的跨表歧義警告）。
+成品在 `utils/semantic_layer_enum.yaml`，**預設值沒有動** —— prompt 層介入照 §9.10
+要事前登記再量，兩臂用 `SEMANTIC_LAYER_PATH` 在同一個 commit 上跑。
+
+**納入與否由註解決定，值域由資料決定。** 這兩件事分開，繞了兩次才對：
+
+| 版本 | 判準 | 結果 |
+|---|---|---|
+| 一 | 註解裡 regex 掃「代碼 中文」 | 48 個，**但 parser 只認得一種註解風格** |
+| 二 | 純看資料的封閉集合 | 138 個，收進了人名、銀行名、對帳批號 |
+| 三 | 註解宣告 ∧ 值在資料裡驗得到 | **74 個** |
+
+版本二錯在哪值得記：種資料時人名只抽了 4 個、銀行名只抽了 12 個，
+在這份資料裡它們**確實**是封閉集合 —— 但那是種子池的產物，不是欄位的語意。
+宣告成 enum 等於告訴模型一件不真的事。
+
+值域則是 **資料 ∪ 註解宣告**，兩邊的作用不同：
+
+    資料   決定字面形式  —— 病灶是 'APP 行動應用' 不是 'APP'，這一半註解說不清楚
+    註解   決定值域      —— REFUNDED 現在 0 筆不代表它不合法，砍掉模型會挑一個錯的值
+
+這個庫有兩種註解風格，parser 兩種都要吃：
+
+    A（原窄表）     動作 (INSERT/UPDATE/DELETE)           括號、斜線、沒有中文
+    B（*_profiles）  出價策略：CPC 單次點擊／CPM 千次曝光    全形／、代碼後接中文
+
+作法是**拿資料裡的真值去註解裡找**，不切段、不猜哪個 token 是代碼。
+（切段的版本會把「DECLINED 銀行拒絕、TIMEOUT 逾時未回應」的 TIMEOUT
+吃進上一個代碼的中文裡，然後誤報成「資料多出 TIMEOUT」。）
+
+#### 但是：**效應上限只有 1 / 120,不值得花配額做 A/B**
+
+先量暴露再決定要不要跑（[[gates-measure-exposure-not-defects]]）。三個零 API 的數字：
+
+```
+既存六輪 1,851 個樣本，用了 enum 欄位但字面值不合法的：  1 次（0.05%）
+                                                        就是 §9.12 記的 #262 那一次
+GT 裡把這 74 個欄位的 enum 值寫成字面常數的：            20 題
+這 20 題在六輪裡的準確率：                              117/120 = 97.5%
+                                                        #262 錯 1 次（就是那次）
+                                                        #281 錯 2 次（18 列 vs 24 列，
+                                                                     不是 enum 字面值的錯）
+```
+
+**這個介入的效應天花板是 120 個樣本裡的 1 個。** MoE 的雜訊遠大於它
+（§5.2、[[eval-noise-single-run]]）。全庫 309 題 × 兩臂只會量到雜訊，
+20 題的靶子也一樣 —— 靶子小不能補償效應更小。**所以不跑。**
+
+#### 真正的收穫是它當閘門，不是當 prompt
+
+零 prompt 成本就抓到的東西（[[fix-the-detector-not-the-instance]]）：
+
+```
+[死代碼] 註解宣告了、資料 0 筆        9 個欄位
+         customer_profiles.risk_flag 'HIGH'、employee_profiles.employment_type 'INTERN'、
+         payment_profiles.dispute_status 'OPEN'、return_profiles 三個、
+         store_profiles / supplier_profiles.audit_result 'FAIL'、
+         support_ticket_profiles.satisfaction_label 'SATISFIED'、review_profiles 'TW'
+[手寫項漂移] shipments.status 手寫 4 個，資料只有 DELIVERED / IN_TRANSIT
+             payments.status  手寫 3 個，資料只有 SUCCESS
+[註解沒提] 資料有、註解沒寫 —— 模型無從得知
+         order_profiles.utm_source ['instagram','line']、utm_medium ['referral']
+[射程外] 是封閉集合但註解沒宣告代碼           63 個，只報告不納入
+```
+
+**死代碼那 9 個要不要修是資料的問題，不是 prompt 的問題** —— 若 GT 有題目問
+「未通過稽核的門市」，答案會是空集合。已列進待查，未動（改資料要重驗 GT）。
+
+#### 事前登記：**如果**將來要量（現在不量）
+
+登記在這裡是為了以後不必重想，不是承諾要跑。要跑的條件是**效應先變大**：
+
+1. 觸發條件：暴露率從 1/1851 升到 **≥ 1%**（例如新增了大量用代碼欄的題目），
+   或死代碼修掉後 GT 出現真的依賴 enum 值域的題目。
+2. 兩臂：`SEMANTIC_LAYER_PATH=utils/semantic_layer_enum.yaml` vs 預設，**同一個 commit**。
+   assert 要驗**行程內實際載入的 enum 個數**（80 vs 6），不是驗環境變數（§9.14 四之六）。
+3. 判準：全庫 n≥4 的總分，**不做逐題檢定**（[[n3-per-question-is-not-evidence]]）。
+4. 對照組要含**沒有 enum 欄位的題**（59% 的題一個 enum 都選不到）——
+   那半邊是免費的雜訊地板（[[single-layer-interventions-make-their-own-control]]）。
+
+每題成本（用六輪的 `retrieved_tables` 實算，927 個樣本）：
+59% 的題一個 enum 欄位都選不到；平均 1.95 個欄位，最大 17 個 / 2,680 字元。
+`get_enum_text(scoped)` 本來就依選中的表剪裁，所以貴的只有少數幾題。
 
 ### 9.13 檢索範圍不是邊界 —— 生成端可以用「沒給過 DDL 的表」（2026-09-05，已修）
 
