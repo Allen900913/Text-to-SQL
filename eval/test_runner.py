@@ -28,6 +28,7 @@ import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from langgraph_sql.graph import compiled_graph
+from langgraph_sql.nodes.ast_validator import SCOPE_MODE as _SCOPE_MODE
 
 # 最終回答中代表「誠實拒答」的標記（由 final_summarizer 攔截 SCHEMA_UNSUPPORTED 後產生）
 _UNSUPPORTED_HINT = "不在資料庫的 schema 與規則定義中"
@@ -89,6 +90,7 @@ def run_evaluation(file_path: str = _os.path.join(_ROOT, "eval_questions_v2.json
         _RESULTS, f"eval_result_{ts}.json")
 
     print(f"載入 {total_q} 題；報告 → {report_file}；結構化結果 → {json_file}")
+    print(f"[驗證器] 本行程實際生效 SCOPE_MODE = {_SCOPE_MODE}")
 
     report = open(report_file, "w", encoding="utf-8")
     report.write("=== Text-to-SQL 評估報告 ===\n")
@@ -130,6 +132,9 @@ def run_evaluation(file_path: str = _os.path.join(_ROOT, "eval_questions_v2.json
                     # 檢索漏了、生成端越界引用後由驗證器補進來的表（ast_validator 3d）。
                     # 這是「檢索指標看不到的救援」，§9.11 缺的就是這個數字。
                     "scope_extra": state.get("scope_extra") or [],
+                    # 生效模式要跟著結果走。旗標存在腳本裡、模式存在行程裡，
+                    # 中間隔了一次 import —— A/B 跨版本時兩者會不一致（§9.14 四之六）。
+                    "scope_mode": _SCOPE_MODE,
                     # 供稽核：是否用了並列安全的寫法 / 是否用了否定子查詢
                     "used_dense_rank": "DENSE_RANK" in champion_sql.upper(),
                     "used_not_in_exists": ("NOT IN" in champion_sql.upper()

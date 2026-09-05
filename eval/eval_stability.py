@@ -79,6 +79,12 @@ def main() -> int:
     args = ap.parse_args()
 
     log.remove()
+    # log.remove() 之後 [Node 3] 的 WARNING 就不會進 log 了 —— 靠 grep 日誌判斷
+    # 某一層有沒有作用會恆為 0（§9.14 四之三）。而且環境變數相同不代表行為相同：
+    # A/B 跑到一半改了被測檔案，同一個旗標在前後兩版指向不同模式（四之六）。
+    # 所以這裡印的是**行程內實際生效的模式**，不是傳進來的旗標。
+    from langgraph_sql.nodes.ast_validator import SCOPE_MODE
+    print(f"[驗證器] 本行程實際生效 SCOPE_MODE = {SCOPE_MODE}")
     gt = {e["id"]: e for e in yaml.safe_load(io.open(GT_PATH, encoding="utf-8"))}
     db = get_db_manager(MYSQL_URI)
 
