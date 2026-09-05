@@ -31,6 +31,11 @@ class SchemaParser:
             yaml_path = os.environ.get("SEMANTIC_LAYER_PATH") or os.path.join(
                 _project_root, "utils", "semantic_layer.yaml")
 
+        # 實際載到的路徑要留下來。旗標存在腳本裡、載入的檔存在行程裡，
+        # 中間隔了一次 import —— A/B 跨版本時兩者會不一致（§9.14 四之六）。
+        # 記錄與 assert 都要問這一欄，不要問 os.environ。
+        self.path = yaml_path
+
         try:
             with open(yaml_path, "r", encoding="utf-8") as f:
                 self._data = yaml.safe_load(f) or {}

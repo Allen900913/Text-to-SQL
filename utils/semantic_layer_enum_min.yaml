@@ -1514,87 +1514,18 @@ enum_fields:
 
 
   # >>> gen_enum_fields.py 產生，勿手動編輯（改註解或資料後重跑）
-  audit_log.action:
-    description: "動作"
-    values:
-      DELETE:  ""
-      INSERT:  ""
-      UPDATE:  ""
   campaign_profiles.bid_strategy:
     description: "出價策略"
     values:
       CPA:  "單次行動"
       CPC:  "單次點擊"
       CPM:  "千次曝光"
-  campaign_profiles.target_gender:
-    description: "鎖定性別"
-    values:
-      ALL:  ""
-      F:    ""
-      M:    ""
-  campaign_profiles.device_target:
-    description: "鎖定裝置"
-    values:
-      ALL:      ""
-      DESKTOP:  ""
-      MOBILE:   ""
   campaign_profiles.creative_type:
     description: "素材型式"
     values:
       CAROUSEL:  "輪播"
       IMAGE:     "圖片"
       VIDEO:     "影片"
-  campaign_profiles.ab_test_group:
-    description: "A/B 測試分組"
-    values:
-      A:     ""
-      NONE:  ""
-  customer_contacts.contact_type:
-    description: "類型"
-    values:
-      EMAIL:  ""
-      LINE:   ""
-      PHONE:  ""
-  customer_profiles.gender:
-    description: "性別"
-    values:
-      F:      ""
-      M:      ""
-      OTHER:  ""
-  customer_profiles.referral_source:
-    description: "來源管道"
-    values:
-      AD:        ""
-      ORGANIC:   ""
-      REFERRAL:  ""
-      SOCIAL:    ""
-  customer_profiles.tier:
-    description: "會員等級"
-    values:
-      BRONZE:    ""
-      GOLD:      ""
-      PLATINUM:  ""
-      SILVER:    ""
-  customer_profiles.segment:
-    description: "行銷分群"
-    values:
-      AT_RISK:  ""
-      DORMANT:  ""
-      GROWING:  ""
-      LOYAL:    ""
-      NEW:      ""
-  customer_profiles.risk_flag:
-    description: "風控標記"
-    values:
-      NONE:   ""
-      WATCH:  ""
-      HIGH:   ""
-  delivery_attempts.result:
-    description: "派送結果"
-    values:
-      ABSENT:     ""
-      DELIVERED:  ""
-      REFUSED:    ""
   employee_profiles.employment_type:
     description: "雇用型態"
     values:
@@ -1602,58 +1533,12 @@ enum_fields:
       FULLTIME:  "正職"
       PARTTIME:  "兼職"
       INTERN:    "實習"
-  employee_profiles.job_family:
-    description: "職務家族"
-    values:
-      工程:  ""
-      業務:  ""
-      營運:  ""
-      行政:  ""
   employee_profiles.remote_policy:
     description: "遠端安排"
     values:
       HYBRID:  "混合"
       ONSITE:  "全實體"
       REMOTE:  "全遠端"
-  employee_profiles.education_level:
-    description: "最高學歷"
-    values:
-      BACHELOR:    ""
-      HIGHSCHOOL:  ""
-      MASTER:      ""
-      PHD:         ""
-  employee_profiles.review_grade_last:
-    description: "最近一次年度考核等第"
-    values:
-      A:  ""
-      B:  ""
-      C:  ""
-      D:  ""
-  employee_shifts.shift_type:
-    description: "班別"
-    values:
-      AFTERNOON:  ""
-      MORNING:    ""
-      NIGHT:      ""
-  job_runs.status:
-    description: "執行結果"
-    values:
-      FAILED:   ""
-      RUNNING:  ""
-      SUCCESS:  ""
-  loyalty_points.reason:
-    description: "異動原因"
-    values:
-      BONUS:     ""
-      EXPIRE:    ""
-      PURCHASE:  ""
-      REDEEM:    ""
-  order_cancellations.cancelled_by:
-    description: "取消發起方"
-    values:
-      CUSTOMER:  ""
-      STAFF:     ""
-      SYSTEM:    ""
   order_profiles.channel:
     description: "下單通路"
     values:
@@ -1661,12 +1546,6 @@ enum_fields:
       PHONE:  "電話"
       STORE:  "門市"
       WEB:    "官網"
-  order_profiles.device_type:
-    description: "裝置類型"
-    values:
-      DESKTOP:  ""
-      MOBILE:   ""
-      TABLET:   ""
   order_profiles.utm_source:
     description: "流量來源，例如 google／facebook／direct"
     values:
@@ -1694,38 +1573,18 @@ enum_fields:
       HOME:    "宅配"
       LOCKER:  "智取櫃"
       STORE:   "門市取貨"
-  order_profiles.preferred_time_slot:
-    description: "希望送達時段"
-    values:
-      AFTERNOON:  ""
-      ANY:        ""
-      EVENING:    ""
-      MORNING:    ""
   order_profiles.fraud_review_result:
     description: "覆核結果"
     values:
       HOLD:    "暫扣"
       PASS:    "放行"
       REJECT:  "婉拒"
-  order_returns.status:
-    description: "退貨狀態"
-    values:
-      RECEIVED:   ""
-      REJECTED:   ""
-      REQUESTED:  ""
   payment_attempts.result:
     description: "嘗試結果"
     values:
       DECLINED:  "銀行拒絕"
       OK:        "成功"
       TIMEOUT:   "逾時未回應"
-  payment_profiles.card_brand:
-    description: "卡別"
-    values:
-      AMEX:    ""
-      JCB:     ""
-      MASTER:  ""
-      VISA:    ""
   payment_profiles.wallet_type:
     description: "電子錢包"
     values:
@@ -1832,24 +1691,12 @@ enum_fields:
       APPROVED:  "通過"
       PENDING:   "待審"
       REJECTED:  "退回"
-  review_profiles.language_code:
-    description: "評價語言"
-    values:
-      en:     ""
-      ja:     ""
-      zh-TW:  ""
   review_profiles.sentiment_label:
     description: "情緒標記"
     values:
       NEGATIVE:  "負面"
       NEUTRAL:   "中性"
       POSITIVE:  "正面"
-  service_appointments.service_type:
-    description: "服務類型"
-    values:
-      CONSULT:  ""
-      INSTALL:  ""
-      REPAIR:   ""
   shipment_profiles.carton_type:
     description: "外箱型式"
     values:
@@ -1933,12 +1780,6 @@ enum_fields:
       APP:    "推播"
       EMAIL:  "提醒信"
       SELF:   "自行升級"
-  subscriptions.status:
-    description: "訂閱狀態"
-    values:
-      ACTIVE:     ""
-      CANCELLED:  ""
-      PAUSED:     ""
   supplier_profiles.invoice_method:
     description: "請款方式"
     values:
@@ -1964,13 +1805,6 @@ enum_fields:
       ANGRY:  "憤怒"
       CALM:   "平和"
       UPSET:  "不滿"
-  support_ticket_profiles.preferred_callback_window:
-    description: "客戶希望的回電時段"
-    values:
-      AFTERNOON:  ""
-      ANY:        ""
-      MORNING:    ""
-      NIGHT:      ""
   support_ticket_profiles.resolution_type:
     description: "結案方式"
     values:
@@ -1986,19 +1820,6 @@ enum_fields:
       NEUTRAL:         "普通"
       VERY_SATISFIED:  "非常滿意"
       SATISFIED:       "滿意"
-  support_tickets.status:
-    description: "工單狀態"
-    values:
-      CLOSED:   ""
-      OPEN:     ""
-      PENDING:  ""
-  warranty_claims.status:
-    description: "處理狀態"
-    values:
-      APPROVED:   ""
-      DONE:       ""
-      REJECTED:   ""
-      SUBMITTED:  ""
   # <<< gen_enum_fields.py 產生結束
 
 # =============================================================================

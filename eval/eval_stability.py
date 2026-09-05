@@ -76,6 +76,9 @@ def main() -> int:
     ap.add_argument("--ids", default="", help="逗號分隔的題號，指定後忽略 --sample")
     ap.add_argument("--wrong-only", action="store_true", help="只跑上一輪錯的")
     ap.add_argument("--seed", type=int, default=0, help="抽樣種子，固定才能跨輪比較")
+    ap.add_argument("--out", default=None,
+                    help="把逐題 n_ok 寫成 JSON（A/B 要對帳就一定要給）。"
+                         "檔案已存在就**接著跑**，跳過已完成的題目。")
     args = ap.parse_args()
 
     log.remove()
@@ -84,7 +87,15 @@ def main() -> int:
     # A/B 跑到一半改了被測檔案，同一個旗標在前後兩版指向不同模式（四之六）。
     # 所以這裡印的是**行程內實際生效的模式**，不是傳進來的旗標。
     from langgraph_sql.nodes.ast_validator import SCOPE_MODE
+    from langgraph_sql.utils.schema_parser import get_schema_parser
     print(f"[驗證器] 本行程實際生效 SCOPE_MODE = {SCOPE_MODE}")
+    # 同一條教訓套在 prompt 層：問**載進來的 parser**，不要問環境變數。
+    _p = get_schema_parser()
+    _arm = {"semantic_layer": _p.path,
+            "n_enum_fields": len(_p._data.get("enum_fields") or {}),
+            "scope_mode": SCOPE_MODE}
+    print(f"[Prompt] 實際載入 {_arm['semantic_layer']}"
+          f"｜enum_fields {_arm['n_enum_fields']} 項")
     gt = {e["id"]: e for e in yaml.safe_load(io.open(GT_PATH, encoding="utf-8"))}
     db = get_db_manager(MYSQL_URI)
 
@@ -103,11 +114,30 @@ def main() -> int:
             ids += sorted(pool[:args.sample])
         source = "錯題 + 隨機抽樣"
 
-    print(f"\n來源: {source}｜{len(ids)} 題 × {args.n} 次 = {len(ids) * args.n} 次 pipeline\n")
+    # 續跑：12 小時的 A/B 中途一定會被打斷（配額、機器、手滑）。
+    # 重跑整臂不只是浪費配額，還會讓兩臂落在不同的時間窗上
+    # （[[baselines-die-when-the-model-changes.md]]）。
+    done: dict = {}
+    if args.out and _os.path.exists(args.out):
+        prev = json.load(io.open(args.out, encoding="utf-8"))
+        assert prev["arm"] == _arm, (
+            f"續跑的臂跟這個行程不一樣，中止：\n  檔案 {prev['arm']}\n  行程 {_arm}")
+        assert prev["n"] == args.n, f"續跑的 --n 不同（{prev['n']} vs {args.n}），中止"
+        done = {int(k): v for k, v in prev["n_ok"].items()}
+        print(f"續跑 {args.out}：已完成 {len(done)} 題，跳過")
+
+    def _save():
+        if not args.out:
+            return
+        io.open(args.out, "w", encoding="utf-8", newline="\n").write(json.dumps(
+            {"arm": _arm, "n": args.n, "n_ok": done}, ensure_ascii=False, indent=1))
+
+    todo = [q for q in ids if q not in done]
+    print(f"\n來源: {source}｜{len(todo)} 題 × {args.n} 次 = {len(todo) * args.n} 次 pipeline\n")
     graph = build_graph()
 
     rows = []
-    for qid in ids:
+    for qid in todo:
         entry = gt[qid]
         details: Counter = Counter()
         n_ok = 0
@@ -127,11 +157,23 @@ def main() -> int:
         bar = "#" * n_ok + "." * (args.n - n_ok)
         print(f"  #{qid:<4} {n_ok}/{args.n} {bar}  {klass}  {entry['question'][:34]}",
               flush=True)
+        # 每題就存一次 —— 存在最後等於沒有續跑。
+        done[qid] = n_ok
+        _save()
 
     print(f"\n{'=' * 72}")
-    tally = Counter(k for _, _, k, _, _ in rows)
+    # 統計要看 `done` 不是 `rows` —— 續跑時 rows 只有這次新跑的那幾題，
+    # 印出來會是一份看起來正常、其實少了一半的摘要（[[silent-pass-is-not-a-pass]]）。
+    tally = Counter("穩定過" if v == args.n else "穩定錯" if v == 0 else "擲硬幣"
+                    for v in done.values()) if done else Counter(
+        k for _, _, k, _, _ in rows)
+    print(f"  合計 {sum(tally.values())} 題"
+          + ("（含續跑前已完成的）" if len(done) > len(rows) else ""))
     for k in ("穩定過", "擲硬幣", "穩定錯"):
         print(f"  {k}: {tally[k]}")
+    if done:
+        print(f"  總正確樣本 {sum(done.values())}/{len(done) * args.n}"
+              f" = {sum(done.values()) / (len(done) * args.n):.1%}")
 
     for klass, title in (("穩定錯", "穩定錯 —— 系統性缺陷，可歸因"),
                          ("擲硬幣", "擲硬幣 —— 分數會隨機漂移，單輪計分不可信")):

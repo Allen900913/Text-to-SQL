@@ -69,7 +69,18 @@ _SEP_RE = re.compile(f"[{re.escape(_SEPS)}]")
 #   B（*_profiles） 出價策略：CPC 單次點擊／CPM 千次曝光   全形／、代碼後接中文
 # 所以下面不切段、也不猜哪個 token 是代碼 —— **拿資料裡的真值去註解裡找**。
 _NUMERIC = re.compile(r"^[\d.\-]+$")
-_CODEISH = re.compile(r"(?<![A-Za-z0-9_])([A-Z][A-Z0-9_]{1,23})(?![A-Za-z0-9_])")
+
+# 詞邊界**必須含連字號**。少了它，`評價語言：zh-TW／en／ja` 會被挖出一個
+# `TW`，於是 review_profiles.language_code 被報成「宣告了 TW、資料 0 筆」——
+# 那是這支自己造出來的死代碼，不是資料的問題。三處（找代碼、找真值、取中文）
+# 用同一個邊界，不要各寫各的。
+_B = "A-Za-z0-9_-"
+_CODEISH = re.compile(f"(?<![{_B}])([A-Z][A-Z0-9_]{{1,23}})(?![{_B}])")
+
+
+def _token(value: str) -> str:
+    """把一個值包成「整詞」樣式。"""
+    return f"(?<![{_B}]){re.escape(value)}(?![{_B}])"
 
 _COLUMNS_SQL = """
 SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, COLUMN_COMMENT
@@ -77,6 +88,50 @@ FROM INFORMATION_SCHEMA.COLUMNS
 WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_COMMENT <> ''
 ORDER BY TABLE_NAME, ORDINAL_POSITION
 """
+
+
+_GT_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "eval_ground_truth.yaml",
+)
+
+
+def _load_gt() -> list[tuple]:
+    """(題號, expect, 這題所有 gold SQL 串在一起)。載不到就回空 —— 落差照報。"""
+    try:
+        data = yaml.safe_load(io.open(_GT_PATH, encoding="utf-8").read())
+    except Exception as e:
+        print(f"!! 讀不到 {_GT_PATH}（{type(e).__name__}: {e}），死代碼只能報成未分類")
+        return []
+    items = data if isinstance(data, list) else list(data.values())[0]
+    out = []
+    for q in items:
+        sqls = " ".join([q.get("sql") or ""] + list(q.get("alt_sql") or []))
+        out.append((q.get("id"), q.get("expect"), sqls))
+    return out
+
+
+def gt_verdict(gt: list[tuple], col: str, value: str) -> tuple[str, list]:
+    """
+    「註解宣告了、資料 0 筆」到底是不是缺陷 —— **問題庫，不要自己猜**。
+
+    這一層是 [[fix-the-detector-not-the-instance]]：上一版把 9 個死代碼
+    全報成待查缺陷，但其中 customer_profiles.risk_flag 的 HIGH 是 `#159`
+    （`expect: empty`，capability 寫著「誠實回報空集合」）**賴以存在的東西**，
+    payments.status 的 FAILED 同樣是 `#104`。把資料補進去等於刪掉那兩題。
+
+    所以判定要看引用它的題目期望什麼：
+      撐題    有 expect: empty 的題目打在這個值上 → 題庫的設計，不准動資料
+      缺陷    有 expect: rows  的題目打在這個值上 → 真的壞了，要修
+      無人引用 沒有題目提到    → 無害，一行帶過
+    """
+    hits = [(qid, expect) for qid, expect, sqls in gt
+            if re.search(_token(col), sqls) and f"'{value}'" in sqls]
+    if not hits:
+        return "無人引用", []
+    if any(e == "empty" for _, e in hits):
+        return "撐題", hits
+    return "缺陷", hits
 
 
 def describe(comment: str) -> str:
@@ -94,7 +149,7 @@ def gloss_for(comment: str, value: str) -> str:
     **錨點是資料裡的真值**，不是註解裡長得像代碼的 token。
     這樣兩種註解風格都吃得下，而且不會把「A/B 測試」的 A 和 B 當成代碼。
     """
-    m = re.search(f"(?<![A-Za-z0-9_]){re.escape(value)}(?![A-Za-z0-9_])", comment)
+    m = re.search(_token(value), comment)
     if not m:
         return ""
     tail = comment[m.end():]
@@ -122,15 +177,18 @@ def is_closed_set(vals: list, n_rows: int) -> bool:
     return n_rows >= 3 * len(vals)
 
 
-def build() -> tuple[dict, list[str], list[str]]:
+def build() -> tuple[dict, list[tuple[str, str]], list[str], dict[str, str]]:
     db = get_db_manager(MYSQL_URI)
     existing_data = (yaml.safe_load(io.open(YAML_PATH, encoding="utf-8").read())
                      .get("enum_fields") or {})
     existing = set(existing_data)
 
+    gt = _load_gt()
+
     out: dict[str, dict] = {}
-    notes: list[str] = []       # 註解與資料的落差（給人看的）
+    notes: list[tuple[str, str]] = []   # (判定, 說明) —— 判定見 gt_verdict
     candidates: list[str] = []  # 是封閉集合、但註解沒宣告 —— 射程外，只報告
+    kinds: dict[str, str] = {}  # key -> R1 黏連 / R2 未列 / R3 乾淨
 
     with db.engine.connect() as conn:
         rows = conn.execute(text(_COLUMNS_SQL)).fetchall()
@@ -154,17 +212,24 @@ def build() -> tuple[dict, list[str], list[str]]:
                 f"WHERE `{col}` IS NOT NULL ORDER BY 1 LIMIT {MAX_VALUES + 1}"
             )).fetchall()]
 
-            if not is_closed_set(vals, n_rows):
-                continue
-
             # 現有的 6 個是手寫的，帶著跨表歧義警告（四個同名 status），
             # 不能被生成版蓋掉。但仍然拿真實值對帳一次 —— 免費的檢查。
+            #
+            # ⚠️ 這段要在 is_closed_set 之前。`payments.status` 資料裡只剩
+            # 一個相異值（164 筆全是 SUCCESS），`2 <= len(vals)` 那條會先把它
+            # 濾掉 —— 於是**最該被報出來的那個形狀，恰好是閘門看不到的那個**。
             if key in existing:
                 declared_old = set(
                     (existing_data[key].get("values") or {}).keys())
-                if set(map(str, vals)) ^ declared_old:
-                    notes.append(f"[手寫項漂移] {key}：手寫 {sorted(declared_old)} "
-                                 f"vs 實際 {vals}")
+                for d in sorted(declared_old - set(map(str, vals))):
+                    verdict, qs = gt_verdict(gt, col, d)
+                    notes.append((verdict, f"[手寫] {key} 列了 '{d}'、資料 0 筆"
+                                  + (f" ← {[q for q, _ in qs]}" if qs else "")))
+                for u in sorted(set(map(str, vals)) - declared_old):
+                    notes.append(("註解沒提", f"[手寫] {key} 資料有 '{u}'、沒列"))
+                continue
+
+            if not is_closed_set(vals, n_rows):
                 continue
 
             cm = comment or ""
@@ -179,8 +244,8 @@ def build() -> tuple[dict, list[str], list[str]]:
             declared = set(_CODEISH.findall(cm))
             # 純數字的值不算「代碼」。energy_label 的註解是「等級 1~5級」，
             # 1 和 5 會在範圍式裡被命中，於是整欄被誤判成有宣告的代碼清單。
-            hit = [v for v in sval if not _NUMERIC.match(v) and re.search(
-                f"(?<![A-Za-z0-9_]){re.escape(v)}(?![A-Za-z0-9_])", cm)]
+            hit = [v for v in sval
+                   if not _NUMERIC.match(v) and re.search(_token(v), cm)]
             if len(hit) < 2:
                 # 是封閉集合、但註解沒宣告 —— 只報告，讓人決定要不要擴大射程。
                 candidates.append(f"{key}：{sval}  註解「{describe(cm) or cm}」沒宣告值")
@@ -188,10 +253,13 @@ def build() -> tuple[dict, list[str], list[str]]:
 
             dead = sorted(declared - set(sval))
             unlisted = [v for v in sval if v not in hit]
-            if dead:
-                notes.append(f"[死代碼] {key}：註解宣告 {dead}，資料 0 筆")
+            for d in dead:
+                verdict, qs = gt_verdict(gt, col, d)
+                notes.append((verdict, f"{key} 註解宣告 '{d}'、資料 0 筆"
+                              + (f" ← {[q for q, _ in qs]}" if qs else "")))
             if unlisted:
-                notes.append(f"[註解沒提] {key}：{unlisted} —— 模型無從得知")
+                notes.append(("註解沒提",
+                              f"{key} 資料有 {unlisted}、註解沒提 —— 模型無從得知"))
 
             # 值域 = 資料 ∪ 註解宣告。**兩邊都要，理由不同**：
             #   資料   決定**字面形式** —— §9.12 的病灶是 'APP 行動應用'，
@@ -206,7 +274,17 @@ def build() -> tuple[dict, list[str], list[str]]:
 
             out[key] = {"description": describe(cm), "values": values}
 
-    return out, notes, candidates
+            # 分級 —— **決定這一欄值不值得進 A/B 的 B 臂**。
+            #   R1 黏連  註解把「代碼 中文」黏成一串（`WEB 官網／APP 行動應用`）。
+            #            §9.12 的病灶就是這個形狀：模型寫出 'APP 行動應用'。
+            #   R2 未列  資料有、註解完全沒提 —— 模型無從得知。
+            #   R3 乾淨  `工單狀態 (OPEN/PENDING/CLOSED)`，代碼之間是分隔符，
+            #            沒有可黏的中文。enum 只是把 DDL 已經有的東西再抄一遍。
+            # 判準直接沿用 gloss_for：它取得到中文，就代表中文黏在值後面。
+            kinds[key] = ("R2" if unlisted else
+                          "R1" if any(values[v] for v in sval) else "R3")
+
+    return out, notes, candidates, kinds
 
 
 def _width(col_type: str) -> int:
@@ -231,16 +309,62 @@ def render(out: dict) -> str:
 
 
 def main() -> int:
-    out, notes, candidates = build()
+    out, notes, candidates, kinds = build()
+
+    tally = {k: [f for f, v in kinds.items() if v == k] for k in ("R1", "R2", "R3")}
+    print(f"分級：R1 黏連 {len(tally['R1'])}｜R2 未列 {len(tally['R2'])}｜"
+          f"R3 乾淨 {len(tally['R3'])}　→ 最小集 {len(tally['R1']) + len(tally['R2'])} 欄")
+
+    if "--minset" in sys.argv:
+        path = sys.argv[sys.argv.index("--minset") + 1]
+        keys = tally["R1"] + tally["R2"]
+        io.open(path, "w", encoding="utf-8", newline="\n").write(
+            "# gen_enum_fields.py --minset 產生，勿手動編輯\n"
+            "# R1 黏連（註解把「代碼 中文」黏成一串）＋ R2 未列（資料有、註解沒提）。\n"
+            "# R3「乾淨」的欄位刻意不收 —— 見 --only 的說明。\n"
+            + "\n".join(keys) + "\n")
+        print(f"已寫入 {path}：{len(keys)} 個欄位")
+        return 0
+
+    # `--only`：只留白名單裡的欄位。**這不是省字元，是為了留下對照組。**
+    # 全量 74 欄會動到 150/309 題的 Prompt；砍掉 28 個「乾淨」欄位之後
+    # 只動 86 題，其餘 223 題的 Prompt **位元不變** —— 那 223 題就是免費的
+    # 雜訊地板（[[single-layer-interventions-make-their-own-control]]）。
+    # 沒有它，「不會變差」這個宣稱在現有配額下量不出來。
+    if "--only" in sys.argv:
+        path = sys.argv[sys.argv.index("--only") + 1]
+        body = "\n".join(ln for ln in io.open(path, encoding="utf-8")
+                         if not ln.lstrip().startswith("#"))
+        keep = {k.strip() for k in re.split(r"[,\s]+", body) if k.strip()}
+        missing = keep - set(out)
+        assert not missing, f"--only 名單裡有 {len(missing)} 個不在產出中: {sorted(missing)}"
+        dropped = len(out) - len(keep)
+        out = {k: v for k, v in out.items() if k in keep}
+        print(f"--only {path}：留 {len(out)} 欄，濾掉 {dropped} 欄\n")
+
     block = render(out)
 
     print(f"產生 {len(out)} 個 enum 欄位，共 {len(block):,} 字元\n")
 
-    if notes:
-        print(f"—— 註解與資料的落差（{len(notes)} 筆，只報告不修）——")
-        for n in notes:
-            print(f"  {n}")
-        print()
+    # 第一行就報缺陷數。清單長不長不重要，**有沒有真的壞掉**才重要
+    # （[[gates-measure-exposure-not-defects]]、[[silent-pass-is-not-a-pass]]）。
+    bad = [t for v, t in notes if v == "缺陷"]
+    print(f"落差 {len(notes)} 筆，其中**真缺陷 {len(bad)} 筆**"
+          f"（有 expect: rows 的題目打在一個 0 筆的值上）")
+    for verdict in ("缺陷", "撐題", "註解沒提", "無人引用"):
+        group = [t for v, t in notes if v == verdict]
+        if not group:
+            continue
+        tail = {
+            "缺陷": "← 要修",
+            "撐題": "← **題庫的設計，不准動資料**",
+            "註解沒提": "← 模型無從得知",
+            "無人引用": "← 無害，沒有題目碰它",
+        }[verdict]
+        print(f"\n  【{verdict}】{len(group)} 筆 {tail}")
+        for t in group:
+            print(f"    {t}")
+    print()
     if candidates:
         print(f"—— 射程外：是封閉集合但註解沒宣告代碼（{len(candidates)} 筆，未納入）——")
         for c in candidates:
