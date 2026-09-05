@@ -126,11 +126,19 @@ def main() -> int:
         done = {int(k): v for k, v in prev["n_ok"].items()}
         print(f"續跑 {args.out}：已完成 {len(done)} 題，跳過")
 
+    # SQL 也要存。判準 [4]（機制：非法字面值還出不出現）沒有 SQL 就驗不了，
+    # 而重跑一次只為了拿 SQL 是白燒 12 小時的配額。
+    sqls: dict = {}
+    if args.out and _os.path.exists(args.out):
+        sqls = {int(k): v for k, v in
+                json.load(io.open(args.out, encoding="utf-8")).get("sql", {}).items()}
+
     def _save():
         if not args.out:
             return
         io.open(args.out, "w", encoding="utf-8", newline="\n").write(json.dumps(
-            {"arm": _arm, "n": args.n, "n_ok": done}, ensure_ascii=False, indent=1))
+            {"arm": _arm, "n": args.n, "n_ok": done, "sql": sqls},
+            ensure_ascii=False, indent=1))
 
     todo = [q for q in ids if q not in done]
     print(f"\n來源: {source}｜{len(todo)} 題 × {args.n} 次 = {len(todo) * args.n} 次 pipeline\n")
@@ -142,7 +150,9 @@ def main() -> int:
         details: Counter = Counter()
         n_ok = 0
         for _ in range(args.n):
-            verdict, detail = judge(db, entry, run_once(graph, entry["question"]))
+            res = run_once(graph, entry["question"])
+            sqls.setdefault(qid, []).append(res.get("sql") or "")
+            verdict, detail = judge(db, entry, res)
             if verdict == "correct":
                 n_ok += 1
             else:
