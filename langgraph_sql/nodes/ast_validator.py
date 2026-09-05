@@ -10,6 +10,8 @@ Node 3: AST Validator
 
 通過後對最外層查詢強制注入或收斂為 LIMIT 500，避免結果集過大。
 """
+import os
+
 import sqlglot
 from sqlglot import exp
 from sqlglot.errors import ParseError
@@ -17,6 +19,12 @@ from loguru import logger as log
 
 from langgraph_sql.state import AgentState
 from langgraph_sql.utils.schema_registry import get_allowed_tables, get_table_columns
+
+# 第 3d 層「越界引用」的開關。**預設開。**
+# 設 0 可位元還原到 2026-09-05 之前的行為 —— 兩臂要落得進同一個 commit，
+# 改常數再跑一次會讓兩次量測落在不同的 commit 上（同 COLUMN_HINT_K 的理由）。
+#     SCOPE_STRICT=0 python eval/test_runner.py
+SCOPE_STRICT = os.environ.get("SCOPE_STRICT", "1") != "0"
 
 
 # ===========================================================================
@@ -173,6 +181,14 @@ def ast_validator(state: AgentState) -> dict:
     allowed_tables: set[str] = get_allowed_tables()
     table_columns: dict[str, list[str]] = get_table_columns()
 
+    # 這一題實際拿到 DDL 的表 = 檢索層給的 ＋ 先前輪次補進來的（見 3d）。
+    # 檢索失效時 context_retriever 會回傳全部的表，那時 scope 涵蓋全庫、3d 不會觸發。
+    scope: set[str] = {t.lower() for t in (state.get("retrieved_tables") or [])}
+    scope |= {t.lower() for t in (state.get("scope_extra") or [])}
+    if not SCOPE_STRICT or scope >= allowed_tables:
+        scope = set()          # 關閉、或沒有剪裁 → 不做越界檢查
+    scope_escapes: set[str] = set()
+
     valid_sqls: list[str] = []
     # 收集每條 SQL 的淘汰理由，供全部淘汰時回填 db_error 給 Generator 自我修復。
     rejection_reasons: list[str] = []
@@ -267,6 +283,40 @@ def ast_validator(state: AgentState) -> dict:
             issues.extend(_detect_negation_antipatterns(ast))
             issues.extend(_detect_limit1_truncation(ast))
 
+            # --- 3d. 越界引用：表真的存在，但這一題沒給過它的 DDL ---
+            #
+            # 為什麼要擋（2026-09-05，ARCHITECTURE §9.11／§9.13）：
+            # `context_retriever._other_tables_line()` 會列出沒被選中的表名並說
+            # 「需要時可直接使用」，而 24 則 few-shot 反覆示範 orders／customers／
+            # products 的欄位。兩者相加的結果是**模型可以靠記憶寫一張它沒拿到
+            # 欄位定義的表**。六輪 × 兩臂 1,823 次取樣裡出現 20 次，20 次全對 ——
+            # 所以這不是幻覺（3a 擋掉不存在的表、3b 擋掉不存在的欄位），
+            # 而是「用了沒看過的表」。它有兩個真傷害：
+            #
+            #   ① **檢索範圍不再是邊界**，檢索指標因此失真。§9.11 量到欄位提示
+            #      的召回比對照低 1.0pp、e2e 卻高 1.4pp，差額全部走這條路。
+            #   ② **模型依賴的是 few-shot 記住的 schema，那份記憶會過期。**
+            #      欄位改名時 few-shot 還在教舊名字，而這條路徑不會報錯。
+            #
+            # 處置刻意**不是純拒絕**：拒絕會把檢索失效時的救援能力一起拿掉。
+            # 這裡淘汰這一條 SQL，**同時把那些表的 DDL 補進 scope**，
+            # 重試時模型看得到真實欄位 —— 從「靠記憶猜」變成「被明確告知」。
+            # 補過之後那張表就在 scope 裡了，不會再次觸發，所以不會迴圈。
+            if scope:
+                escaped = sorted({
+                    t.name.lower() for t in ast.find_all(exp.Table)
+                    if t.name.lower() not in cte_names
+                    and t.name.lower() in allowed_tables
+                    and t.name.lower() not in scope
+                })
+                if escaped:
+                    scope_escapes.update(escaped)
+                    issues.append(
+                        f"用了沒有提供欄位定義的表: {', '.join(escaped)}"
+                        "（這些表確實存在，但上面的 schema 沒有列出它們的欄位，"
+                        "不可以憑印象寫。已在下方補上它們的定義，請據此改寫）"
+                    )
+
             # --- 結算：一次列出所有問題 ---
             if issues:
                 detail = "；".join(
@@ -301,6 +351,26 @@ def ast_validator(state: AgentState) -> dict:
     # 若全部淘汰，遞增 retry_count，並把淘汰理由回填 db_error。
     # db_error 是 sql_generator 唯一會讀進修復 Prompt 的欄位；只設 error_message
     # 會讓模型在沒有任何提示的情況下重生成，temperature=0 幾乎必然產出同一條 SQL。
+    # 越界引用（3d）→ 把那些表的 DDL 真的補進去，重試才有依據可改。
+    # 只在「全部淘汰」時補：有 SQL 通過就代表模型本來就寫得出範圍內的答案，
+    # 這時候把表加進去只會讓下一題的 Prompt 更長而已。
+    if scope_escapes and not valid_sqls:
+        from langgraph_sql.utils.schema_parser import get_schema_parser
+        extra = sorted(set(state.get("scope_extra") or []) | scope_escapes)
+        try:
+            result["scope_extra"] = extra
+            result["schema_ddl"] = (
+                state.get("schema_ddl", "")
+                + "\n-- 你上一輪用到、但先前沒有列出的表（現在補上）:\n"
+                + get_schema_parser().get_ddl_for(set(scope) | scope_escapes)
+            )
+            log.warning(
+                f"[Node 3] 越界引用 {sorted(scope_escapes)} —— 已補進 scope 供重試。"
+                f"（檢索層漏了這些表，retrieved_tables 保持不動，見 §9.11）"
+            )
+        except Exception as e:      # 補 DDL 失敗不該讓整題死掉
+            log.warning(f"[Node 3] 補越界表 DDL 失敗（{type(e).__name__}: {e}），照常重試")
+
     if not valid_sqls:
         result["retry_count"] = state.get("retry_count", 0) + 1
         detail = "\n".join(rejection_reasons)

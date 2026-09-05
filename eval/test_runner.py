@@ -127,6 +127,9 @@ def run_evaluation(file_path: str = _os.path.join(_ROOT, "eval_questions_v2.json
                     # 還是「表給對了但 SQL 寫錯」
                     "retrieved_tables": state.get("retrieved_tables") or [],
                     "retrieval_anchors": state.get("retrieval_anchors") or [],
+                    # 檢索漏了、生成端越界引用後由驗證器補進來的表（ast_validator 3d）。
+                    # 這是「檢索指標看不到的救援」，§9.11 缺的就是這個數字。
+                    "scope_extra": state.get("scope_extra") or [],
                     # 供稽核：是否用了並列安全的寫法 / 是否用了否定子查詢
                     "used_dense_rank": "DENSE_RANK" in champion_sql.upper(),
                     "used_not_in_exists": ("NOT IN" in champion_sql.upper()

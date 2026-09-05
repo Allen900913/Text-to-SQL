@@ -25,6 +25,10 @@ class AgentState(TypedDict, total=False):
 
     # --- Node 3: AST Validator 填入 ---
     valid_sqls: list[str]          # 通過快篩的 SQL
+    # 生成端引用了「真實存在、但這一題沒給它 DDL」的表，驗證器補進 scope 的那些。
+    # 刻意**不寫回 `retrieved_tables`** —— 那一欄是檢索層的輸出，要留給檢索指標；
+    # 混進來的話「檢索漏了、生成端救回來」就會被記成檢索沒漏（ARCHITECTURE §9.11）。
+    scope_extra: list[str]
 
     # --- Node 4/5: DB 驗證與執行階段填入 ---
     execution_results: dict        # 執行結果暫存
