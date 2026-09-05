@@ -20,11 +20,19 @@ from loguru import logger as log
 from langgraph_sql.state import AgentState
 from langgraph_sql.utils.schema_registry import get_allowed_tables, get_table_columns
 
-# 第 3d 層「越界引用」的開關。**預設開。**
-# 設 0 可位元還原到 2026-09-05 之前的行為 —— 兩臂要落得進同一個 commit，
-# 改常數再跑一次會讓兩次量測落在不同的 commit 上（同 COLUMN_HINT_K 的理由）。
-#     SCOPE_STRICT=0 python eval/test_runner.py
-SCOPE_STRICT = os.environ.get("SCOPE_STRICT", "1") != "0"
+# 第 3d 層「越界引用」的處置方式。**預設 union。**
+#
+#   union （預設）不淘汰。把那張表**聯集進 scope**、補上它的 DDL，
+#                 並記進 `scope_extra` 供檢索指標校正。
+#   strict        淘汰這條 SQL，補 DDL 後重試（2026-09-05 當天的實作）。
+#   off           完全不檢查、也不記錄（2026-09-05 之前的行為）。
+#
+# 為什麼預設不是 strict —— 見下方 3d 區塊的長註解。一句話：
+# **檢索範圍是機器猜的、已知會漏，不該拿安全層的嚴格度去執行它。**
+#     SCOPE_MODE=strict python eval/test_runner.py
+SCOPE_MODE = os.environ.get("SCOPE_MODE", "union").lower()
+if os.environ.get("SCOPE_STRICT") == "0":      # 舊開關，保留相容
+    SCOPE_MODE = "off"
 
 
 # ===========================================================================
@@ -185,7 +193,7 @@ def ast_validator(state: AgentState) -> dict:
     # 檢索失效時 context_retriever 會回傳全部的表，那時 scope 涵蓋全庫、3d 不會觸發。
     scope: set[str] = {t.lower() for t in (state.get("retrieved_tables") or [])}
     scope |= {t.lower() for t in (state.get("scope_extra") or [])}
-    if not SCOPE_STRICT or scope >= allowed_tables:
+    if SCOPE_MODE == "off" or scope >= allowed_tables:
         scope = set()          # 關閉、或沒有剪裁 → 不做越界檢查
     scope_escapes: set[str] = set()
 
@@ -298,10 +306,26 @@ def ast_validator(state: AgentState) -> dict:
             #   ② **模型依賴的是 few-shot 記住的 schema，那份記憶會過期。**
             #      欄位改名時 few-shot 還在教舊名字，而這條路徑不會報錯。
             #
-            # 處置刻意**不是純拒絕**：拒絕會把檢索失效時的救援能力一起拿掉。
-            # 這裡淘汰這一條 SQL，**同時把那些表的 DDL 補進 scope**，
-            # 重試時模型看得到真實欄位 —— 從「靠記憶猜」變成「被明確告知」。
-            # 補過之後那張表就在 scope 裡了，不會再次觸發，所以不會迴圈。
+            # 處置是**聯集，不是淘汰**（2026-09-05 改；理由見 §9.13 補記）。
+            # 上面 ② 那條理由後來查證是錯的：3b 是拿真實 INFORMATION_SCHEMA 比對，
+            # 欄位改名時 `orders.total_price` 會被 3b 明確擋下並列出合法欄位 ——
+            # **schema drift 早就擋住了**，3d 沒有多買到這一項。
+            # 剩下真正站得住的只有 ①「檢索指標失真」，而那**只需要記錄，不需要攔截**。
+            #
+            # 攔截的代價則是實的三項：
+            #   ‧ `MAX_RETRIES = 2` 是跨節點共用的總預算，一次攔截吃掉一半；
+            #   ‧ `executor_voter` 是對 `valid_sqls` 投票，淘汰等於改變投票結果 ——
+            #     實測那 20 次越界的 SQL **全是對的**，攔掉是把對的踢出候選；
+            #   ‧ 檢索範圍是**機器猜的**（實測召回 98.4–99.3%，已知會漏）。
+            #     拿安全層（3a 全庫白名單）的嚴格度去執行一個會漏的猜測，
+            #     等於把「檢索的錯」升級成「生成的死路」。
+            #
+            # 所以這裡只做兩件事：把那張表**聯集進 scope**（下面補 DDL），
+            # 並記進 `scope_extra` 讓檢索指標算得回來。SQL 本身照常通過 ——
+            # 它已經過了 3a（表存在）與 3b（欄位存在）。
+            # 這與 RSL-SQL 的 backward pruning 是同一個 union，差別只在
+            # **它對每一題先付一次全庫 call 去製造訊號，這裡等模型真的伸手才付**
+            # （全庫 DDL 77,731 字元 vs 剪裁後平均 2,186，35.6 倍；觸發率 20/1823）。
             if scope:
                 escaped = sorted({
                     t.name.lower() for t in ast.find_all(exp.Table)
@@ -311,11 +335,12 @@ def ast_validator(state: AgentState) -> dict:
                 })
                 if escaped:
                     scope_escapes.update(escaped)
-                    issues.append(
-                        f"用了沒有提供欄位定義的表: {', '.join(escaped)}"
-                        "（這些表確實存在，但上面的 schema 沒有列出它們的欄位，"
-                        "不可以憑印象寫。已在下方補上它們的定義，請據此改寫）"
-                    )
+                    if SCOPE_MODE == "strict":
+                        issues.append(
+                            f"用了沒有提供欄位定義的表: {', '.join(escaped)}"
+                            "（這些表確實存在，但上面的 schema 沒有列出它們的欄位，"
+                            "不可以憑印象寫。已在下方補上它們的定義，請據此改寫）"
+                        )
 
             # --- 結算：一次列出所有問題 ---
             if issues:
@@ -351,25 +376,33 @@ def ast_validator(state: AgentState) -> dict:
     # 若全部淘汰，遞增 retry_count，並把淘汰理由回填 db_error。
     # db_error 是 sql_generator 唯一會讀進修復 Prompt 的欄位；只設 error_message
     # 會讓模型在沒有任何提示的情況下重生成，temperature=0 幾乎必然產出同一條 SQL。
-    # 越界引用（3d）→ 把那些表的 DDL 真的補進去，重試才有依據可改。
-    # 只在「全部淘汰」時補：有 SQL 通過就代表模型本來就寫得出範圍內的答案，
-    # 這時候把表加進去只會讓下一題的 Prompt 更長而已。
-    if scope_escapes and not valid_sqls:
+    # 越界引用（3d）→ 聯集進 scope。
+    #
+    # `scope_extra` **無條件記錄**：它是這一層唯一站得住的收益（檢索指標校正），
+    # 而且要在 SQL 通過時也記得到 —— union 模式下通過才是常態。
+    # 刻意**不寫回 `retrieved_tables`**：那一欄是檢索層的輸出，混進來的話
+    # 「檢索漏了、生成端救回來」會被記成檢索沒漏（§9.11）。
+    #
+    # DDL 則是補給**之後**的輪次用的（db_validator／executor 失敗而重生成時），
+    # 讓模型從「靠 few-shot 的記憶猜」變成「被明確告知」。補過之後那張表就在
+    # scope 裡，不會再次觸發，所以不會迴圈。
+    if scope_escapes:
         from langgraph_sql.utils.schema_parser import get_schema_parser
-        extra = sorted(set(state.get("scope_extra") or []) | scope_escapes)
+        result["scope_extra"] = sorted(
+            set(state.get("scope_extra") or []) | scope_escapes)
         try:
-            result["scope_extra"] = extra
             result["schema_ddl"] = (
                 state.get("schema_ddl", "")
                 + "\n-- 你上一輪用到、但先前沒有列出的表（現在補上）:\n"
                 + get_schema_parser().get_ddl_for(set(scope) | scope_escapes)
             )
             log.warning(
-                f"[Node 3] 越界引用 {sorted(scope_escapes)} —— 已補進 scope 供重試。"
-                f"（檢索層漏了這些表，retrieved_tables 保持不動，見 §9.11）"
+                f"[Node 3] 越界引用 {sorted(scope_escapes)} —— 已聯集進 scope"
+                f"（模式={SCOPE_MODE}）。檢索層漏了這些表，"
+                f"retrieved_tables 保持不動，見 §9.11"
             )
         except Exception as e:      # 補 DDL 失敗不該讓整題死掉
-            log.warning(f"[Node 3] 補越界表 DDL 失敗（{type(e).__name__}: {e}），照常重試")
+            log.warning(f"[Node 3] 補越界表 DDL 失敗（{type(e).__name__}: {e}），照常繼續")
 
     if not valid_sqls:
         result["retry_count"] = state.get("retry_count", 0) + 1
