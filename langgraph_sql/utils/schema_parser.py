@@ -17,11 +17,19 @@ class SchemaParser:
 
     def __init__(self, yaml_path: str | None = None):
         if yaml_path is None:
-            # 預設路徑：d:\text_to_sql\utils\semantic_layer.yaml
+            # 預設路徑：<專案根>/utils/semantic_layer.yaml
+            #
+            # `SEMANTIC_LAYER_PATH` 可以覆寫它。**這是為了讓 prompt 層也能做 A/B。**
+            # 檢索層有 COLUMN_HINT_K／VALUE_BETA 這些環境變數，可以在**同一個 commit**
+            # 上跑兩臂；但改 few-shot 或 business_rules 沒有對應的開關，只能
+            # 「改檔 → 跑一次 → 改回去 → 再跑一次」，兩次量測落在不同的檔案狀態上，
+            # 事後分不清差異來自哪裡，中途中斷還會留下半改的檔案。
+            #     SEMANTIC_LAYER_PATH=/path/to/baseline.yaml python eval/test_runner.py
             _project_root = os.path.dirname(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             )
-            yaml_path = os.path.join(_project_root, "utils", "semantic_layer.yaml")
+            yaml_path = os.environ.get("SEMANTIC_LAYER_PATH") or os.path.join(
+                _project_root, "utils", "semantic_layer.yaml")
 
         try:
             with open(yaml_path, "r", encoding="utf-8") as f:
