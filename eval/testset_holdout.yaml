@@ -1,0 +1,626 @@
+# 保留驗收集 —— 封存後只准看總分，錯題清單不准拿來改任何東西。
+# 出題只看 tools/make_data_cards.py 產的資料卡（不含任何 schema 註解）。
+# 封存前必須 eval/testset_verify.py 全綠。
+
+# ── 單表・純投影/過濾 ────────────────────────────────────────────
+- id: 1001
+  question: 目前架上還有幾件庫存不到 20 的商品？請列出品名跟剩餘數量。
+  sql: SELECT name, stock FROM products WHERE stock < 20 ORDER BY stock
+  expect: rows
+
+- id: 1002
+  question: 哪幾位同事已經離開公司了？
+  sql: SELECT name, title FROM employees WHERE is_active = 0 ORDER BY name
+  expect: rows
+
+- id: 1003
+  question: 有沒有哪個門市目前是停止營運的狀態？
+  sql: SELECT name, city FROM stores WHERE is_active = 0
+  expect: rows
+
+- id: 1004
+  question: 我要一份供應商的聯絡清單，公司名稱跟電話就好。
+  sql: SELECT name, phone FROM suppliers ORDER BY name
+  expect: rows
+
+- id: 1005
+  question: 折抵金額滿 500 元的優惠碼有哪些？
+  sql: SELECT code, discount_amount FROM coupons WHERE discount_amount >= 500 ORDER BY code
+  expect: rows
+
+- id: 1006
+  question: 有哪些發票被作廢掉了？給我發票號碼。
+  sql: SELECT invoice_no FROM invoices WHERE is_voided = 1 ORDER BY invoice_no
+  expect: rows
+
+- id: 1007
+  question: 餘額已經用完的禮物卡卡號有哪些？
+  sql: SELECT card_no FROM gift_cards WHERE balance = 0 ORDER BY card_no
+  expect: rows
+
+- id: 1008
+  question: 還在運送途中、尚未送到的貨運單號給我。
+  sql: SELECT tracking_no FROM shipments WHERE status = 'IN_TRANSIT' ORDER BY tracking_no
+  expect: rows
+
+- id: 1009
+  question: 打了一星或兩星的負評內容是什麼？
+  sql: SELECT rating, comment FROM reviews WHERE rating <= 2 ORDER BY rating, comment
+  expect: rows
+
+- id: 1010
+  question: 訂閱制裡面，付費方案挑最貴那一檔的那幾位客戶編號。
+  sql: SELECT customer_id FROM subscriptions WHERE plan_name = '尊榮方案' ORDER BY customer_id
+  expect: rows
+
+- id: 1011
+  question: 客服那邊還沒結案的案件，主旨跟建立時間列出來。
+  sql: SELECT subject, created_at FROM support_tickets WHERE status <> 'CLOSED' ORDER BY created_at
+  expect: rows
+
+- id: 1012
+  question: 錢已經退出去的那幾筆，金額各是多少？
+  sql: SELECT id, amount FROM refunds WHERE refunded_at IS NOT NULL ORDER BY id
+  expect: rows
+
+- id: 1013
+  question: 走搜尋管道的那幾檔行銷活動叫什麼名字？
+  sql: SELECT name FROM campaigns WHERE channel = 'SEARCH' ORDER BY name
+  expect: rows
+
+- id: 1014
+  question: 手續費收得最兇的付款方式是哪一種？
+  sql: SELECT name, fee_rate FROM payment_methods ORDER BY fee_rate DESC LIMIT 1
+  expect: rows
+
+- id: 1015
+  question: 倉庫可容納量從大排到小是什麼順序？
+  sql: SELECT name, capacity FROM warehouses ORDER BY capacity DESC
+  expect: rows
+
+- id: 1016
+  question: 最上層的商品分類（沒有母分類的那些）有哪幾個？
+  sql: SELECT name FROM categories WHERE parent_id IS NULL ORDER BY name
+  expect: rows
+
+- id: 1017
+  question: 被刪掉的評價佔全部的幾成？
+  sql: SELECT COUNT(*) / (SELECT COUNT(*) FROM reviews) AS ratio FROM reviews WHERE is_deleted = 1
+  expect: rows
+
+- id: 1018
+  question: 丟著沒結帳的購物車，佔所有購物車的比例是多少？
+  sql: SELECT COUNT(*) / (SELECT COUNT(*) FROM carts) AS ratio FROM carts WHERE is_abandoned = 1
+  expect: rows
+
+- id: 1019
+  question: 被打回票的退貨申請佔了幾成？
+  sql: SELECT COUNT(*) / (SELECT COUNT(*) FROM order_returns) AS ratio FROM order_returns WHERE status = 'REJECTED'
+  expect: rows
+
+- id: 1020
+  question: 有幾檔的折扣數值高過所有檔期的平均？
+  sql: SELECT COUNT(*) AS n FROM promotions WHERE discount_value > (SELECT AVG(discount_value) FROM promotions)
+  expect: rows
+
+# ── 單表・聚合 ────────────────────────────────────────────────────
+- id: 1021
+  question: 客人分散在哪些縣市？每個縣市各幾位，多的排前面。
+  sql: SELECT city, COUNT(*) AS n FROM customers GROUP BY city ORDER BY n DESC, city
+  expect: rows
+
+- id: 1022
+  question: 每個商品分類底下各上架了幾樣東西？
+  sql: SELECT category, COUNT(*) AS n FROM products GROUP BY category ORDER BY n DESC, category
+  expect: rows
+
+- id: 1023
+  question: 各種訂單狀態各佔幾張單子？
+  sql: SELECT status, COUNT(*) AS n FROM orders GROUP BY status ORDER BY n DESC, status
+  expect: rows
+
+- id: 1024
+  question: 每個職稱有幾個人？
+  sql: SELECT title, COUNT(*) AS n FROM employees GROUP BY title ORDER BY n DESC, title
+  expect: rows
+
+- id: 1025
+  question: 評分一到五星各拿到多少則？
+  sql: SELECT rating, COUNT(*) AS n FROM reviews GROUP BY rating ORDER BY rating
+  expect: rows
+
+- id: 1026
+  question: 出貨是從哪幾個倉出去的？各出了幾批？
+  sql: SELECT warehouse_id, COUNT(*) AS n FROM shipments GROUP BY warehouse_id ORDER BY n DESC, warehouse_id
+  expect: rows
+
+- id: 1027
+  question: 退款理由的分布是怎樣？
+  sql: SELECT reason, COUNT(*) AS n FROM refunds GROUP BY reason ORDER BY n DESC, reason
+  expect: rows
+
+- id: 1028
+  question: 客服案件的主旨大致分成哪幾類，各幾件？
+  sql: SELECT subject, COUNT(*) AS n FROM support_tickets GROUP BY subject ORDER BY n DESC, subject
+  expect: rows
+
+- id: 1029
+  question: 訂閱方案各賣出幾份？
+  sql: SELECT plan_name, COUNT(*) AS n FROM subscriptions GROUP BY plan_name ORDER BY n DESC, plan_name
+  expect: rows
+
+- id: 1030
+  question: 行銷活動走了哪些管道，各幾檔？
+  sql: SELECT channel, COUNT(*) AS n FROM campaigns GROUP BY channel ORDER BY n DESC, channel
+  expect: rows
+
+- id: 1031
+  question: 結案的單子收了多少錢？佔全部的幾成？
+  sql: SELECT SUM(total_amount) AS total, SUM(total_amount) / (SELECT SUM(total_amount) FROM orders) AS ratio FROM orders WHERE status = 'COMPLETED'
+  expect: rows
+
+- id: 1032
+  question: 金額高過平均的單子有幾張？
+  sql: SELECT COUNT(*) AS n FROM orders WHERE total_amount > (SELECT AVG(total_amount) FROM orders)
+  expect: rows
+
+- id: 1033
+  question: 定價最高的那樣東西是什麼？多少錢？
+  sql: SELECT name, price FROM products WHERE price = (SELECT MAX(price) FROM products)
+  expect: rows
+
+- id: 1034
+  question: 每個分類的商品平均賣多少錢？貴的排前面。
+  sql: SELECT category, AVG(price) AS avg_price FROM products GROUP BY category ORDER BY avg_price DESC
+  expect: rows
+
+- id: 1035
+  question: 每種付款方式各收了幾筆款？
+  sql: SELECT method_id, COUNT(*) AS n FROM payments GROUP BY method_id ORDER BY n DESC, method_id
+  expect: rows
+
+- id: 1036
+  question: 一次買三件的明細佔了幾成？
+  sql: SELECT COUNT(*) / (SELECT COUNT(*) FROM order_items) AS ratio FROM order_items WHERE quantity = 3
+  expect: rows
+
+- id: 1037
+  question: 有幾筆退款的金額高過退款的平均值？
+  sql: SELECT COUNT(*) AS n FROM refunds WHERE amount > (SELECT AVG(amount) FROM refunds)
+  expect: rows
+
+- id: 1038
+  question: 有幾張禮物卡的面額高過所有卡的平均面額？
+  sql: SELECT COUNT(*) AS n FROM gift_cards WHERE face_value > (SELECT AVG(face_value) FROM gift_cards)
+  expect: rows
+
+- id: 1039
+  question: 每個部門底下各有幾位同仁？
+  sql: SELECT department_id, COUNT(*) AS n FROM employees GROUP BY department_id ORDER BY department_id
+  expect: rows
+
+- id: 1040
+  question: 容納量在平均之上的倉庫有幾座？
+  sql: SELECT COUNT(*) AS n FROM warehouses WHERE capacity > (SELECT AVG(capacity) FROM warehouses)
+  expect: rows
+
+# ── 單表・寬表 ────────────────────────────────────────────────────
+- id: 1041
+  question: 會員分級的人數結構長什麼樣？
+  sql: SELECT tier, COUNT(*) AS n FROM customer_profiles GROUP BY tier ORDER BY n DESC, tier
+  expect: rows
+
+- id: 1042
+  question: 被歸到各個經營分群的人各有多少？
+  sql: SELECT segment, COUNT(*) AS n FROM customer_profiles GROUP BY segment ORDER BY n DESC, segment
+  expect: rows
+
+- id: 1043
+  question: 掛著貴賓身分的有幾位？
+  sql: SELECT COUNT(*) AS n FROM customer_profiles WHERE is_vip = 1
+  expect: rows
+
+- id: 1044
+  question: 終身價值分數高過平均的有幾位？
+  sql: SELECT COUNT(*) AS n FROM customer_profiles WHERE ltv_score > (SELECT AVG(ltv_score) FROM customer_profiles)
+  expect: rows
+
+- id: 1045
+  question: 被列入黑名單的人有誰？給我他們的客戶編號。
+  sql: SELECT customer_id FROM customer_profiles WHERE is_blacklisted = 1 ORDER BY customer_id
+  expect: rows
+
+- id: 1046
+  question: 大家都從哪個裝置下單？各佔幾筆？
+  sql: SELECT device_type, COUNT(*) AS n FROM order_profiles GROUP BY device_type ORDER BY n DESC, device_type
+  expect: rows
+
+- id: 1047
+  question: 下單走哪些通路，各幾張？
+  sql: SELECT channel, COUNT(*) AS n FROM order_profiles GROUP BY channel ORDER BY n DESC, channel
+  expect: rows
+
+- id: 1048
+  question: 有幾張單子有要求包裝成禮物？
+  sql: SELECT COUNT(*) AS n FROM order_profiles WHERE is_gift_wrap = 1
+  expect: rows
+
+- id: 1049
+  question: 平均一張單買了幾件東西？
+  sql: SELECT AVG(quantity) AS avg_qty FROM order_items
+  expect: rows
+
+- id: 1050
+  question: 開發票的抬頭型態各佔幾張？
+  sql: SELECT invoice_type, COUNT(*) AS n FROM order_profiles GROUP BY invoice_type ORDER BY n DESC, invoice_type
+  expect: rows
+
+- id: 1051
+  question: 有幾樣商品運送時要當易碎品處理？
+  sql: SELECT COUNT(*) AS n FROM product_profiles WHERE is_fragile = 1
+  expect: rows
+
+- id: 1052
+  question: 商品各處在哪個生命階段？各幾樣？
+  sql: SELECT lifecycle_stage, COUNT(*) AS n FROM product_profiles GROUP BY lifecycle_stage ORDER BY n DESC, lifecycle_stage
+  expect: rows
+
+- id: 1053
+  question: 商品的平均定價是多少？
+  sql: SELECT AVG(price) AS avg_price FROM products
+  expect: rows
+
+- id: 1054
+  question: 哪幾樣東西需要低溫配送？給我它們的商品編號。
+  sql: SELECT product_id FROM product_profiles WHERE needs_cold_chain = 1 ORDER BY product_id
+  expect: rows
+
+- id: 1055
+  question: 包材各用了哪幾種？各包了幾箱？
+  sql: SELECT packing_material, COUNT(*) AS n FROM shipment_profiles GROUP BY packing_material ORDER BY n DESC, packing_material
+  expect: rows
+
+- id: 1056
+  question: 送件過程中有回報破損的有幾批？
+  sql: SELECT COUNT(*) AS n FROM shipment_profiles WHERE damage_reported = 1
+  expect: rows
+
+- id: 1057
+  question: 平均每張優惠券可以折多少錢？
+  sql: SELECT AVG(discount_amount) AS avg_discount FROM coupons
+  expect: rows
+
+- id: 1058
+  question: 刷卡用的卡別各佔幾筆？
+  sql: SELECT card_brand, COUNT(*) AS n FROM payment_profiles GROUP BY card_brand ORDER BY n DESC, card_brand
+  expect: rows
+
+- id: 1059
+  question: 每個縣市各開了幾家門市？
+  sql: SELECT city, COUNT(*) AS n FROM stores GROUP BY city ORDER BY n DESC, city
+  expect: rows
+
+- id: 1060
+  question: 同仁的聘雇型態怎麼分布？
+  sql: SELECT employment_type, COUNT(*) AS n FROM employee_profiles GROUP BY employment_type ORDER BY n DESC, employment_type
+  expect: rows
+
+- id: 1061
+  question: 同仁的到職日最早是哪一天、最晚是哪一天？
+  sql: SELECT MIN(hired_at) AS first_hired, MAX(hired_at) AS last_hired FROM employees
+  expect: rows
+
+- id: 1062
+  question: 哪些門市裡面有無線網路可以用？
+  sql: SELECT store_id FROM store_profiles WHERE has_wifi = 1 ORDER BY store_id
+  expect: rows
+
+- id: 1063
+  question: 門市開在什麼樣的地段？各幾家？
+  sql: SELECT district_type, COUNT(*) AS n FROM store_profiles GROUP BY district_type ORDER BY n DESC, district_type
+  expect: rows
+
+- id: 1064
+  question: 評價的情緒傾向怎麼分？
+  sql: SELECT sentiment_label, COUNT(*) AS n FROM review_profiles GROUP BY sentiment_label ORDER BY n DESC, sentiment_label
+  expect: rows
+
+- id: 1065
+  question: 一共有多少位客人留過評價？
+  sql: SELECT COUNT(DISTINCT customer_id) AS n FROM reviews
+  expect: rows
+
+- id: 1066
+  question: 評價的平均星等是多少？
+  sql: SELECT AVG(rating) AS avg_rating FROM reviews
+  expect: rows
+
+# ── 兩表 ────────────────────────────────────────────────────────
+- id: 1067
+  question: 每位同仁隸屬哪個單位？把人名跟單位名稱配起來給我。
+  sql: SELECT e.name, d.name AS dept FROM employees e JOIN departments d ON d.id = e.department_id ORDER BY d.name, e.name
+  expect: rows
+
+- id: 1068
+  question: 各種收款方式實際收進來多少錢？
+  sql: SELECT m.name, SUM(p.amount) AS total FROM payments p JOIN payment_methods m ON m.id = p.method_id GROUP BY m.name ORDER BY total DESC
+  expect: rows
+
+- id: 1069
+  question: 每個倉出過幾批貨？用倉庫名稱顯示。
+  sql: SELECT w.name, COUNT(*) AS n FROM shipments s JOIN warehouses w ON w.id = s.warehouse_id GROUP BY w.name ORDER BY n DESC, w.name
+  expect: rows
+
+- id: 1070
+  question: 台南市的客人下過哪些單？金額多少？
+  sql: SELECT c.name, o.id, o.total_amount FROM orders o JOIN customers c ON c.id = o.customer_id WHERE c.city = '台南市' ORDER BY o.id
+  expect: rows
+
+- id: 1071
+  question: 每個縣市的客人各貢獻了多少營業額？
+  sql: SELECT c.city, SUM(o.total_amount) AS total FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.city ORDER BY total DESC
+  expect: rows
+
+- id: 1072
+  question: 各個商品分類實際賣掉幾件？
+  sql: SELECT p.category, SUM(oi.quantity) AS qty FROM order_items oi JOIN products p ON p.id = oi.product_id GROUP BY p.category ORDER BY qty DESC
+  expect: rows
+
+- id: 1073
+  question: 每樣商品的平均星等是多少？排名前十給我。
+  sql: SELECT p.name, AVG(r.rating) AS avg_rating FROM reviews r JOIN products p ON p.id = r.product_id GROUP BY p.name ORDER BY avg_rating DESC, p.name LIMIT 10
+  expect: rows
+
+- id: 1074
+  question: 哪些單子後來整張被取消掉？下單的人是誰？
+  sql: SELECT c.name, o.id FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.status = 'CANCELLED' ORDER BY o.id
+  expect: rows
+
+- id: 1075
+  question: 退款是從哪些付款紀錄退的？各退多少、原本收多少？
+  sql: SELECT r.id, r.amount AS refund_amount, p.amount AS paid_amount FROM refunds r JOIN payments p ON p.id = r.payment_id ORDER BY r.id
+  expect: rows
+
+- id: 1076
+  question: 開了客服單的人分別住在哪個縣市？各幾件？
+  sql: SELECT c.city, COUNT(*) AS n FROM support_tickets t JOIN customers c ON c.id = t.customer_id GROUP BY c.city ORDER BY n DESC, c.city
+  expect: rows
+
+- id: 1077
+  question: 把訂單一張一張加起來算，每個會員層級的平均客單價是多少？
+  sql: SELECT cp.tier, AVG(o.total_amount) AS avg_amount FROM orders o JOIN customer_profiles cp ON cp.customer_id = o.customer_id GROUP BY cp.tier ORDER BY avg_amount DESC
+  expect: rows
+
+- id: 1078
+  question: 用客戶檔案裡登記的累計統計來看，貴賓那群人的累計消費加起來多少？
+  sql: SELECT SUM(total_spent) AS total FROM customer_profiles WHERE is_vip = 1
+  expect: rows
+
+- id: 1079
+  question: 用手機下的單平均金額，跟用電腦下的比起來差多少？
+  sql: SELECT op.device_type, AVG(o.total_amount) AS avg_amount FROM order_profiles op JOIN orders o ON o.id = op.order_id GROUP BY op.device_type ORDER BY avg_amount DESC
+  expect: rows
+
+- id: 1080
+  question: 易碎品那幾樣東西的定價各是多少？
+  sql: SELECT p.name, p.price FROM product_profiles pp JOIN products p ON p.id = pp.product_id WHERE pp.is_fragile = 1 ORDER BY p.name
+  expect: rows
+
+# ── 多表・含子查詢 ──────────────────────────────────────────────
+- id: 1081
+  question: 依照實際下單紀錄逐張加總，花最多的前五位客人是誰？各多少？
+  sql: SELECT c.name, SUM(o.total_amount) AS total FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY total DESC, c.name LIMIT 5
+  expect: rows
+
+- id: 1082
+  question: 把每個人的訂單逐張加起來，誰的總額超過全體平均？
+  sql: SELECT c.name, SUM(o.total_amount) AS total FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name HAVING SUM(o.total_amount) > (SELECT AVG(t) FROM (SELECT SUM(total_amount) AS t FROM orders GROUP BY customer_id) x) ORDER BY total DESC
+  expect: rows
+
+- id: 1083
+  question: 賣得最好的十樣商品，各出了幾件？
+  sql: SELECT p.name, SUM(oi.quantity) AS qty FROM order_items oi JOIN products p ON p.id = oi.product_id GROUP BY p.id, p.name ORDER BY qty DESC, p.name LIMIT 10
+  expect: rows
+
+- id: 1084
+  question: 有哪幾樣東西賣出的件數超過所有商品的平均水準？
+  sql: SELECT p.name, SUM(oi.quantity) AS qty FROM order_items oi JOIN products p ON p.id = oi.product_id GROUP BY p.id, p.name HAVING SUM(oi.quantity) > (SELECT AVG(q) FROM (SELECT SUM(quantity) AS q FROM order_items GROUP BY product_id) y) ORDER BY qty DESC
+  expect: rows
+
+- id: 1085
+  question: 逐張訂單加總之後，每個縣市裡消費最高的那位客人是誰？
+  sql: SELECT c.city, c.name, SUM(o.total_amount) AS total FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.city, c.name HAVING SUM(o.total_amount) = (SELECT MAX(t) FROM (SELECT c2.city AS ct, SUM(o2.total_amount) AS t FROM orders o2 JOIN customers c2 ON c2.id = o2.customer_id GROUP BY c2.id, c2.city) z WHERE z.ct = c.city) ORDER BY c.city
+  expect: rows
+
+- id: 1086
+  question: 平均星等高於整體平均的商品有哪些？
+  sql: SELECT p.name, AVG(r.rating) AS avg_rating FROM reviews r JOIN products p ON p.id = r.product_id GROUP BY p.id, p.name HAVING AVG(r.rating) > (SELECT AVG(rating) FROM reviews) ORDER BY avg_rating DESC, p.name
+  expect: rows
+
+- id: 1087
+  question: 訂單金額最高的那一張，是誰下的、買了什麼？
+  sql: SELECT c.name, p.name AS product, oi.quantity FROM order_items oi JOIN orders o ON o.id = oi.order_id JOIN customers c ON c.id = o.customer_id JOIN products p ON p.id = oi.product_id WHERE o.id = (SELECT id FROM orders ORDER BY total_amount DESC LIMIT 1) ORDER BY p.name
+  expect: rows
+
+- id: 1088
+  question: 每個分類最貴的那一樣東西是什麼？
+  sql: SELECT category, name, price FROM products p WHERE price = (SELECT MAX(price) FROM products x WHERE x.category = p.category) ORDER BY category
+  expect: rows
+
+- id: 1089
+  question: 各個倉出的貨，平均實際重量是多少？
+  sql: SELECT w.name, AVG(sp.actual_weight_g) AS avg_g FROM shipment_profiles sp JOIN shipments s ON s.id = sp.shipment_id JOIN warehouses w ON w.id = s.warehouse_id GROUP BY w.name ORDER BY avg_g DESC
+  expect: rows
+
+- id: 1090
+  question: 每個部門的人，特休平均用掉幾天？
+  sql: SELECT d.name, AVG(ep.annual_leave_used) AS avg_days FROM employee_profiles ep JOIN employees e ON e.id = ep.employee_id JOIN departments d ON d.id = e.department_id GROUP BY d.name ORDER BY avg_days DESC
+  expect: rows
+
+- id: 1091
+  question: 客戶檔案裡登記的累計消費，最高的前五位是誰？
+  sql: SELECT c.name, cp.total_spent FROM customer_profiles cp JOIN customers c ON c.id = cp.customer_id ORDER BY cp.total_spent DESC, c.name LIMIT 5
+  expect: rows
+
+- id: 1092
+  question: 用實際訂單逐張計算，貴賓與非貴賓的平均客單價各是多少？
+  sql: SELECT cp.is_vip, AVG(o.total_amount) AS avg_amount, COUNT(*) AS n FROM orders o JOIN customer_profiles cp ON cp.customer_id = o.customer_id GROUP BY cp.is_vip ORDER BY cp.is_vip DESC
+  expect: rows
+
+- id: 1093
+  question: 每個會員層級的人，各留下幾則評價？
+  sql: SELECT cp.tier, COUNT(*) AS n FROM reviews r JOIN customer_profiles cp ON cp.customer_id = r.customer_id GROUP BY cp.tier ORDER BY n DESC, cp.tier
+  expect: rows
+
+- id: 1094
+  question: 每個分類的商品，含包裝平均多重？
+  sql: SELECT p.category, AVG(pp.package_weight_g) AS avg_g FROM product_profiles pp JOIN products p ON p.id = pp.product_id GROUP BY p.category ORDER BY avg_g DESC
+  expect: rows
+
+- id: 1095
+  question: 開過客服單的那些人，他們的訂單逐張平均下來是多少錢？
+  sql: SELECT AVG(o.total_amount) AS avg_amount FROM orders o WHERE o.customer_id IN (SELECT customer_id FROM support_tickets)
+  expect: rows
+
+- id: 1096
+  question: 有被退過貨的商品，各退了幾件？
+  sql: SELECT p.name, SUM(orr.quantity) AS qty FROM order_returns orr JOIN products p ON p.id = orr.product_id GROUP BY p.id, p.name ORDER BY qty DESC, p.name
+  expect: rows
+
+- id: 1097
+  question: 用過優惠券的那些單子，平均比沒用的貴還是便宜？
+  sql: SELECT CASE WHEN o.id IN (SELECT order_id FROM coupon_redemptions) THEN 'A有用券' ELSE 'B沒用券' END AS used_coupon, AVG(o.total_amount) AS avg_amount, COUNT(*) AS n FROM orders o GROUP BY used_coupon ORDER BY used_coupon
+  expect: rows
+
+- id: 1098
+  question: 每檔行銷活動被點了幾次？
+  sql: SELECT ca.name, COUNT(*) AS n FROM campaign_clicks cc JOIN campaigns ca ON ca.id = cc.campaign_id GROUP BY ca.id, ca.name ORDER BY n DESC, ca.name
+  expect: rows
+
+- id: 1099
+  question: 送到府的那些貨，平均跑幾趟才成功？依包材分開看。
+  sql: SELECT sp.packing_material, AVG(sp.attempt_count) AS avg_attempt FROM shipment_profiles sp JOIN shipments s ON s.id = sp.shipment_id WHERE s.status = 'DELIVERED' GROUP BY sp.packing_material ORDER BY avg_attempt DESC
+  expect: rows
+
+- id: 1100
+  question: 按照訂單明細實際加總，買最多件的前十位客人是誰？
+  sql: SELECT c.name, SUM(oi.quantity) AS qty FROM order_items oi JOIN orders o ON o.id = oi.order_id JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY qty DESC, c.name LIMIT 10
+  expect: rows
+
+- id: 1101
+  question: 哪些商品的定價高過它所屬分類的平均價？
+  sql: SELECT name, category, price FROM products p WHERE price > (SELECT AVG(price) FROM products x WHERE x.category = p.category) ORDER BY category, price DESC
+  expect: rows
+
+- id: 1102
+  question: 星等最低的那五樣商品，各拿到幾則評價？
+  sql: SELECT p.name, AVG(r.rating) AS avg_rating, COUNT(*) AS n FROM reviews r JOIN products p ON p.id = r.product_id GROUP BY p.id, p.name ORDER BY avg_rating, p.name LIMIT 5
+  expect: rows
+
+- id: 1103
+  question: 每個經營分群的人，平均開幾張客服單？
+  sql: SELECT cp.segment, COUNT(t.id) / COUNT(DISTINCT cp.customer_id) AS avg_tickets FROM customer_profiles cp LEFT JOIN support_tickets t ON t.customer_id = cp.customer_id GROUP BY cp.segment ORDER BY avg_tickets DESC
+  expect: rows
+
+# ── 多表・否定 ──────────────────────────────────────────────────
+- id: 1104
+  question: 有哪些人註冊了卻一張單都沒下過？
+  sql: SELECT name FROM customers WHERE id NOT IN (SELECT customer_id FROM orders) ORDER BY name
+  expect: rows
+
+- id: 1105
+  question: 哪幾樣商品到現在都還沒有人退過貨？
+  sql: SELECT name FROM products WHERE id NOT IN (SELECT product_id FROM order_returns WHERE product_id IS NOT NULL) ORDER BY name
+  expect: rows
+
+- id: 1106
+  question: 有哪些單子到現在都還沒收到錢？
+  sql: SELECT id, total_amount FROM orders WHERE id NOT IN (SELECT order_id FROM payments) ORDER BY id
+  expect: rows
+
+- id: 1107
+  question: 哪些客人從來沒把東西放進購物車過？
+  sql: SELECT name FROM customers WHERE id NOT IN (SELECT customer_id FROM carts) ORDER BY name
+  expect: rows
+
+# ── 多表・子查詢（非聚合）─────────────────────────────────────────
+- id: 1108
+  question: 買過 iPhone 15 的人還買了哪些別的東西？
+  sql: SELECT DISTINCT p.name FROM order_items oi JOIN orders o ON o.id = oi.order_id JOIN products p ON p.id = oi.product_id WHERE o.customer_id IN (SELECT o2.customer_id FROM order_items oi2 JOIN orders o2 ON o2.id = oi2.order_id JOIN products p2 ON p2.id = oi2.product_id WHERE p2.name = 'iPhone 15') AND p.name <> 'iPhone 15' ORDER BY p.name
+  expect: rows
+
+- id: 1109
+  question: 訂閱還在生效中的那些人，住在哪裡？
+  sql: SELECT c.name, c.city FROM customers c WHERE c.id IN (SELECT customer_id FROM subscriptions WHERE status = 'ACTIVE') ORDER BY c.name
+  expect: rows
+
+# ── 多表・純聚合與投影 ──────────────────────────────────────────
+- id: 1110
+  question: 每張單各買了幾種不同的東西？列前十張。
+  sql: SELECT o.id, COUNT(DISTINCT oi.product_id) AS kinds FROM orders o JOIN order_items oi ON oi.order_id = o.id GROUP BY o.id ORDER BY kinds DESC, o.id LIMIT 10
+  expect: rows
+
+- id: 1111
+  question: 每個供應商供了幾樣商品？
+  sql: SELECT s.name, COUNT(*) AS n FROM product_suppliers ps JOIN suppliers s ON s.id = ps.supplier_id GROUP BY s.id, s.name ORDER BY n DESC, s.name
+  expect: rows
+
+- id: 1112
+  question: 每個倉庫的送達與在途各幾批？
+  sql: SELECT w.name, s.status, COUNT(*) AS n FROM shipments s JOIN warehouses w ON w.id = s.warehouse_id GROUP BY w.name, s.status ORDER BY w.name, s.status
+  expect: rows
+
+- id: 1113
+  question: 每位員工被指派過幾張單？
+  sql: SELECT e.name, COUNT(*) AS n FROM order_assignments oa JOIN employees e ON e.id = oa.employee_id GROUP BY e.id, e.name ORDER BY n DESC, e.name
+  expect: rows
+
+- id: 1114
+  question: 每個倉出的貨，送到哪些縣市的客人手上？各幾批？
+  sql: SELECT w.name AS warehouse, c.city, COUNT(*) AS n FROM shipments s JOIN warehouses w ON w.id = s.warehouse_id JOIN orders o ON o.id = s.order_id JOIN customers c ON c.id = o.customer_id GROUP BY w.name, c.city ORDER BY n DESC, w.name, c.city
+  expect: rows
+
+- id: 1115
+  question: 每張退貨單對應到哪一個商品？品名給我。
+  sql: SELECT orr.id, p.name FROM order_returns orr JOIN products p ON p.id = orr.product_id ORDER BY orr.id
+  expect: rows
+
+- id: 1116
+  question: 客服單如果有掛訂單，那張單的金額是多少？
+  sql: SELECT t.id, t.subject, o.total_amount FROM support_tickets t JOIN orders o ON o.id = t.order_id ORDER BY t.id
+  expect: rows
+
+- id: 1117
+  question: 各個商品分類，被哪個縣市的客人買走最多件？
+  sql: SELECT p.category, c.city, SUM(oi.quantity) AS qty FROM order_items oi JOIN orders o ON o.id = oi.order_id JOIN customers c ON c.id = o.customer_id JOIN products p ON p.id = oi.product_id GROUP BY p.category, c.city ORDER BY p.category, qty DESC
+  expect: rows
+
+- id: 1118
+  question: 哪些同仁在哪個門市值過班？把人名跟店名配起來。
+  sql: SELECT DISTINCT e.name, st.name AS store FROM store_staff ss JOIN employees e ON e.id = ss.employee_id JOIN stores st ON st.id = ss.store_id ORDER BY st.name, e.name
+  expect: rows
+
+# ── 期望空集合 ──────────────────────────────────────────────────
+- id: 1119
+  question: 有沒有哪張單子已經整張取消了，卻還是把貨寄出去？
+  sql: SELECT o.id, s.tracking_no FROM orders o JOIN shipments s ON s.order_id = o.id WHERE o.status = 'CANCELLED'
+  expect: empty
+
+- id: 1120
+  question: 有沒有退回去的錢比當初收的還多的情況？
+  sql: SELECT r.id, r.amount, p.amount AS paid FROM refunds r JOIN payments p ON p.id = r.payment_id WHERE r.amount > p.amount
+  expect: empty
+
+- id: 1121
+  question: 哪些單子已經算結案了，卻查不到任何出貨紀錄？
+  sql: SELECT o.id FROM orders o WHERE o.status = 'COMPLETED' AND o.id NOT IN (SELECT order_id FROM shipments)
+  expect: empty
+
+# ── schema 答不出來 ─────────────────────────────────────────────
+- id: 1122
+  question: 每位同仁的月薪各是多少？平均起來呢？
+  expect: schema_unsupported
+
+- id: 1123
+  question: 我們的商品跟同業比起來價格是高還是低？
+  expect: schema_unsupported
