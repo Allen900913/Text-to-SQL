@@ -2,7 +2,42 @@
   "sealed_hash": "22cd913eebe684eb",
   "sealed_on": "2026-09-10",
   "void": [],
-  "runs": [],
+  "runs": [
+    {
+      "date": "2026-09-10 21:35",
+      "commit": "7b86196",
+      "score": 70.7,
+      "correct": 87,
+      "n": 123,
+      "verdicts": {
+        "wrong": 28,
+        "correct": 87,
+        "no_sql": 8
+      },
+      "result_file": "eval_result_1789041779.json",
+      "viewed_failures": false,
+      "testset_version": 2
+    },
+    {
+      "date": "2026-09-10 23:14",
+      "commit": "e5e2da9+dirty",
+      "score": 75.6,
+      "correct": 93,
+      "n": 123,
+      "verdicts": {
+        "wrong": 29,
+        "correct": 93,
+        "no_sql": 1
+      },
+      "result_file": "eval_result_1789041779.json",
+      "viewed_failures": false,
+      "testset_version": 2,
+      "no_sql_ids": [
+        1096
+      ],
+      "note": "接續 2026-09-10 21:35 那次：判分前把 8 題 llm_api_error 重試到底。架構程式碼未變（e5e2da9 只改 runner 的重試邏輯）。"
+    }
+  ],
   "n_questions": 123,
   "retired": [
     {
