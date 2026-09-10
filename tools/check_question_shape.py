@@ -278,8 +278,12 @@ def main():
     log.remove()
     if hasattr(sys.stdout, "reconfigure"):     # Windows 主控台預設 cp950，⚠️ 會炸
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    gt = yaml.safe_load(io.open(
-        os.path.join(_ROOT, "eval_ground_truth.yaml"), encoding="utf-8"))
+    # 題庫路徑吃參數 —— 這個閘門對任何題庫都成立，寫死路徑會讓新題庫
+    # （例如保留驗收集 eval/testset_holdout.yaml）漏掉這一項檢查。
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    gt_path = args[0] if args else os.path.join(_ROOT, "eval_ground_truth.yaml")
+    print("題庫：%s" % gt_path)
+    gt = yaml.safe_load(io.open(gt_path, encoding="utf-8"))
 
     # X_id 指向的表有沒有 name 類欄位 —— [D] 要用。
     name_of: dict[str, bool] = {}
