@@ -39,53 +39,14 @@ from eval_score import match_ordered, match_unordered, to_rows
 from langgraph_sql.config import MYSQL_URI
 from langgraph_sql.utils.db_manager import get_db_manager
 
+sys.path.insert(0, os.path.join(_ROOT, "tools"))
+from check_flag_ambiguity import ALT_READING, SETTLED, with_alt  # noqa: E402
+
 PATH = os.path.join(_ROOT, "eval", "validation_shapes.yaml")
 DEV = os.path.join(_ROOT, "eval_ground_truth.yaml")
 HOLDOUT = os.path.join(_ROOT, "eval", "testset_holdout.yaml")
 ROW_MAX = 220
 DUP_MAX = 0.62
-
-# 「自然的另一種讀法」—— 一般人問「幾則評論」時多半不含已刪除的，
-# 問「每位同仁」時多半指在職的。這裡只列窄表；寬表 _profiles 的旗標
-# 是題目的主題不是預設過濾，不算歧義。
-ALT_READING = {
-    "reviews": "is_deleted = 0",
-    "employees": "is_active = 1",
-    "stores": "is_active = 1",
-    "warehouses": "is_active = 1",
-    "categories": "is_active = 1",
-    "payment_methods": "is_active = 1",
-    "promotions": "is_active = 1",
-    "carts": "is_abandoned = 0",
-    "invoices": "is_voided = 0",
-    "newsletter_subscriptions": "unsubscribed_at IS NULL",
-    "subscriptions": "ended_at IS NULL",
-    "service_appointments": "attended = 1",
-    "product_categories": "is_primary = 1",
-}
-
-# 問句已經自己講明白的字樣 —— 講明白了就不算歧義。
-SETTLED = ("已刪除", "沒被刪", "含刪除", "在職", "離職", "全部同仁", "所有同仁",
-           "停用", "啟用", "有效", "未取消", "已取消", "含已", "不含", "只算",
-           "已棄置", "棄置", "作廢", "退訂", "實際到場", "沒到場", "主分類")
-
-
-def with_alt(sql: str, table: str, cond: str) -> str:
-    """把 FROM/JOIN 到的那張表換成套了旗標的子查詢。
-
-    不改寫 WHERE，因為 WHERE 裡的條件可能引用別的別名；換掉來源表最安全，
-    別名保持原樣，外層一個字都不用動。
-    """
-    import re as _re
-    pat = _re.compile(r"\b(FROM|JOIN)\s+%s\b(\s+(?!ON\b|WHERE\b|GROUP\b|JOIN\b|LEFT\b|LIMIT\b|ORDER\b)([A-Za-z_]\w*))?"
-                      % _re.escape(table), _re.I)
-
-    def rep(m):
-        alias = m.group(3) or table
-        return "%s (SELECT * FROM %s WHERE %s) %s" % (m.group(1), table, cond, alias)
-
-    out, n = pat.subn(rep, sql)
-    return out if n else ""
 
 
 def tri(s: str) -> set:

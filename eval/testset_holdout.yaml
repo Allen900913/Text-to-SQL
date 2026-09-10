@@ -44,12 +44,12 @@
   expect: rows
 
 - id: 1009
-  question: 打了一星或兩星的負評內容是什麼？
+  question: 打了一星或兩星的負評內容是什麼？含已刪除的評價。
   sql: SELECT rating, comment FROM reviews WHERE rating <= 2 ORDER BY rating, comment
   expect: rows
 
 - id: 1010
-  question: 訂閱制裡面，付費方案挑最貴那一檔的那幾位客戶編號。
+  question: 訂閱制裡面，付費方案挑最貴那一檔的那幾位客戶編號？含已結束的訂閱。
   sql: SELECT customer_id FROM subscriptions WHERE plan_name = '尊榮方案' ORDER BY customer_id
   expect: rows
 
@@ -99,7 +99,7 @@
   expect: rows
 
 - id: 1020
-  question: 有幾檔的折扣數值高過所有檔期的平均？
+  question: 有幾檔促銷的折扣數值高過所有檔期的平均？不管現在有沒有啟用都算。
   sql: SELECT COUNT(*) AS n FROM promotions WHERE discount_value > (SELECT AVG(discount_value) FROM promotions)
   expect: rows
 
@@ -120,12 +120,12 @@
   expect: rows
 
 - id: 1024
-  question: 每個職稱有幾個人？
+  question: 每個職稱各有幾個人？在職離職都算。
   sql: SELECT title, COUNT(*) AS n FROM employees GROUP BY title ORDER BY n DESC, title
   expect: rows
 
 - id: 1025
-  question: 評分一到五星各拿到多少則？
+  question: 評分一到五星各拿到多少則？含已刪除的評價。
   sql: SELECT rating, COUNT(*) AS n FROM reviews GROUP BY rating ORDER BY rating
   expect: rows
 
@@ -145,7 +145,7 @@
   expect: rows
 
 - id: 1029
-  question: 訂閱方案各賣出幾份？
+  question: 訂閱方案各賣出幾份？含已結束的訂閱。
   sql: SELECT plan_name, COUNT(*) AS n FROM subscriptions GROUP BY plan_name ORDER BY n DESC, plan_name
   expect: rows
 
@@ -195,7 +195,7 @@
   expect: rows
 
 - id: 1039
-  question: 按部門編號分，各有幾位同仁？
+  question: 按部門編號分，各有幾位同仁？在職離職都算。
   sql: SELECT department_id, COUNT(*) AS n FROM employees GROUP BY department_id ORDER BY department_id
   expect: rows
 
@@ -296,7 +296,7 @@
   expect: rows
 
 - id: 1059
-  question: 每個縣市各開了幾家門市？
+  question: 每個縣市各開了幾家門市？含已停業的。
   sql: SELECT city, COUNT(*) AS n FROM stores GROUP BY city ORDER BY n DESC, city
   expect: rows
 
@@ -331,13 +331,13 @@
   expect: rows
 
 - id: 1066
-  question: 評價的平均星等是多少？
+  question: 評價的平均星等是多少？含已刪除的評價。
   sql: SELECT AVG(rating) AS avg_rating FROM reviews
   expect: rows
 
 # ── 兩表 ────────────────────────────────────────────────────────
 - id: 1067
-  question: 每位同仁隸屬哪個單位？把人名跟單位名稱配起來給我。
+  question: 每位同仁隸屬哪個單位？在職離職都算，把人名跟單位名稱配起來給我。
   sql: SELECT e.name, d.name AS dept FROM employees e JOIN departments d ON d.id = e.department_id ORDER BY d.name, e.name
   expect: rows
 
@@ -367,7 +367,7 @@
   expect: rows
 
 - id: 1073
-  question: 每樣商品的平均星等是多少？排名前十給我。
+  question: 每樣商品的平均星等是多少？含已刪除的評價，排名前十給我。
   sql: SELECT p.name, AVG(r.rating) AS avg_rating FROM reviews r JOIN products p ON p.id = r.product_id GROUP BY p.name ORDER BY avg_rating DESC, p.name LIMIT 10
   expect: rows
 
@@ -433,7 +433,7 @@
   expect: rows
 
 - id: 1086
-  question: 平均星等高於整體平均的商品有哪些？
+  question: 平均星等高於整體平均的商品有哪些？含已刪除的評價。
   sql: SELECT p.name, AVG(r.rating) AS avg_rating FROM reviews r JOIN products p ON p.id = r.product_id GROUP BY p.id, p.name HAVING AVG(r.rating) > (SELECT AVG(rating) FROM reviews) ORDER BY avg_rating DESC, p.name
   expect: rows
 
@@ -453,7 +453,7 @@
   expect: rows
 
 - id: 1090
-  question: 每個部門的人，特休平均用掉幾天？
+  question: 每個部門的人，特休平均用掉幾天？在職離職都算。
   sql: SELECT d.name, AVG(ep.annual_leave_used) AS avg_days FROM employee_profiles ep JOIN employees e ON e.id = ep.employee_id JOIN departments d ON d.id = e.department_id GROUP BY d.name ORDER BY avg_days DESC
   expect: rows
 
@@ -468,7 +468,7 @@
   expect: rows
 
 - id: 1093
-  question: 每個會員層級的人，各留下幾則評價？
+  question: 每個會員層級的人，各留下幾則評價？含已刪除的評價。
   sql: SELECT cp.tier, COUNT(*) AS n FROM reviews r JOIN customer_profiles cp ON cp.customer_id = r.customer_id GROUP BY cp.tier ORDER BY n DESC, cp.tier
   expect: rows
 
@@ -513,7 +513,7 @@
   expect: rows
 
 - id: 1102
-  question: 星等最低的那五樣商品，各拿到幾則評價？
+  question: 星等最低的那五樣商品，各拿到幾則評價？含已刪除的評價。
   sql: SELECT p.name, AVG(r.rating) AS avg_rating, COUNT(*) AS n FROM reviews r JOIN products p ON p.id = r.product_id GROUP BY p.id, p.name ORDER BY avg_rating, p.name LIMIT 5
   expect: rows
 
@@ -571,7 +571,7 @@
   expect: rows
 
 - id: 1113
-  question: 每位員工被指派過幾張單？
+  question: 每位員工被指派過幾張單？在職離職都算。
   sql: SELECT e.name, COUNT(*) AS n FROM order_assignments oa JOIN employees e ON e.id = oa.employee_id GROUP BY e.id, e.name ORDER BY n DESC, e.name
   expect: rows
 
@@ -596,7 +596,7 @@
   expect: rows
 
 - id: 1118
-  question: 哪些同仁在哪個門市值過班？把人名跟店名配起來。
+  question: 哪些同仁在哪個門市值過班？在職離職都算，把人名跟店名配起來。
   sql: SELECT DISTINCT e.name, st.name AS store FROM store_staff ss JOIN employees e ON e.id = ss.employee_id JOIN stores st ON st.id = ss.store_id ORDER BY st.name, e.name
   expect: rows
 

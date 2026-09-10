@@ -1,43 +1,8 @@
 {
-  "sealed_hash": "22cd913eebe684eb",
-  "sealed_on": "2026-09-10",
+  "sealed_hash": "777ea64bbff28d9f",
+  "sealed_on": "2026-09-11",
   "void": [],
-  "runs": [
-    {
-      "date": "2026-09-10 21:35",
-      "commit": "7b86196",
-      "score": 70.7,
-      "correct": 87,
-      "n": 123,
-      "verdicts": {
-        "wrong": 28,
-        "correct": 87,
-        "no_sql": 8
-      },
-      "result_file": "eval_result_1789041779.json",
-      "viewed_failures": false,
-      "testset_version": 2
-    },
-    {
-      "date": "2026-09-10 23:14",
-      "commit": "e5e2da9+dirty",
-      "score": 75.6,
-      "correct": 93,
-      "n": 123,
-      "verdicts": {
-        "wrong": 29,
-        "correct": 93,
-        "no_sql": 1
-      },
-      "result_file": "eval_result_1789041779.json",
-      "viewed_failures": false,
-      "testset_version": 2,
-      "no_sql_ids": [
-        1096
-      ],
-      "note": "接續 2026-09-10 21:35 那次：判分前把 8 題 llm_api_error 重試到底。架構程式碼未變（e5e2da9 只改 runner 的重試邏輯）。"
-    }
-  ],
+  "runs": [],
   "n_questions": 123,
   "retired": [
     {
@@ -62,7 +27,51 @@
       ],
       "retired_on": "2026-09-10",
       "reason": "v1 封存時漏跑閘門 [13]（題目形狀可判定性）。事後補跑掃到 17 題問句決定不了 GT 的 SELECT 清單，判分規則要求系統涵蓋 GT 的每一欄，那 17 題會讓模型值算對、形狀不合而被判錯 —— 題目的缺陷不是模型的。v2 只收窄問句，SQL 一行未動，分布不變。v1 的 69.9% 不重算，它是那把尺下的真實下界。"
+    },
+    {
+      "version": 2,
+      "hash": "22cd913eebe684eb",
+      "sealed_on": "2026-09-10",
+      "n": 123,
+      "runs": [
+        {
+          "date": "2026-09-10 21:35",
+          "commit": "7b86196",
+          "score": 70.7,
+          "correct": 87,
+          "n": 123,
+          "verdicts": {
+            "wrong": 28,
+            "correct": 87,
+            "no_sql": 8
+          },
+          "result_file": "eval_result_1789041779.json",
+          "viewed_failures": false,
+          "testset_version": 2
+        },
+        {
+          "date": "2026-09-10 23:14",
+          "commit": "e5e2da9+dirty",
+          "score": 75.6,
+          "correct": 93,
+          "n": 123,
+          "verdicts": {
+            "wrong": 29,
+            "correct": 93,
+            "no_sql": 1
+          },
+          "result_file": "eval_result_1789041779.json",
+          "viewed_failures": false,
+          "testset_version": 2,
+          "no_sql_ids": [
+            1096
+          ],
+          "note": "接續 2026-09-10 21:35 那次：判分前把 8 題 llm_api_error 重試到底。架構程式碼未變（e5e2da9 只改 runner 的重試邏輯）。"
+        }
+      ],
+      "retired_on": "2026-09-11",
+      "reason": "v2 封存時閘門 [6]（旗標歧義）還不存在 —— 它是 2026-09-11 建形狀驗證集時，被自己的控制組 #2211 逼出來的：「給滿分五分的評論總共有幾則？」GT 算 46、系統算 44（扣掉 is_deleted=1 的兩則），兩種讀法都站得住，問句自己決定不了。事後把這道閘門補掃 v2，121 題裡 22 題命中，扣掉 5 題「旗標本身就是題目主題」的裁決，真的有 17 題問句決定不了要算哪些列。那 17 題答不對，跟閘門 [13] 退役 v1 的 17 題是同一類缺陷的另一個維度（[13] 管要哪幾欄，[6] 管算哪些列）。v3 只把母體寫進問句（「含已刪除的」「在職離職都算」），SQL 一行未動，分布不變。v2 的 75.6% 不重算 —— 它是那把尺下的真實下界。"
     }
   ],
-  "version": 2
+  "version": 3
 }

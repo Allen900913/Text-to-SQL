@@ -198,7 +198,7 @@
 
 - id: 2026
   family: zero_group
-  question: 每樣商品各被組進幾個組合包？一個都沒被組進的也要列出來，算 0。給我品名跟個數。
+  question: 每樣商品當組合包用的時候，裡面各裝了幾樣東西？沒被當成組合包的也要列出來，算 0。給我品名跟樣數。
   sql: SELECT p.name, COUNT(b.id) AS n FROM products p LEFT JOIN product_bundles b ON b.bundle_product_id = p.id GROUP BY p.id, p.name
   trap_sql: SELECT p.name, COUNT(b.id) AS n FROM products p JOIN product_bundles b ON b.bundle_product_id = p.id GROUP BY p.id, p.name
   expect: rows
