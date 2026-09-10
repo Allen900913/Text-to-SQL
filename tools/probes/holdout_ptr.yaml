@@ -1,0 +1,114 @@
+# 指路標投影（D+）的保留組 —— 20 題全新問句，四分組
+#
+# 為什麼要保留組：D+ 那張漂亮的表跑在**寫註解時所用的同一批 305 題**上，
+# 而註解是照著那批題調過的。同一批題量不出「換個問法還成不成立」。
+#
+# 出題規則（照 §2.5 給 products 註解做保留組時的同一套）：
+#   · 問句是新寫的，不在 eval_questions_v2.json 裡
+#   · 措辭刻意**不抄註解文字** —— 抄了就是背答案
+#   · 每題只登記「非有不可的那張表」，不登記整條 join path
+#
+# ── 事前登記的判準（跑之前寫死，跑完不准改）─────────────────────────
+#   C 組  Top-1 命中數必須 **增加 ≥ 3**（5 題裡至少多對 3 題）
+#   D 組  Top-1 命中數 **一題都不准掉**（誘餌軸的另一端，這是硬條件）
+#   A 組  ±1 題以內（持平）
+#   B 組  ±1 題以內（持平）—— D+ 保留了核心業務宣告，理論上不該動
+#   另外  全庫 305 題的候選召回@40 不得低於 A 臂的 99.0%
+# 四條全過才翻；任何一條不過就不翻，並把結果記進 §10。
+
+groups:
+
+  # ── A：寬表題，問法貼「概念群列舉」──────────────────────────────
+  # D+ 保留概念群，所以這一組應該完全不動。它是這個實驗的雜訊地板。
+  A:
+    - q: 有哪幾次出貨是拆成三箱以上寄的？
+      want: shipment_profiles
+    - q: 哪些供應商的付款條件是月結六十天？
+      want: supplier_profiles
+    - q: 有哪些檔期限定首購才能用？
+      want: promotion_profiles
+    - q: 哪些商品目前設定成不讓站內搜尋找到？
+      want: product_profiles
+    - q: 有哪幾張工單是被轉手三次以上才結案的？
+      want: support_ticket_profiles
+
+  # ── B：寬表題，問法貼「核心業務宣告」──────────────────────────────
+  # D+ 也保留宣告句，所以同樣該持平。這一組專門抓「我砍錯了東西」。
+  B:
+    - q: 從內容跟法規合規的角度看，哪些商品還沒補齊認證？
+      want: product_profiles
+    - q: 想看單筆付款在金流端的細節，有哪些筆是授權失敗的？
+      want: payment_profiles
+    - q: 退貨是怎麼被處理的？有哪些是判給供應商責任的？
+      want: return_profiles
+    - q: 從訂閱的帳務面來看，有哪些筆扣款一直沒成功？
+      want: subscription_profiles
+    - q: 實體門市的營運面上，哪幾間有提供無障礙設施？
+      want: store_profiles
+
+  # ── C：窄表題，正解正是「被指路標點名的那張表」──────────────────
+  # 這是 D+ 該修好的一組。刻意挑**不在**那 13 題已知勝場裡的指路標，
+  # 才叫保留組（invoices→payments、customer_contacts→customers、
+  # promotion_rules→promotions、supplier_contracts→product_suppliers、
+  # store_pickups→shipments）。
+  C:
+    - q: 客戶實際付了多少錢，是什麼時候付的？
+      want: payments
+    - q: 客戶登記的姓名跟居住城市是什麼？
+      want: customers
+    - q: 每一檔活動的折扣是打幾折還是折多少錢？
+      want: promotions
+    - q: 每項商品跟供應商談的進貨價是多少？
+      want: product_suppliers
+    - q: 宅配的包裹什麼時候出貨、什麼時候送到？
+      want: shipments
+
+  # ── C2：第二次出題（第一次的 C 組判準寫壞了，如實記錄）──────────────
+  #
+  # 第一次的 C 組 A 臂就 4/5，天花板只剩 1 題，而判準寫「增加 >= 3」——
+  # **在那個基線上不可能達成**。那是判準的缺陷，不是 D+ 的結果。
+  # 診斷：我挑的是 payments / customers / promotions 這種核心表，
+  # 指路標持有者（invoices / customer_contacts / promotion_rules）
+  # 根本搶不贏它們。**機制只在「持有指路標的那張表本身夠像」時才發作**
+  # —— 那正是已知 13 個勝場的形狀（product_stock_snapshots vs products）。
+  #
+  # 所以這一組改挑**真正的競爭配對**，10 題。判準改成兩段式，
+  # 而且是在只看 A 臂基線（確定性、不含處理組資訊）之後才定的：
+  #     A 臂失手的那些題 → D+ 必須修好一半以上
+  #     A 臂本來就對的題 → D+ 最多只准弄壞 1 題
+  # 題目在看基線之前就寫好了，順序沒動過。
+  C2:
+    - q: 這件商品現在賣多少錢？
+      want: products                     # 對手 product_price_history
+    - q: 目前每項商品的庫存還剩幾件？
+      want: products                     # 對手 product_stock_snapshots
+    - q: 哪幾筆付款是成功收到錢的？
+      want: payments                     # 對手 payment_attempts
+    - q: 客戶的聯絡電話跟信箱是什麼？
+      want: customers                    # 對手 customer_contacts
+    - q: 這檔活動實際折了多少？
+      want: promotions                   # 對手 promotion_rules / order_promotions
+    - q: 客戶對商品打了幾顆星？
+      want: reviews                      # 對手 faq_votes / review_profiles
+    - q: 有哪些客戶申請退貨？狀態到哪了？
+      want: order_returns                # 對手 return_shipments / warranty_claims
+    - q: 客戶訂了哪個方案，什麼時候到期？
+      want: subscriptions                # 對手 newsletter_subscriptions
+    - q: 有哪些優惠券還在有效期內？
+      want: coupons                      # 對手 coupon_redemptions
+    - q: 這批貨從哪個倉庫出的，物流單號多少？
+      want: shipments                    # 對手 store_pickups / shipment_profiles
+
+  # ── D：窄表題，與任何寬表無關 ────────────────────────────────────
+  # 誘餌軸的另一端。改檢索文件不該波及這裡，掉一題就是溢出。
+  D:
+    - q: 公司內部總共有幾個部門？
+      want: departments
+    - q: 每張禮物卡現在還剩多少餘額？
+      want: gift_cards
+    - q: 有哪些商品被放進願望清單收藏？
+      want: wishlist_items
+    - q: 倉庫之間調撥商品的紀錄有哪些？
+      want: warehouse_transfers
+    - q: 客戶輸入過哪些搜尋關鍵字？
+      want: search_logs
