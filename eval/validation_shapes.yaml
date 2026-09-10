@@ -1,0 +1,544 @@
+# 形狀驗證集 —— 這組是拿來「看」的，不是拿來封存的。
+#
+# 為什麼要這組
+# ============================================================
+# 驗收集 v2 的 29 題 wrong 分桶：列數對值全不合 15、少回列 10、少帶欄位 3、
+# 誤觸防禦 1，而「多回列」是 0。檢索層 GT 表進候選 120/121 = 99.2%。
+# 所以損失全在生成層的兩種形狀，這組題就只打那兩種：
+#
+#   zero_group  「每個 X 各多少」而某些 X 是 0 → INNER JOIN 會整組吃掉
+#   fanout      一對多 JOIN 之後聚合母表的欄位 → 值被乘上 child 列數
+#   control     已經會的形狀（純投影/過濾、子查詢+否定），用來抓回歸
+#
+# 每題兩份 SQL
+# ============================================================
+#   sql       正解
+#   trap_sql  天真寫法（INNER JOIN／JOIN 完直接 SUM）
+#
+# 閘門斷言兩者結果**必須不同**。不同才有鑑別力 —— 否則系統答對只是
+# 因為那題兩種寫法都對，量不到任何東西。sql 與 trap_sql 同結果的題一律退回。
+#
+# 出題只看資料（外鍵結構、零列群組計數、扇出倍數），不看任何 schema 註解。
+
+# ══ zero_group ══════════════════════════════════════════════
+- id: 2001
+  family: zero_group
+  question: 每位客戶各下過幾張訂單？一張都沒下過的也要列出來，算 0。給我姓名跟張數。
+  sql: SELECT c.name, COUNT(o.id) AS n FROM customers c LEFT JOIN orders o ON o.customer_id = c.id GROUP BY c.id, c.name
+  trap_sql: SELECT c.name, COUNT(o.id) AS n FROM customers c JOIN orders o ON o.customer_id = c.id GROUP BY c.id, c.name
+  expect: rows
+
+- id: 2002
+  family: zero_group
+  question: 每位客戶各留過幾則評論？不含已刪除的評論；一則都沒留過的也要列出來，算 0。給我姓名跟則數。
+  sql: SELECT c.name, COUNT(r.id) AS n FROM customers c LEFT JOIN reviews r ON r.customer_id = c.id AND r.is_deleted = 0 GROUP BY c.id, c.name
+  trap_sql: SELECT c.name, COUNT(r.id) AS n FROM customers c JOIN reviews r ON r.customer_id = c.id AND r.is_deleted = 0 GROUP BY c.id, c.name
+  expect: rows
+
+- id: 2003
+  family: zero_group
+  question: 每位客戶各開過幾張客服單？一張都沒開過的也要列出來，算 0。給我姓名跟張數。
+  sql: SELECT c.name, COUNT(t.id) AS n FROM customers c LEFT JOIN support_tickets t ON t.customer_id = c.id GROUP BY c.id, c.name
+  trap_sql: SELECT c.name, COUNT(t.id) AS n FROM customers c JOIN support_tickets t ON t.customer_id = c.id GROUP BY c.id, c.name
+  expect: rows
+
+- id: 2004
+  family: zero_group
+  question: 每位客戶名下各有幾張禮物卡？一張都沒有的也要列出來，算 0。給我姓名跟張數。
+  sql: SELECT c.name, COUNT(g.id) AS n FROM customers c LEFT JOIN gift_cards g ON g.customer_id = c.id GROUP BY c.id, c.name
+  trap_sql: SELECT c.name, COUNT(g.id) AS n FROM customers c JOIN gift_cards g ON g.customer_id = c.id GROUP BY c.id, c.name
+  expect: rows
+
+- id: 2005
+  family: zero_group
+  question: 每位客戶各訂閱過幾個方案？只算訂閱過就好，不管現在還在不在；一個都沒訂閱過的也要列出來，算 0。給我姓名跟個數。
+  sql: SELECT c.name, COUNT(s.id) AS n FROM customers c LEFT JOIN subscriptions s ON s.customer_id = c.id GROUP BY c.id, c.name
+  trap_sql: SELECT c.name, COUNT(s.id) AS n FROM customers c JOIN subscriptions s ON s.customer_id = c.id GROUP BY c.id, c.name
+  expect: rows
+
+- id: 2006
+  family: zero_group
+  question: 每位客戶各建過幾個購物車？含已棄置的；一個都沒建過的也要列出來，算 0。給我姓名跟個數。
+  sql: SELECT c.name, COUNT(k.id) AS n FROM customers c LEFT JOIN carts k ON k.customer_id = c.id GROUP BY c.id, c.name
+  trap_sql: SELECT c.name, COUNT(k.id) AS n FROM customers c JOIN carts k ON k.customer_id = c.id GROUP BY c.id, c.name
+  expect: rows
+
+- id: 2007
+  family: zero_group
+  question: 每位客戶各問過幾則商品問答？一則都沒問過的也要列出來，算 0。給我姓名跟則數。
+  sql: SELECT c.name, COUNT(q.id) AS n FROM customers c LEFT JOIN product_qna q ON q.customer_id = c.id GROUP BY c.id, c.name
+  trap_sql: SELECT c.name, COUNT(q.id) AS n FROM customers c JOIN product_qna q ON q.customer_id = c.id GROUP BY c.id, c.name
+  expect: rows
+
+- id: 2008
+  family: zero_group
+  question: 每位客戶各兌換過幾次折價券？一次都沒兌換過的也要列出來，算 0。給我姓名跟次數。
+  sql: SELECT c.name, COUNT(r.id) AS n FROM customers c LEFT JOIN coupon_redemptions r ON r.customer_id = c.id GROUP BY c.id, c.name
+  trap_sql: SELECT c.name, COUNT(r.id) AS n FROM customers c JOIN coupon_redemptions r ON r.customer_id = c.id GROUP BY c.id, c.name
+  expect: rows
+
+- id: 2009
+  family: zero_group
+  question: 每位客戶各預約過幾次到店服務？不管實際到場與否都算；一次都沒預約過的也要列出來，算 0。給我姓名跟次數。
+  sql: SELECT c.name, COUNT(a.id) AS n FROM customers c LEFT JOIN service_appointments a ON a.customer_id = c.id GROUP BY c.id, c.name
+  trap_sql: SELECT c.name, COUNT(a.id) AS n FROM customers c JOIN service_appointments a ON a.customer_id = c.id GROUP BY c.id, c.name
+  expect: rows
+
+- id: 2010
+  family: zero_group
+  question: 每位客戶各有幾張願望清單？一張都沒有的也要列出來，算 0。給我姓名跟張數。
+  sql: SELECT c.name, COUNT(w.id) AS n FROM customers c LEFT JOIN wishlists w ON w.customer_id = c.id GROUP BY c.id, c.name
+  trap_sql: SELECT c.name, COUNT(w.id) AS n FROM customers c JOIN wishlists w ON w.customer_id = c.id GROUP BY c.id, c.name
+  expect: rows
+
+- id: 2011
+  family: zero_group
+  question: 每位客戶各訂閱過幾次電子報？含後來退訂的；一次都沒訂閱過的也要列出來，算 0。給我姓名跟次數。
+  sql: SELECT c.name, COUNT(n.id) AS n FROM customers c LEFT JOIN newsletter_subscriptions n ON n.customer_id = c.id GROUP BY c.id, c.name
+  trap_sql: SELECT c.name, COUNT(n.id) AS n FROM customers c JOIN newsletter_subscriptions n ON n.customer_id = c.id GROUP BY c.id, c.name
+  expect: rows
+
+- id: 2012
+  family: zero_group
+  question: 每位客戶各對常見問答投過幾次票？一次都沒投過的也要列出來，算 0。給我姓名跟次數。
+  sql: SELECT c.name, COUNT(v.id) AS n FROM customers c LEFT JOIN faq_votes v ON v.customer_id = c.id GROUP BY c.id, c.name
+  trap_sql: SELECT c.name, COUNT(v.id) AS n FROM customers c JOIN faq_votes v ON v.customer_id = c.id GROUP BY c.id, c.name
+  expect: rows
+
+- id: 2013
+  family: zero_group
+  question: 每位客戶各有幾筆點數紀錄？一筆都沒有的也要列出來，算 0。給我姓名跟筆數。
+  sql: SELECT c.name, COUNT(l.id) AS n FROM customers c LEFT JOIN loyalty_points l ON l.customer_id = c.id GROUP BY c.id, c.name
+  trap_sql: SELECT c.name, COUNT(l.id) AS n FROM customers c JOIN loyalty_points l ON l.customer_id = c.id GROUP BY c.id, c.name
+  expect: rows
+
+- id: 2014
+  family: zero_group
+  question: 每樣商品各被退貨幾次？一次都沒被退過的也要列出來，算 0。給我品名跟次數。
+  sql: SELECT p.name, COUNT(r.id) AS n FROM products p LEFT JOIN order_returns r ON r.product_id = p.id GROUP BY p.id, p.name
+  trap_sql: SELECT p.name, COUNT(r.id) AS n FROM products p JOIN order_returns r ON r.product_id = p.id GROUP BY p.id, p.name
+  expect: rows
+
+- id: 2015
+  family: zero_group
+  question: 每樣商品各被申請過幾次保固？一次都沒有的也要列出來，算 0。給我品名跟次數。
+  sql: SELECT p.name, COUNT(w.id) AS n FROM products p LEFT JOIN warranty_claims w ON w.product_id = p.id GROUP BY p.id, p.name
+  trap_sql: SELECT p.name, COUNT(w.id) AS n FROM products p JOIN warranty_claims w ON w.product_id = p.id GROUP BY p.id, p.name
+  expect: rows
+
+- id: 2016
+  family: zero_group
+  question: 每樣商品各被貼了幾個標籤？一個都沒貼的也要列出來，算 0。給我品名跟個數。
+  sql: SELECT p.name, COUNT(t.id) AS n FROM products p LEFT JOIN product_tags t ON t.product_id = p.id GROUP BY p.id, p.name
+  trap_sql: SELECT p.name, COUNT(t.id) AS n FROM products p JOIN product_tags t ON t.product_id = p.id GROUP BY p.id, p.name
+  expect: rows
+
+- id: 2017
+  family: zero_group
+  question: 每樣商品各被列入願望清單幾次？一次都沒被列入的也要列出來，算 0。給我品名跟次數。
+  sql: SELECT p.name, COUNT(i.id) AS n FROM products p LEFT JOIN wishlist_items i ON i.product_id = p.id GROUP BY p.id, p.name
+  trap_sql: SELECT p.name, COUNT(i.id) AS n FROM products p JOIN wishlist_items i ON i.product_id = p.id GROUP BY p.id, p.name
+  expect: rows
+
+- id: 2018
+  family: zero_group
+  question: 每樣商品各被別的商品推薦過幾次？一次都沒被推薦過的也要列出來，算 0。給我品名跟次數。
+  sql: SELECT p.name, COUNT(r.id) AS n FROM products p LEFT JOIN product_recommendations r ON r.recommended_product_id = p.id GROUP BY p.id, p.name
+  trap_sql: SELECT p.name, COUNT(r.id) AS n FROM products p JOIN product_recommendations r ON r.recommended_product_id = p.id GROUP BY p.id, p.name
+  expect: rows
+
+- id: 2019
+  family: zero_group
+  question: 每樣商品各被問過幾則問答？一則都沒被問過的也要列出來，算 0。給我品名跟則數。
+  sql: SELECT p.name, COUNT(q.id) AS n FROM products p LEFT JOIN product_qna q ON q.product_id = p.id GROUP BY p.id, p.name
+  trap_sql: SELECT p.name, COUNT(q.id) AS n FROM products p JOIN product_qna q ON q.product_id = p.id GROUP BY p.id, p.name
+  expect: rows
+
+- id: 2020
+  family: zero_group
+  question: 每樣商品各被調撥過幾次？一次都沒有的也要列出來，算 0。給我品名跟次數。
+  sql: SELECT p.name, COUNT(t.id) AS n FROM products p LEFT JOIN warehouse_transfers t ON t.product_id = p.id GROUP BY p.id, p.name
+  trap_sql: SELECT p.name, COUNT(t.id) AS n FROM products p JOIN warehouse_transfers t ON t.product_id = p.id GROUP BY p.id, p.name
+  expect: rows
+
+- id: 2021
+  family: zero_group
+  question: 每位在職同仁各被派駐到幾個倉庫？一個都沒被派駐的也要列出來，算 0。給我姓名跟個數。
+  sql: SELECT e.name, COUNT(s.id) AS n FROM employees e LEFT JOIN warehouse_staff s ON s.employee_id = e.id WHERE e.is_active = 1 GROUP BY e.id, e.name
+  trap_sql: SELECT e.name, COUNT(s.id) AS n FROM employees e JOIN warehouse_staff s ON s.employee_id = e.id WHERE e.is_active = 1 GROUP BY e.id, e.name
+  expect: rows
+
+- id: 2022
+  family: zero_group
+  question: 每位在職同仁各被派駐到幾家門市？一家都沒被派駐的也要列出來，算 0。給我姓名跟家數。
+  sql: SELECT e.name, COUNT(s.id) AS n FROM employees e LEFT JOIN store_staff s ON s.employee_id = e.id WHERE e.is_active = 1 GROUP BY e.id, e.name
+  trap_sql: SELECT e.name, COUNT(s.id) AS n FROM employees e JOIN store_staff s ON s.employee_id = e.id WHERE e.is_active = 1 GROUP BY e.id, e.name
+  expect: rows
+
+- id: 2023
+  family: zero_group
+  question: 每位在職同仁各回答過幾則商品問答？一則都沒回答過的也要列出來，算 0。給我姓名跟則數。
+  sql: SELECT e.name, COUNT(q.id) AS n FROM employees e LEFT JOIN product_qna q ON q.answered_by = e.id WHERE e.is_active = 1 GROUP BY e.id, e.name
+  trap_sql: SELECT e.name, COUNT(q.id) AS n FROM employees e JOIN product_qna q ON q.answered_by = e.id WHERE e.is_active = 1 GROUP BY e.id, e.name
+  expect: rows
+
+- id: 2024
+  family: zero_group
+  question: 每個分類底下各掛了幾樣商品？不分主分類副分類都算；一樣都沒掛的分類也要列出來，算 0。給我分類名稱跟樣數。
+  sql: SELECT c.name, COUNT(pc.id) AS n FROM categories c LEFT JOIN product_categories pc ON pc.category_id = c.id GROUP BY c.id, c.name
+  trap_sql: SELECT c.name, COUNT(pc.id) AS n FROM categories c JOIN product_categories pc ON pc.category_id = c.id GROUP BY c.id, c.name
+  expect: rows
+
+- id: 2025
+  family: zero_group
+  question: 每張訂單各被取消過幾次？一次都沒被取消的也要列出來，算 0。給我訂單編號跟次數。
+  sql: SELECT o.id, COUNT(c.id) AS n FROM orders o LEFT JOIN order_cancellations c ON c.order_id = o.id GROUP BY o.id
+  trap_sql: SELECT o.id, COUNT(c.id) AS n FROM orders o JOIN order_cancellations c ON c.order_id = o.id GROUP BY o.id
+  expect: rows
+
+- id: 2026
+  family: zero_group
+  question: 每樣商品各被組進幾個組合包？一個都沒被組進的也要列出來，算 0。給我品名跟個數。
+  sql: SELECT p.name, COUNT(b.id) AS n FROM products p LEFT JOIN product_bundles b ON b.bundle_product_id = p.id GROUP BY p.id, p.name
+  trap_sql: SELECT p.name, COUNT(b.id) AS n FROM products p JOIN product_bundles b ON b.bundle_product_id = p.id GROUP BY p.id, p.name
+  expect: rows
+
+- id: 2027
+  family: zero_group
+  question: 每張訂單各出過幾批貨？一批都沒出的也要列出來，算 0。給我訂單編號跟批數。
+  sql: SELECT o.id, COUNT(s.id) AS n FROM orders o LEFT JOIN shipments s ON s.order_id = o.id GROUP BY o.id
+  trap_sql: SELECT o.id, COUNT(s.id) AS n FROM orders o JOIN shipments s ON s.order_id = o.id GROUP BY o.id
+  expect: rows
+
+- id: 2028
+  family: zero_group
+  question: 每筆付款各被退款過幾次？一次都沒被退過的也要列出來，算 0。給我付款編號跟次數。
+  sql: SELECT p.id, COUNT(r.id) AS n FROM payments p LEFT JOIN refunds r ON r.payment_id = p.id GROUP BY p.id
+  trap_sql: SELECT p.id, COUNT(r.id) AS n FROM payments p JOIN refunds r ON r.payment_id = p.id GROUP BY p.id
+  expect: rows
+
+- id: 2029
+  family: zero_group
+  question: 每則評論各收到幾則回覆？不含已刪除的評論；一則都沒收到的也要列出來，算 0。給我評論編號跟回覆則數。
+  sql: SELECT r.id, COUNT(rr.id) AS n FROM reviews r LEFT JOIN review_replies rr ON rr.review_id = r.id WHERE r.is_deleted = 0 GROUP BY r.id
+  trap_sql: SELECT r.id, COUNT(rr.id) AS n FROM reviews r JOIN review_replies rr ON rr.review_id = r.id WHERE r.is_deleted = 0 GROUP BY r.id
+  expect: rows
+
+- id: 2030
+  family: zero_group
+  question: 每張訂單各有幾筆點數紀錄？一筆都沒有的也要列出來，算 0。給我訂單編號跟筆數。
+  sql: SELECT o.id, COUNT(l.id) AS n FROM orders o LEFT JOIN loyalty_points l ON l.order_id = o.id GROUP BY o.id
+  trap_sql: SELECT o.id, COUNT(l.id) AS n FROM orders o JOIN loyalty_points l ON l.order_id = o.id GROUP BY o.id
+  expect: rows
+
+- id: 2031
+  family: zero_group
+  question: 每個分類底下各有幾個子分類？一個子分類都沒有的也要列出來，算 0。給我分類名稱跟個數。
+  sql: SELECT c.name, COUNT(s.id) AS n FROM categories c LEFT JOIN categories s ON s.parent_id = c.id GROUP BY c.id, c.name
+  trap_sql: SELECT c.name, COUNT(s.id) AS n FROM categories c JOIN categories s ON s.parent_id = c.id GROUP BY c.id, c.name
+  expect: rows
+
+- id: 2032
+  family: zero_group
+  question: 每位客戶的訂單金額總共是多少？依照實際下單紀錄逐張加總；一張都沒下過的算 0，也要列出來。給我姓名跟總額。
+  sql: SELECT c.name, COALESCE(SUM(o.total_amount), 0) AS amt FROM customers c LEFT JOIN orders o ON o.customer_id = c.id GROUP BY c.id, c.name
+  trap_sql: SELECT c.name, SUM(o.total_amount) AS amt FROM customers c JOIN orders o ON o.customer_id = c.id GROUP BY c.id, c.name
+  expect: rows
+
+- id: 2033
+  family: zero_group
+  question: 每張退貨單各寄出過幾次退運？一次都沒有的也要列出來，算 0。給我退貨單編號跟次數。
+  sql: SELECT r.id, COUNT(s.id) AS n FROM order_returns r LEFT JOIN return_shipments s ON s.return_id = r.id GROUP BY r.id
+  trap_sql: SELECT r.id, COUNT(s.id) AS n FROM order_returns r JOIN return_shipments s ON s.return_id = r.id GROUP BY r.id
+  expect: rows
+
+- id: 2034
+  family: zero_group
+  question: 每個購物車各收到幾封招回信？含已棄置的購物車；一封都沒收到的也要列出來，算 0。給我購物車編號跟封數。
+  sql: SELECT k.id, COUNT(e.id) AS n FROM carts k LEFT JOIN cart_recovery_emails e ON e.cart_id = k.id GROUP BY k.id
+  trap_sql: SELECT k.id, COUNT(e.id) AS n FROM carts k JOIN cart_recovery_emails e ON e.cart_id = k.id GROUP BY k.id
+  expect: rows
+
+- id: 2035
+  family: zero_group
+  question: 每樣商品各被當成組合包的內容物幾次？一次都沒有的也要列出來，算 0。給我品名跟次數。
+  sql: SELECT p.name, COUNT(b.id) AS n FROM products p LEFT JOIN product_bundles b ON b.item_product_id = p.id GROUP BY p.id, p.name
+  trap_sql: SELECT p.name, COUNT(b.id) AS n FROM products p JOIN product_bundles b ON b.item_product_id = p.id GROUP BY p.id, p.name
+  expect: rows
+
+# ══ fanout ══════════════════════════════════════════════════
+# 陷阱：一對多 JOIN 之後直接聚合母表的欄位，母表的值被乘上 child 列數。
+# 扇出倍數取自 find_fanout.py 的實測（order_items 2.92、order_items→products
+# 14.6、shipments→warehouses 35.75、payments→payment_methods 32.8 …）。
+
+- id: 2101
+  family: fanout
+  question: 有商品明細的訂單，訂單金額加起來總共是多少？
+  sql: SELECT SUM(total_amount) AS amt FROM orders WHERE id IN (SELECT order_id FROM order_items)
+  trap_sql: SELECT SUM(o.total_amount) AS amt FROM orders o JOIN order_items oi ON oi.order_id = o.id
+  expect: rows
+
+- id: 2102
+  family: fanout
+  question: 有出過貨的倉庫，儲位容量加起來總共是多少？
+  sql: SELECT SUM(capacity) AS cap FROM warehouses WHERE id IN (SELECT warehouse_id FROM shipments)
+  trap_sql: SELECT SUM(w.capacity) AS cap FROM warehouses w JOIN shipments s ON s.warehouse_id = w.id
+  expect: rows
+
+- id: 2103
+  family: fanout
+  question: 有處理過付款的付款方式，手續費率加起來總共是多少？
+  sql: SELECT SUM(fee_rate) AS r FROM payment_methods WHERE id IN (SELECT method_id FROM payments)
+  trap_sql: SELECT SUM(m.fee_rate) AS r FROM payment_methods m JOIN payments p ON p.method_id = m.id
+  expect: rows
+
+- id: 2104
+  family: fanout
+  question: 有被兌換過的優惠碼，折抵金額加起來總共是多少？
+  sql: SELECT SUM(discount_amount) AS amt FROM coupons WHERE id IN (SELECT coupon_id FROM coupon_redemptions)
+  trap_sql: SELECT SUM(c.discount_amount) AS amt FROM coupons c JOIN coupon_redemptions r ON r.coupon_id = c.id
+  expect: rows
+
+- id: 2105
+  family: fanout
+  question: 有被套用在訂單上的促銷活動，折扣數值加起來總共是多少？不管現在有沒有啟用都算。
+  sql: SELECT SUM(discount_value) AS v FROM promotions WHERE id IN (SELECT promotion_id FROM order_promotions)
+  trap_sql: SELECT SUM(p.discount_value) AS v FROM promotions p JOIN order_promotions op ON op.promotion_id = p.id
+  expect: rows
+
+- id: 2106
+  family: fanout
+  question: 有交易紀錄的禮物卡，面額加起來總共是多少？
+  sql: SELECT SUM(face_value) AS v FROM gift_cards WHERE id IN (SELECT gift_card_id FROM gift_card_transactions)
+  trap_sql: SELECT SUM(g.face_value) AS v FROM gift_cards g JOIN gift_card_transactions t ON t.gift_card_id = g.id
+  expect: rows
+
+- id: 2107
+  family: fanout
+  question: 被下單買過的商品，定價加起來總共是多少？
+  sql: SELECT SUM(price) AS v FROM products WHERE id IN (SELECT product_id FROM order_items)
+  trap_sql: SELECT SUM(p.price) AS v FROM products p JOIN order_items oi ON oi.product_id = p.id
+  expect: rows
+
+- id: 2108
+  family: fanout
+  question: 被下單買過的商品，目前庫存加起來總共是多少？
+  sql: SELECT SUM(stock) AS v FROM products WHERE id IN (SELECT product_id FROM order_items)
+  trap_sql: SELECT SUM(p.stock) AS v FROM products p JOIN order_items oi ON oi.product_id = p.id
+  expect: rows
+
+- id: 2109
+  family: fanout
+  question: 被加進購物車的商品，定價加起來總共是多少？
+  sql: SELECT SUM(price) AS v FROM products WHERE id IN (SELECT product_id FROM cart_items)
+  trap_sql: SELECT SUM(p.price) AS v FROM products p JOIN cart_items ci ON ci.product_id = p.id
+  expect: rows
+
+- id: 2110
+  family: fanout
+  question: 被列入願望清單的商品，定價加起來總共是多少？
+  sql: SELECT SUM(price) AS v FROM products WHERE id IN (SELECT product_id FROM wishlist_items)
+  trap_sql: SELECT SUM(p.price) AS v FROM products p JOIN wishlist_items wi ON wi.product_id = p.id
+  expect: rows
+
+- id: 2111
+  family: fanout
+  question: 被評論過的商品（不含已刪除的評論），目前庫存加起來總共是多少？
+  sql: SELECT SUM(stock) AS v FROM products WHERE id IN (SELECT product_id FROM reviews WHERE is_deleted = 0)
+  trap_sql: SELECT SUM(p.stock) AS v FROM products p JOIN reviews r ON r.product_id = p.id AND r.is_deleted = 0
+  expect: rows
+
+- id: 2112
+  family: fanout
+  question: 有登記供應商的商品，定價加起來總共是多少？
+  sql: SELECT SUM(price) AS v FROM products WHERE id IN (SELECT product_id FROM product_suppliers)
+  trap_sql: SELECT SUM(p.price) AS v FROM products p JOIN product_suppliers ps ON ps.product_id = p.id
+  expect: rows
+
+- id: 2113
+  family: fanout
+  question: 被下單買過的商品，各類別的定價加起來分別是多少？給我類別跟金額。
+  sql: SELECT category, SUM(price) AS v FROM products WHERE id IN (SELECT product_id FROM order_items) GROUP BY category
+  trap_sql: SELECT p.category, SUM(p.price) AS v FROM products p JOIN order_items oi ON oi.product_id = p.id GROUP BY p.category
+  expect: rows
+
+- id: 2114
+  family: fanout
+  question: 被評論過的商品（不含已刪除的評論），各類別的庫存加起來分別是多少？給我類別跟庫存量。
+  sql: SELECT category, SUM(stock) AS v FROM products WHERE id IN (SELECT product_id FROM reviews WHERE is_deleted = 0) GROUP BY category
+  trap_sql: SELECT p.category, SUM(p.stock) AS v FROM products p JOIN reviews r ON r.product_id = p.id AND r.is_deleted = 0 GROUP BY p.category
+  expect: rows
+
+- id: 2115
+  family: fanout
+  question: 總共有多少位不同的客戶買過商品？
+  sql: SELECT COUNT(DISTINCT o.customer_id) AS n FROM orders o JOIN order_items oi ON oi.order_id = o.id
+  trap_sql: SELECT COUNT(o.customer_id) AS n FROM orders o JOIN order_items oi ON oi.order_id = o.id
+  expect: rows
+
+- id: 2116
+  family: fanout
+  question: 每個倉庫各服務過幾位不同的客戶？給我倉庫名稱跟人數。
+  sql: SELECT w.name, COUNT(DISTINCT o.customer_id) AS n FROM warehouses w JOIN shipments s ON s.warehouse_id = w.id JOIN orders o ON o.id = s.order_id GROUP BY w.id, w.name
+  trap_sql: SELECT w.name, COUNT(o.customer_id) AS n FROM warehouses w JOIN shipments s ON s.warehouse_id = w.id JOIN orders o ON o.id = s.order_id GROUP BY w.id, w.name
+  expect: rows
+
+- id: 2117
+  family: fanout
+  question: 每種付款方式各服務過幾位不同的客戶？給我付款方式名稱跟人數。
+  sql: SELECT m.name, COUNT(DISTINCT o.customer_id) AS n FROM payment_methods m JOIN payments p ON p.method_id = m.id JOIN orders o ON o.id = p.order_id GROUP BY m.id, m.name
+  trap_sql: SELECT m.name, COUNT(o.customer_id) AS n FROM payment_methods m JOIN payments p ON p.method_id = m.id JOIN orders o ON o.id = p.order_id GROUP BY m.id, m.name
+  expect: rows
+
+- id: 2118
+  family: fanout
+  question: 每個類別各有幾樣不同的商品被下單買過？給我類別跟樣數。
+  sql: SELECT p.category, COUNT(DISTINCT p.id) AS n FROM products p JOIN order_items oi ON oi.product_id = p.id GROUP BY p.category
+  trap_sql: SELECT p.category, COUNT(p.id) AS n FROM products p JOIN order_items oi ON oi.product_id = p.id GROUP BY p.category
+  expect: rows
+
+- id: 2119
+  family: fanout
+  question: 總共有多少張不同的訂單含有商品明細？
+  sql: SELECT COUNT(DISTINCT oi.order_id) AS n FROM order_items oi
+  trap_sql: SELECT COUNT(oi.order_id) AS n FROM order_items oi
+  expect: rows
+
+- id: 2120
+  family: fanout
+  question: 有下過單的客戶，每位各買了幾件商品（數量加總）、下過幾張不同的訂單？給我姓名、件數、張數。
+  sql: SELECT c.name, SUM(oi.quantity) AS q, COUNT(DISTINCT o.id) AS n FROM customers c JOIN orders o ON o.customer_id = c.id JOIN order_items oi ON oi.order_id = o.id GROUP BY c.id, c.name
+  trap_sql: SELECT c.name, SUM(oi.quantity) AS q, COUNT(o.id) AS n FROM customers c JOIN orders o ON o.customer_id = c.id JOIN order_items oi ON oi.order_id = o.id GROUP BY c.id, c.name
+  expect: rows
+
+- id: 2121
+  family: fanout
+  question: 既有下過單也留過評論的客戶（不含已刪除的評論），每位的訂單金額總共多少、留過幾則評論？給我姓名、總額、則數。
+  sql: SELECT c.name, (SELECT SUM(o.total_amount) FROM orders o WHERE o.customer_id = c.id) AS amt, (SELECT COUNT(*) FROM reviews r WHERE r.customer_id = c.id AND r.is_deleted = 0) AS n FROM customers c WHERE EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id) AND EXISTS (SELECT 1 FROM reviews r WHERE r.customer_id = c.id AND r.is_deleted = 0)
+  trap_sql: SELECT c.name, SUM(o.total_amount) AS amt, COUNT(r.id) AS n FROM customers c JOIN orders o ON o.customer_id = c.id JOIN reviews r ON r.customer_id = c.id AND r.is_deleted = 0 GROUP BY c.id, c.name
+  expect: rows
+
+- id: 2122
+  family: fanout
+  question: 既被評論過也被問過問答的商品（不含已刪除的評論），每樣各有幾則評論、幾則問答？給我品名、評論則數、問答則數。
+  sql: SELECT p.name, (SELECT COUNT(*) FROM reviews r WHERE r.product_id = p.id AND r.is_deleted = 0) AS nr, (SELECT COUNT(*) FROM product_qna q WHERE q.product_id = p.id) AS nq FROM products p WHERE EXISTS (SELECT 1 FROM reviews r WHERE r.product_id = p.id AND r.is_deleted = 0) AND EXISTS (SELECT 1 FROM product_qna q WHERE q.product_id = p.id)
+  trap_sql: SELECT p.name, COUNT(r.id) AS nr, COUNT(q.id) AS nq FROM products p JOIN reviews r ON r.product_id = p.id AND r.is_deleted = 0 JOIN product_qna q ON q.product_id = p.id GROUP BY p.id, p.name
+  expect: rows
+
+- id: 2123
+  family: fanout
+  question: 既出過貨也有狀態異動紀錄的訂單，每張各出過幾批貨、異動過幾次？給我訂單編號、批數、次數。
+  sql: SELECT o.id, (SELECT COUNT(*) FROM shipments s WHERE s.order_id = o.id) AS ns, (SELECT COUNT(*) FROM order_status_history h WHERE h.order_id = o.id) AS nh FROM orders o WHERE EXISTS (SELECT 1 FROM shipments s WHERE s.order_id = o.id) AND EXISTS (SELECT 1 FROM order_status_history h WHERE h.order_id = o.id)
+  trap_sql: SELECT o.id, COUNT(s.id) AS ns, COUNT(h.id) AS nh FROM orders o JOIN shipments s ON s.order_id = o.id JOIN order_status_history h ON h.order_id = o.id GROUP BY o.id
+  expect: rows
+
+- id: 2124
+  family: fanout
+  question: 每個縣市的倉庫，儲位容量加起來是多少、總共出過幾批貨？給我縣市、總容量、批數。
+  sql: SELECT w.city, (SELECT SUM(w2.capacity) FROM warehouses w2 WHERE w2.city = w.city) AS cap, COUNT(s.id) AS n FROM warehouses w LEFT JOIN shipments s ON s.warehouse_id = w.id GROUP BY w.city
+  trap_sql: SELECT w.city, SUM(w.capacity) AS cap, COUNT(s.id) AS n FROM warehouses w LEFT JOIN shipments s ON s.warehouse_id = w.id GROUP BY w.city
+  expect: rows
+
+- id: 2125
+  family: fanout
+  question: 既有下過單也開過客服單的客戶，每位的訂單金額總共多少、開過幾張客服單？給我姓名、總額、張數。
+  sql: SELECT c.name, (SELECT SUM(o.total_amount) FROM orders o WHERE o.customer_id = c.id) AS amt, (SELECT COUNT(*) FROM support_tickets t WHERE t.customer_id = c.id) AS n FROM customers c WHERE EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id) AND EXISTS (SELECT 1 FROM support_tickets t WHERE t.customer_id = c.id)
+  trap_sql: SELECT c.name, SUM(o.total_amount) AS amt, COUNT(t.id) AS n FROM customers c JOIN orders o ON o.customer_id = c.id JOIN support_tickets t ON t.customer_id = c.id GROUP BY c.id, c.name
+  expect: rows
+
+# ══ control ═════════════════════════════════════════════════
+# 已經會的形狀（驗收集裡純投影/過濾 80.0%、子查詢+否定 100%）。
+# 沒有 trap_sql —— 它們不是拿來量進步的，是拿來抓回歸的：
+# 如果為了修 zero_group／fanout 動了 Prompt 而這一族掉下去，那就是換掉不是修好。
+
+- id: 2201
+  family: control
+  question: 定價超過三萬元的商品有哪些？給我品名跟定價。
+  sql: SELECT name, price FROM products WHERE price > 30000
+  expect: rows
+
+- id: 2202
+  family: control
+  question: 定價不到五百元的商品有哪些？給我品名跟定價。
+  sql: SELECT name, price FROM products WHERE price < 500
+  expect: rows
+
+- id: 2203
+  family: control
+  question: 住在台南市的客戶有哪些？給我姓名跟電子信箱。
+  sql: SELECT name, email FROM customers WHERE city = '台南市'
+  expect: rows
+
+- id: 2204
+  family: control
+  question: 不收手續費的付款方式叫什麼名字？
+  sql: SELECT name FROM payment_methods WHERE fee_rate = 0
+  expect: rows
+
+- id: 2205
+  family: control
+  question: 儲位容量超過一萬五千的倉庫有哪些？給我名稱跟所在縣市。
+  sql: SELECT name, city FROM warehouses WHERE capacity > 15000
+  expect: rows
+
+- id: 2206
+  family: control
+  question: 從來沒有下過單的客戶是誰？給我姓名。
+  sql: SELECT name FROM customers c WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id)
+  expect: rows
+
+- id: 2207
+  family: control
+  question: 從來沒有被退貨過的商品有哪些？給我品名。
+  sql: SELECT name FROM products p WHERE NOT EXISTS (SELECT 1 FROM order_returns r WHERE r.product_id = p.id)
+  expect: rows
+
+- id: 2208
+  family: control
+  question: 從來沒有被貼過任何標籤的商品有哪些？給我品名。
+  sql: SELECT name FROM products p WHERE NOT EXISTS (SELECT 1 FROM product_tags t WHERE t.product_id = p.id)
+  expect: rows
+
+- id: 2209
+  family: control
+  question: 沒有被派駐到任何倉庫的在職同仁是誰？給我姓名。
+  sql: SELECT name FROM employees e WHERE e.is_active = 1 AND NOT EXISTS (SELECT 1 FROM warehouse_staff s WHERE s.employee_id = e.id)
+  expect: rows
+
+- id: 2210
+  family: control
+  question: 狀態是已取消的訂單總共有幾張？
+  sql: SELECT COUNT(*) AS n FROM orders WHERE status = 'CANCELLED'
+  expect: rows
+
+- id: 2211
+  family: control
+  question: 給滿分五分的評論總共有幾則？不含已刪除的。
+  sql: SELECT COUNT(*) AS n FROM reviews WHERE rating = 5 AND is_deleted = 0
+  expect: rows
+
+- id: 2212
+  family: control
+  question: 金額最高的五張訂單，編號與金額各是多少？
+  sql: SELECT id, total_amount FROM orders ORDER BY total_amount DESC, id LIMIT 5
+  ordered: true
+  expect: rows
+
+- id: 2213
+  family: control
+  question: 定價最高的三樣商品，品名與定價各是多少？
+  sql: SELECT name, price FROM products ORDER BY price DESC, id LIMIT 3
+  ordered: true
+  expect: rows
+
+- id: 2214
+  family: control
+  question: 每個縣市各住了幾位客戶？給我縣市跟人數。
+  sql: SELECT city, COUNT(*) AS n FROM customers GROUP BY city
+  expect: rows
+
+- id: 2215
+  family: control
+  question: 每個類別各有幾樣商品？用商品自己登記的類別算。給我類別跟樣數。
+  sql: SELECT category, COUNT(*) AS n FROM products GROUP BY category
+  expect: rows
