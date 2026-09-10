@@ -51,6 +51,10 @@ TESTSET = os.path.join(_ROOT, "eval", "testset_holdout.yaml")
 RUNLOG = os.path.join(_ROOT, "eval", "testset_runlog.json")
 _QJSON = os.path.join(_ROOT, "eval", "results", "_testset_questions.json")
 
+# API 故障最多重試幾輪。3 輪之後還拿不到回答就當它是真的結果 ——
+# 無限重試會把「供應商長期掛掉」偽裝成「還沒跑完」。
+API_RETRY_ROUNDS = int(os.environ.get("TESTSET_API_RETRY", "3"))
+
 
 def content_hash():
     return hashlib.sha256(
@@ -158,6 +162,7 @@ def main(argv):
                     help="印出逐題錯誤 —— **會污染這份題庫**，而且會記進 runlog")
     ap.add_argument("--force", action="store_true", help="同一個 commit 仍要重跑")
     ap.add_argument("--resume", default=None, help="接續既有的 eval_result_*.json")
+    ap.add_argument("--note", default="", help="這次執行的註記，寫進 runlog")
     args = ap.parse_args(argv)
 
     if args.seal:
@@ -192,12 +197,44 @@ def main(argv):
         ensure_ascii=False, indent=2))
 
     from test_runner import run_evaluation  # noqa: E402
-    run_evaluation(_QJSON, args.resume)
-
     res_dir = os.path.join(_ROOT, "eval", "results")
-    newest = max((os.path.join(res_dir, f) for f in os.listdir(res_dir)
-                  if f.startswith("eval_result_")), key=os.path.getmtime)
+
+    def _newest():
+        return max((os.path.join(res_dir, f) for f in os.listdir(res_dir)
+                    if f.startswith("eval_result_")), key=os.path.getmtime)
+
+    run_evaluation(_QJSON, args.resume)
+    newest = _newest()
+
+    # API 故障要重試到底才判分。
+    #
+    # llm_api_error 的意思是「**沒有答案**」，不是「答錯了」—— 把它算進分母
+    # 等於拿供應商的網路狀況當架構的分數。run_evaluation 的 resume 分支本來
+    # 就只重跑這一種（它自己的註解寫著「那不是題目的結果，是網路的結果」），
+    # 我第一版卻沒有接上，於是 v2 的 70.7% 裡有 8 題從來沒拿到回答。
+    #
+    # 重試的是**全部** llm_api_error 的題，不是挑其中答對的 —— 挑不了，
+    # 這一步在判分之前，程式還不知道誰對誰錯。
+    #
+    # error_end 不重試：那是 pipeline 自己走到死路，是真的結果。
+    for attempt in range(1, API_RETRY_ROUNDS + 1):
+        prior = json.load(io.open(newest, encoding="utf-8"))
+        stuck = [r["id"] for r in prior if r.get("outcome") == "llm_api_error"]
+        if not stuck:
+            break
+        print()
+        print("[API 重試 %d/%d] %d 題沒拿到回答：%s"
+              % (attempt, API_RETRY_ROUNDS, len(stuck), stuck))
+        run_evaluation(_QJSON, newest)
+        newest = _newest()
+
     results = {r["id"]: r for r in json.load(io.open(newest, encoding="utf-8"))}
+    still = [i for i, r in results.items() if r.get("outcome") == "llm_api_error"]
+    if still:
+        print()
+        print("⚠ 重試 %d 輪之後仍有 %d 題拿不到回答：%s"
+              % (API_RETRY_ROUNDS, len(still), still))
+        print("  這幾題會記成 no_sql 算進分母 —— 分數因此是**下界**，報告時要講明。")
 
     from eval_score import judge  # noqa: E402
     from langgraph_sql.utils.db_manager import get_db_manager
@@ -253,6 +290,9 @@ def main(argv):
         "verdicts": dict(verdicts), "result_file": os.path.basename(newest),
         "viewed_failures": bool(args.show_failures),
         "testset_version": log.get("version", 1),
+        "no_sql_ids": sorted(i for i, r in results.items()
+                             if r.get("outcome") in ("llm_api_error", "error_end")),
+        "note": args.note,
     })
     save_log(log)
     print("已記入 %s" % os.path.basename(RUNLOG))
