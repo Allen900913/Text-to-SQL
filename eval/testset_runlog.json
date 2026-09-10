@@ -1,7 +1,33 @@
 {
-  "sealed_hash": "84ab333f1d38422b",
+  "sealed_hash": "22cd913eebe684eb",
   "sealed_on": "2026-09-10",
   "void": [],
   "runs": [],
-  "n_questions": 123
+  "n_questions": 123,
+  "retired": [
+    {
+      "version": 1,
+      "hash": "84ab333f1d38422b",
+      "sealed_on": "2026-09-10",
+      "n": 123,
+      "runs": [
+        {
+          "date": "2026-09-10 18:59",
+          "commit": "be8053a",
+          "score": 69.9,
+          "correct": 86,
+          "n": 123,
+          "verdicts": {
+            "correct": 86,
+            "wrong": 37
+          },
+          "result_file": "eval_result_1789033069.json",
+          "viewed_failures": false
+        }
+      ],
+      "retired_on": "2026-09-10",
+      "reason": "v1 封存時漏跑閘門 [13]（題目形狀可判定性）。事後補跑掃到 17 題問句決定不了 GT 的 SELECT 清單，判分規則要求系統涵蓋 GT 的每一欄，那 17 題會讓模型值算對、形狀不合而被判錯 —— 題目的缺陷不是模型的。v2 只收窄問句，SQL 一行未動，分布不變。v1 的 69.9% 不重算，它是那把尺下的真實下界。"
+    }
+  ],
+  "version": 2
 }

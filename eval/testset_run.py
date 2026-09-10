@@ -96,20 +96,54 @@ def slices(entry, known):
             "expect": str(entry.get("expect") or "rows")}
 
 
-def seal():
+def seal(new_version=False, reason=""):
+    """封存。改過內容要換版，而且**舊版的紀錄不能被覆蓋**。
+
+    為什麼要有換版這條路：量尺本身可能有缺陷。v1 封存時漏跑了閘門 [13]
+    （題目形狀可判定性），事後補跑掃到 17 題問句決定不了 GT 的 SELECT 清單 ——
+    判分規則要求系統涵蓋 GT 的每一欄，那 17 題會讓模型「值算對、形狀不合」
+    而被判錯，那是題目的缺陷不是模型的。
+
+    但換版**不准重算舊版的分數**。拿已知的分數去挑掉題目再算一次，正是
+    這整套守衛要防的事。所以舊版連同它的 runs 整組搬進 `retired`，
+    新版的 runs 從零開始，兩者永遠分開讀。
+    """
     log = load_log()
     h = content_hash()
-    if log["sealed_hash"] and log["sealed_hash"] != h:
+    if log["sealed_hash"] == h:
+        print("內容沒變（hash %s），不必重新封存。" % h)
+        return 0
+    if log["sealed_hash"] and not new_version:
         print("✗ 已經封存過（%s），現在的內容是 %s —— 題庫被改過。"
               % (log["sealed_hash"], h))
-        print("  改過就不是同一把尺。要嘛還原，要嘛開一份新的驗收集。")
+        print("  改過就不是同一把尺。要嘛還原，要嘛用 --new-version 換版")
+        print("  （換版要附 --reason，而且舊版的分數**不會**被重算）。")
         return 1
     qs = yaml.safe_load(io.open(TESTSET, encoding="utf-8"))
+    if log["sealed_hash"]:
+        if not reason:
+            print("✗ 換版要說明為什麼 —— 加 --reason \"...\"。")
+            return 1
+        log.setdefault("retired", []).append({
+            "version": log.get("version", 1),
+            "hash": log["sealed_hash"], "sealed_on": log["sealed_on"],
+            "n": log.get("n_questions"), "runs": log["runs"],
+            "retired_on": datetime.now().strftime("%Y-%m-%d"), "reason": reason,
+        })
+        log["runs"] = []
+        log["version"] = log.get("version", 1) + 1
+    else:
+        log["version"] = 1
     log["sealed_hash"] = h
     log["sealed_on"] = datetime.now().strftime("%Y-%m-%d")
     log["n_questions"] = len(qs)
     save_log(log)
-    print("已封存　%d 題　hash=%s　日期 %s" % (len(qs), h, log["sealed_on"]))
+    print("已封存 v%d　%d 題　hash=%s　日期 %s"
+          % (log["version"], len(qs), h, log["sealed_on"]))
+    if log.get("retired"):
+        r = log["retired"][-1]
+        print("v%d 連同它的 %d 次執行已移進 retired，分數保持原樣不重算。"
+              % (r["version"], len(r["runs"])))
     print("從現在起這個檔不要再改 —— 改了會拒跑。")
     return 0
 
@@ -117,6 +151,9 @@ def seal():
 def main(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument("--seal", action="store_true", help="封存 hash")
+    ap.add_argument("--new-version", action="store_true",
+                    help="題庫改過，換版重新封存（舊版連同分數搬進 retired，不重算）")
+    ap.add_argument("--reason", default="", help="換版的理由，會寫進 retired")
     ap.add_argument("--show-failures", action="store_true",
                     help="印出逐題錯誤 —— **會污染這份題庫**，而且會記進 runlog")
     ap.add_argument("--force", action="store_true", help="同一個 commit 仍要重跑")
@@ -124,7 +161,7 @@ def main(argv):
     args = ap.parse_args(argv)
 
     if args.seal:
-        return seal()
+        return seal(args.new_version, args.reason)
 
     log = load_log()
     if not log["sealed_hash"]:
@@ -215,6 +252,7 @@ def main(argv):
         "commit": commit, "score": score, "correct": ok, "n": n,
         "verdicts": dict(verdicts), "result_file": os.path.basename(newest),
         "viewed_failures": bool(args.show_failures),
+        "testset_version": log.get("version", 1),
     })
     save_log(log)
     print("已記入 %s" % os.path.basename(RUNLOG))

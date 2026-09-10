@@ -14,7 +14,7 @@
   expect: rows
 
 - id: 1003
-  question: 有沒有哪個門市目前是停止營運的狀態？
+  question: 目前停止營運的門市叫什麼名字？在哪個縣市？
   sql: SELECT name, city FROM stores WHERE is_active = 0
   expect: rows
 
@@ -59,7 +59,7 @@
   expect: rows
 
 - id: 1012
-  question: 錢已經退出去的那幾筆，金額各是多少？
+  question: 錢已經退出去的那幾筆退款，編號與金額各是多少？
   sql: SELECT id, amount FROM refunds WHERE refunded_at IS NOT NULL ORDER BY id
   expect: rows
 
@@ -130,7 +130,7 @@
   expect: rows
 
 - id: 1026
-  question: 出貨是從哪幾個倉出去的？各出了幾批？
+  question: 按倉庫編號分，各出了幾批貨？
   sql: SELECT warehouse_id, COUNT(*) AS n FROM shipments GROUP BY warehouse_id ORDER BY n DESC, warehouse_id
   expect: rows
 
@@ -175,7 +175,7 @@
   expect: rows
 
 - id: 1035
-  question: 每種付款方式各收了幾筆款？
+  question: 按付款方式編號分，各收了幾筆款？
   sql: SELECT method_id, COUNT(*) AS n FROM payments GROUP BY method_id ORDER BY n DESC, method_id
   expect: rows
 
@@ -195,7 +195,7 @@
   expect: rows
 
 - id: 1039
-  question: 每個部門底下各有幾位同仁？
+  question: 按部門編號分，各有幾位同仁？
   sql: SELECT department_id, COUNT(*) AS n FROM employees GROUP BY department_id ORDER BY department_id
   expect: rows
 
@@ -311,7 +311,7 @@
   expect: rows
 
 - id: 1062
-  question: 哪些門市裡面有無線網路可以用？
+  question: 提供無線網路的門市，編號有哪些？
   sql: SELECT store_id FROM store_profiles WHERE has_wifi = 1 ORDER BY store_id
   expect: rows
 
@@ -352,7 +352,7 @@
   expect: rows
 
 - id: 1070
-  question: 台南市的客人下過哪些單？金額多少？
+  question: 台南市的客人下過哪些單？請給客戶姓名、訂單編號與金額。
   sql: SELECT c.name, o.id, o.total_amount FROM orders o JOIN customers c ON c.id = o.customer_id WHERE c.city = '台南市' ORDER BY o.id
   expect: rows
 
@@ -372,12 +372,12 @@
   expect: rows
 
 - id: 1074
-  question: 哪些單子後來整張被取消掉？下單的人是誰？
+  question: 後來整張被取消的訂單，下單人姓名與訂單編號各是什麼？
   sql: SELECT c.name, o.id FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.status = 'CANCELLED' ORDER BY o.id
   expect: rows
 
 - id: 1075
-  question: 退款是從哪些付款紀錄退的？各退多少、原本收多少？
+  question: 每一筆退款的編號、退掉的金額，以及當初收的金額各是多少？
   sql: SELECT r.id, r.amount AS refund_amount, p.amount AS paid_amount FROM refunds r JOIN payments p ON p.id = r.payment_id ORDER BY r.id
   expect: rows
 
@@ -402,13 +402,13 @@
   expect: rows
 
 - id: 1080
-  question: 易碎品那幾樣東西的定價各是多少？
+  question: 易碎品有哪幾樣？品名與定價各是多少？
   sql: SELECT p.name, p.price FROM product_profiles pp JOIN products p ON p.id = pp.product_id WHERE pp.is_fragile = 1 ORDER BY p.name
   expect: rows
 
 # ── 多表・含子查詢 ──────────────────────────────────────────────
 - id: 1081
-  question: 依照實際下單紀錄逐張加總，花最多的前五位客人是誰？各多少？
+  question: 依照實際下單紀錄逐張加總，消費總額最高的五位客人，姓名與總額各是多少？
   sql: SELECT c.name, SUM(o.total_amount) AS total FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY total DESC, c.name LIMIT 5
   expect: rows
 
@@ -534,7 +534,7 @@
   expect: rows
 
 - id: 1106
-  question: 有哪些單子到現在都還沒收到錢？
+  question: 到現在還沒收到錢的訂單，編號與金額各是多少？
   sql: SELECT id, total_amount FROM orders WHERE id NOT IN (SELECT order_id FROM payments) ORDER BY id
   expect: rows
 
@@ -556,7 +556,7 @@
 
 # ── 多表・純聚合與投影 ──────────────────────────────────────────
 - id: 1110
-  question: 每張單各買了幾種不同的東西？列前十張。
+  question: 買了最多種不同商品的十張訂單，編號與種類數各是多少？
   sql: SELECT o.id, COUNT(DISTINCT oi.product_id) AS kinds FROM orders o JOIN order_items oi ON oi.order_id = o.id GROUP BY o.id ORDER BY kinds DESC, o.id LIMIT 10
   expect: rows
 
@@ -581,12 +581,12 @@
   expect: rows
 
 - id: 1115
-  question: 每張退貨單對應到哪一個商品？品名給我。
+  question: 每張退貨單的編號，各對應到哪一個商品品名？
   sql: SELECT orr.id, p.name FROM order_returns orr JOIN products p ON p.id = orr.product_id ORDER BY orr.id
   expect: rows
 
 - id: 1116
-  question: 客服單如果有掛訂單，那張單的金額是多少？
+  question: 有掛訂單的客服單，請給客服單編號、主旨，以及那張訂單的金額。
   sql: SELECT t.id, t.subject, o.total_amount FROM support_tickets t JOIN orders o ON o.id = t.order_id ORDER BY t.id
   expect: rows
 
@@ -602,12 +602,12 @@
 
 # ── 期望空集合 ──────────────────────────────────────────────────
 - id: 1119
-  question: 有沒有哪張單子已經整張取消了，卻還是把貨寄出去？
+  question: 已經整張取消卻還是把貨寄出去的訂單，編號與貨運單號各是什麼？
   sql: SELECT o.id, s.tracking_no FROM orders o JOIN shipments s ON s.order_id = o.id WHERE o.status = 'CANCELLED'
   expect: empty
 
 - id: 1120
-  question: 有沒有退回去的錢比當初收的還多的情況？
+  question: 退掉的錢比當初收的還多的那些退款，編號、退款金額與收款金額各是多少？
   sql: SELECT r.id, r.amount, p.amount AS paid FROM refunds r JOIN payments p ON p.id = r.payment_id WHERE r.amount > p.amount
   expect: empty
 
