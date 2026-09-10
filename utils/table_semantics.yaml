@@ -1,0 +1,2825 @@
+version: 1
+enum_order:
+- orders.status
+- payments.status
+- shipments.status
+- refunds.status
+- promotions.discount_type
+- browse_logs.source
+- campaign_profiles.bid_strategy
+- campaign_profiles.creative_type
+- employee_profiles.employment_type
+- employee_profiles.remote_policy
+- order_profiles.channel
+- order_profiles.utm_source
+- order_profiles.utm_medium
+- order_profiles.invoice_type
+- order_profiles.delivery_preference
+- order_profiles.fraud_review_result
+- payment_attempts.result
+- payment_profiles.wallet_type
+- payment_profiles.dispute_status
+- product_profiles.lifecycle_stage
+- product_profiles.translation_status
+- product_profiles.package_type
+- return_profiles.reason_l1
+- return_profiles.inspection_result
+- return_profiles.disposition_decision
+- return_profiles.package_condition
+- return_profiles.pickup_method
+- return_profiles.compensation_type
+- review_profiles.device_type
+- review_profiles.input_channel
+- review_profiles.incentive_type
+- review_profiles.report_reason
+- review_profiles.moderation_status
+- review_profiles.sentiment_label
+- shipment_profiles.carton_type
+- shipment_profiles.packing_material
+- shipment_profiles.seal_type
+- shipment_profiles.distance_band
+- shipment_profiles.delivery_window
+- shipment_profiles.recipient_relation
+- shipment_profiles.signature_type
+- shipment_profiles.exception_code
+- shipment_profiles.temperature_zone
+- store_profiles.audit_result
+- subscription_profiles.billing_cycle
+- subscription_profiles.conversion_source
+- supplier_profiles.invoice_method
+- supplier_profiles.audit_result
+- support_ticket_profiles.intake_channel
+- support_ticket_profiles.sentiment_at_intake
+- support_ticket_profiles.resolution_type
+- support_ticket_profiles.satisfaction_label
+tables:
+  addresses:
+    clauses:
+    - kind: content
+      text: 客戶地址簿：客戶登記的收件地址，一個客戶可有多筆
+      sep: 。
+    - kind: bound
+      text: 收件人可能不是客戶本人，收件城市也可能與居住城市不同
+      sep: ''
+    columns:
+      id: 地址唯一ID
+      customer_id: 所屬客戶ID
+      recipient_name: 收件人姓名（可能不是客戶本人）
+      phone: 收件人電話
+      city: 收件城市
+      district: 收件行政區
+      street: 收件詳細地址
+      is_default: 是否為預設地址
+      created_at: 地址建立時間
+  api_request_logs:
+    clauses:
+    - kind: content
+      text: API 請求日誌：每個對外 API 呼叫的路徑、狀態碼與耗時
+      sep: 。
+    - kind: content
+      text: 系統維運用
+      sep: ，
+    - kind: bound
+      text: 不是業務資料
+      sep: ''
+    columns:
+      id: 請求唯一ID
+      path: 請求路徑
+      status_code: HTTP 狀態碼
+      duration_ms: 耗時毫秒
+      requested_at: 請求時間
+  audit_log:
+    clauses:
+    - kind: content
+      text: 系統稽核軌跡：誰在什麼時候動了哪一筆資料
+      sep: 。
+    - kind: content
+      text: 系統維運用
+      sep: ，
+    - kind: bound
+      text: 不是業務資料
+      sep: ''
+    columns:
+      id: 稽核唯一ID
+      table_name: 被異動的表名
+      row_id: 被異動的資料列ID
+      action: 動作
+      actor: 執行者帳號
+      occurred_at: 發生時間
+    enums:
+      action:
+        description: 動作
+        values:
+          DELETE: ''
+          INSERT: ''
+          UPDATE: ''
+  browse_logs:
+    clauses:
+    - kind: bound
+      text: 商品瀏覽紀錄（看過不等於買過）
+      sep: ''
+    columns:
+      id: 瀏覽紀錄唯一ID
+      customer_id: 瀏覽者客戶ID
+      product_id: 被瀏覽的商品ID
+      viewed_at: 瀏覽時間
+      duration_sec: 停留秒數
+      source: 流量來源
+    enums:
+      source:
+        description: 瀏覽的流量來源
+        values:
+          SEARCH: 站內搜尋
+          RECOMMEND: 推薦版位
+          CATEGORY: 分類瀏覽
+          AD: 廣告導入
+  cache_entries:
+    clauses:
+    - kind: content
+      text: 快取項目：應用層快取的鍵與到期時間
+      sep: 。
+    - kind: content
+      text: 系統自動維護
+      sep: ，
+    - kind: bound
+      text: 不是業務資料
+      sep: ''
+    columns:
+      id: 快取唯一ID
+      cache_key: 快取鍵
+      expires_at: 到期時間
+      hit_count: 命中次數
+  campaign_clicks:
+    clauses:
+    - kind: content
+      text: 廣告點擊紀錄：哪位客戶點了哪個活動的廣告
+      sep: 。
+    - kind: bound
+      text: 點擊不是購買
+      sep: ，
+    - kind: content
+      text: 銷售請看 order_items
+      sep: ''
+    columns:
+      id: 點擊唯一ID
+      campaign_id: 活動ID
+      customer_id: 客戶ID，未登入為空
+      clicked_at: 點擊時間
+  campaign_profiles:
+    clauses:
+    - kind: content
+      text: 行銷活動檔案寬表：投放預算與花費、受眾鎖定與版位設定、 素材與 A/B 分組、曝光點擊轉換等成效數字、負責人與審核
+      sep: 。
+    - kind: facet
+      text: ' 這是廣告投放的設定與成效'
+      sep: ，
+    - kind: ptr
+      text: 活動名稱與期間在 campaigns
+      sep: 。
+    columns:
+      id: 流水號
+      campaign_id: 對應的行銷活動
+      budget_total: 活動總預算金額
+      budget_daily: 每日預算上限
+      spend_total: 實際投放花費總額
+      spend_pacing_pct: 花費進度百分比，實際花費佔總預算
+      bid_strategy: 出價策略：單次點擊／千次曝光／單次行動
+      bid_amount: 出價金額
+      currency_code: 投放幣別
+      audience_name: 受眾包名稱
+      audience_size: 受眾包人數規模
+      target_age_min: 鎖定最小年齡
+      target_age_max: 鎖定最大年齡
+      target_gender: 鎖定性別
+      target_cities: 鎖定城市，以逗號分隔
+      target_interests: 鎖定興趣標籤
+      exclude_existing_customers: 是否排除既有客戶
+      placement: 投放版位：動態／限動／搜尋／聯播網
+      device_target: 鎖定裝置
+      creative_type: 素材型式：圖片／影片／輪播
+      creative_count: 使用的素材件數
+      creative_updated_at: 素材最後更新時間
+      headline_text: 廣告主標題文案
+      cta_text: 行動呼籲按鈕文字
+      landing_url: 廣告導向的落地頁網址
+      ab_test_group: A/B 測試分組
+      ab_test_variable: A/B 測試變因說明
+      impressions: 曝光次數
+      clicks: 點擊次數
+      ctr_pct: 點擊率百分比
+      reach: 觸及不重複人數
+      frequency: 平均每人看到幾次
+      video_views: 影片觀看次數，非影片素材為 0
+      video_completion_pct: 影片完整看完的百分比
+      conversions: 轉換次數
+      conversion_rate_pct: 轉換率百分比
+      add_to_cart_count: 由此活動帶來的加入購物車次數
+      bounce_rate_pct: 落地頁跳出率百分比
+      avg_session_seconds: 落地頁平均停留秒數
+      owner_name: 活動負責人
+      agency_name: 委外代理商名稱，自操為 NULL
+      approved_by: 預算核准人
+      approved_at: 預算核准時間
+      is_paused: 是否已暫停投放
+      paused_reason: 暫停原因
+      created_at: 建檔時間
+    enums:
+      bid_strategy:
+        description: 出價策略
+        values:
+          CPA: 單次行動
+          CPC: 單次點擊
+          CPM: 千次曝光
+      creative_type:
+        description: 素材型式
+        values:
+          CAROUSEL: 輪播
+          IMAGE: 圖片
+          VIDEO: 影片
+      target_gender:
+        description: 鎖定性別
+        values:
+          ALL: ''
+          F: ''
+          M: ''
+      device_target:
+        description: 鎖定裝置
+        values:
+          ALL: ''
+          DESKTOP: ''
+          MOBILE: ''
+      ab_test_group:
+        description: A/B 測試分組
+        values:
+          A: A 組
+          B: B 組
+          NONE: 未參加 A/B 測試
+      placement:
+        description: 投放版位
+        values:
+          DISPLAY: 聯播網
+          FEED: 動態
+          SEARCH: 搜尋
+          STORY: 限動
+  campaigns:
+    clauses:
+    - kind: content
+      text: 行銷活動：廣告投放的活動名稱、渠道與期間
+      sep: 。
+    - kind: facet
+      text: 這是廣告活動
+      sep: ，
+    - kind: ptr
+      text: 站上折扣檔期在 promotions
+      sep: ''
+    columns:
+      id: 活動唯一ID
+      name: 活動名稱
+      channel: 投放渠道
+      started_at: 開始日期
+      ended_at: 結束日期
+    enums:
+      channel:
+        description: 投放渠道
+        values:
+          DISPLAY: ''
+          EMAIL: ''
+          SEARCH: ''
+          SOCIAL: ''
+  cart_items:
+    clauses:
+    - kind: bound
+      text: 購物車明細（放入不等於購買）
+      sep: ''
+    columns:
+      id: 購物車明細唯一ID
+      cart_id: 所屬購物車ID
+      product_id: 商品ID
+      quantity: 放入數量（尚未購買）
+      added_at: 加入購物車的時間
+  cart_recovery_emails:
+    clauses:
+    - kind: content
+      text: 購物車挽回信：對放棄購物車的客戶寄出的提醒信與開信結果
+      sep: ''
+    columns:
+      id: 寄送紀錄唯一ID
+      cart_id: 對應購物車ID
+      sent_at: 寄送時間
+      opened: 是否開信
+      clicked: 是否點擊
+  carts:
+    clauses:
+    - kind: bound
+      text: 購物車表（尚未結帳，與訂單無關）
+      sep: ''
+    columns:
+      id: 購物車唯一ID
+      customer_id: 所屬客戶ID
+      is_abandoned: 是否為已放棄的購物車
+      created_at: 購物車建立時間
+      updated_at: 最後異動時間
+  categories:
+    clauses:
+    - kind: content
+      text: 商品分類表（正規化版本；products.category 是反正規化的字串欄位）
+      sep: ''
+    columns:
+      id: 分類唯一ID
+      name: 分類名稱
+      parent_id: 上層分類ID，NULL 表示最上層
+      sort_order: 同層顯示順序
+      is_active: 是否啟用中
+  coupon_redemptions:
+    clauses:
+    - kind: content
+      text: 優惠券使用紀錄：哪位客戶在哪張訂單用了哪張券
+      sep: 。
+    - kind: ptr
+      text: 券本身在 coupons，檔期折扣在 order_promotions
+      sep: ''
+    columns:
+      id: 使用紀錄唯一ID
+      coupon_id: 使用的優惠券ID
+      customer_id: 使用的客戶ID
+      order_id: 使用在哪張訂單，可為空
+      redeemed_at: 使用時間
+  coupons:
+    clauses:
+    - kind: content
+      text: 優惠券主檔：券碼、折抵金額與有效期間
+      sep: 。
+    - kind: facet
+      text: 這是可輸入的券碼
+      sep: ，
+    - kind: bound
+      text: 與 promotions 檔期活動不同
+      sep: ''
+    columns:
+      id: 優惠券唯一ID
+      code: 優惠券代碼
+      discount_amount: 折抵金額
+      valid_from: 生效日
+      valid_to: 失效日
+  customer_contacts:
+    clauses:
+    - kind: content
+      text: 客戶聯絡方式：客戶登記的其他電話與信箱
+      sep: 。
+    - kind: ptr
+      text: 主要聯絡方式在 customers
+      sep: ''
+    columns:
+      id: 聯絡方式唯一ID
+      customer_id: 所屬客戶ID
+      contact_type: 類型
+      contact_value: 聯絡內容
+      is_verified: 是否已驗證
+    enums:
+      contact_type:
+        description: 類型
+        values:
+          EMAIL: ''
+          LINE: ''
+          PHONE: ''
+  customer_login_logs:
+    clauses:
+    - kind: content
+      text: 客戶登入紀錄：每次登入留一筆，含失敗
+      sep: 。
+    - kind: ptr
+      text: 最近一次登入時間在 customer_profiles.last_login_at
+      sep: ''
+    columns:
+      id: 登入紀錄唯一ID
+      customer_id: 登入的客戶ID
+      logged_in_at: 登入時間
+      ip: 來源IP，非業務欄位
+      success: 是否登入成功
+  customer_profiles:
+    clauses:
+    - kind: content
+      text: 客戶檔案寬表：客戶的人口統計、行銷偏好與同意設定、會員等級與分群、流失風險與終身價值分數，會員系統的註冊與最近活動時間，以及每日結算的消費統計快照
+      sep: 。
+    - kind: content
+      text: 帳號狀態旗標（Email 驗證、黑名單、員工、VIP）、紅利點數與信用額度、推薦來源也在這張表
+      sep: 。
+    - kind: usage
+      text: 想知道客戶輪廓、分級、分群、活躍度或風險就看這張表
+      sep: ''
+    columns:
+      customer_id: 客戶ID
+      birth_year: 出生年
+      gender: 性別
+      occupation: 職業
+      education: 教育程度
+      marital_status: 婚姻狀態
+      household_size: 家庭人數
+      district: 行政區，比 customers.city 更細一層
+      preferred_language: 偏好語言
+      registered_at: 會員系統的註冊時間。與 customers.created_at 是不同系統的紀錄，可能有落差
+      first_order_at: 首次下單時間（快照）
+      last_order_at: 最近一次下單時間（快照）
+      last_login_at: 最近一次成功登入的時間（失敗的嘗試不算；每一次登入含失敗都記在 customer_login_logs）
+      last_active_at: 最近一次任何活動時間（登入、瀏覽、加購物車皆算）
+      last_cart_at: 最近一次加入購物車時間
+      last_review_at: 最近一次留評論時間
+      email_verified_at: Email 驗證通過時間，NULL 表示未驗證
+      profile_updated_at: 本檔案最後更新時間
+      churned_at: 判定流失的時間，NULL 表示未流失
+      total_spent: 累計消費金額（每日結算快照，不含最近數日訂單，與即時 SUM(orders.total_amount) 可能不同）
+      order_count: 累計訂單數（每日結算快照，與即時 COUNT(orders) 可能不同）
+      avg_order_value: 平均訂單金額（快照）
+      max_order_value: 最大單筆訂單金額（快照）
+      total_items_bought: 累計購買件數（每日結算快照，不含最近數日訂單，與即時 SUM(order_items.quantity) 可能不同）
+      return_count: 退貨次數（每日結算快照，不含最近數日，與即時 COUNT(order_returns) 可能不同）
+      refund_total: 累計退款金額（快照）
+      review_count: 評論則數（快照）
+      avg_review_score: 平均給分（快照）
+      browse_count: 瀏覽次數（快照）
+      cart_abandon_count: 購物車放棄次數（每日結算快照，不含最近數日，與即時 COUNT(carts WHERE is_abandoned) 可能不同）
+      coupon_used_count: 使用過的優惠券次數（每日結算快照，不含最近數日，與即時 COUNT(coupon_redemptions) 可能不同）
+      email_opt_in: 是否同意 Email 行銷
+      sms_opt_in: 是否同意簡訊行銷
+      push_opt_in: 是否同意推播
+      newsletter_opt_in: 是否訂閱電子報
+      is_vip: 是否為 VIP
+      is_blacklisted: 是否列入黑名單
+      is_employee: 是否為員工帳號
+      prefers_pickup: 是否偏好門市自取
+      preferred_category: 偏好商品類別（行銷標記，非實際購買統計）
+      preferred_payment_method: 偏好付款方式（行銷標記，非實際付款統計）
+      preferred_delivery_window: 偏好收貨時段
+      referral_source: 來源管道
+      referred_by_customer_id: 推薦人的客戶ID
+      consent_version: 同意條款版本，非業務欄位
+      tier: 會員等級
+      segment: 行銷分群
+      lifecycle_stage: 生命週期階段
+      churn_risk_score: 流失風險分數 0~1，越高越可能流失
+      ltv_score: 預估終身價值分數
+      engagement_score: 互動活躍度分數 0~1
+      satisfaction_score: 滿意度分數 0~1，由評論與客服紀錄推估
+      credit_limit: 信用額度
+      loyalty_points: 目前紅利點數
+      loyalty_tier_since: 目前會員等級的生效日
+      risk_flag: 風控標記
+      sync_version: 同步版本號，非業務欄位
+    enums:
+      gender:
+        description: 性別
+        values:
+          F: ''
+          M: ''
+          OTHER: ''
+      marital_status:
+        description: 婚姻狀態
+        arm: gap
+        values:
+          DIVORCED: ''
+          MARRIED: ''
+          SINGLE: ''
+      referral_source:
+        description: 來源管道
+        values:
+          AD: ''
+          ORGANIC: ''
+          REFERRAL: ''
+          SOCIAL: ''
+      tier:
+        description: 會員等級
+        values:
+          BRONZE: ''
+          GOLD: ''
+          PLATINUM: ''
+          SILVER: ''
+      segment:
+        description: 行銷分群
+        values:
+          AT_RISK: ''
+          DORMANT: ''
+          GROWING: ''
+          LOYAL: ''
+          NEW: ''
+      lifecycle_stage:
+        description: 生命週期階段
+        arm: gap
+        values:
+          ACQUISITION: ''
+          ACTIVATION: ''
+          REACTIVATION: ''
+          RETENTION: ''
+      risk_flag:
+        description: 風控標記
+        values:
+          NONE: 無風控標記
+          WATCH: 觀察中
+          HIGH: 高風險
+  customers:
+    clauses:
+    - kind: content
+      text: 客戶資訊表：一位客戶一列，記錄姓名、Email、電話、居住城市與註冊時間
+      sep: 。
+    - kind: bound
+      text: 資料中存在同名不同人的客戶
+      sep: ''
+    columns:
+      id: 客戶唯一ID
+      name: 客戶姓名
+      email: 客戶信箱
+      phone: 客戶電話
+      city: 居住城市
+      created_at: 註冊時間
+  delivery_attempts:
+    clauses:
+    - kind: content
+      text: 配送嘗試紀錄：每一次上門派送留一筆，含撲空
+      sep: 。
+    - kind: content
+      text: 最終是否送達看 shipments.status
+      sep: ''
+    columns:
+      id: 派送紀錄唯一ID
+      shipment_id: 所屬出貨單ID
+      attempt_no: 第幾次嘗試
+      result: 派送結果
+      attempted_at: 派送時間
+    enums:
+      result:
+        description: 派送結果
+        values:
+          ABSENT: ''
+          DELIVERED: ''
+          REFUSED: ''
+  departments:
+    clauses:
+    - kind: content
+      text: 部門主檔：公司內部的部門名稱與成立時間
+      sep: 。
+    - kind: bound
+      text: 與商品分類 categories 無關
+      sep: ''
+    columns:
+      id: 部門唯一ID
+      name: 部門名稱
+      founded_at: 成立日期
+  employee_profiles:
+    clauses:
+    - kind: content
+      text: 員工人資檔案寬表：雇用型態與職級異動、工作地點與遠端安排、 學歷語言與證照、教育訓練與年度考核等第、特休時數與緊急聯絡人
+      sep: 。
+    - kind: facet
+      text: ' 這是人資檔案'
+      sep: ，
+    - kind: ptr
+      text: 員工的姓名職稱在 employees，排班在 employee_shifts
+      sep: 。
+    columns:
+      id: 流水號
+      employee_id: 對應的員工
+      employment_type: 雇用型態：正職／兼職／約聘／實習
+      job_level: 職級：J1~J8，數字越大越資深
+      job_family: 職務家族：工程／營運／業務／行政
+      reports_to: 直屬主管的員工編號
+      probation_end_date: 試用期結束日
+      is_probation_passed: 試用期是否通過
+      last_promotion_date: 最近一次升遷日期，未升遷為 NULL
+      promotion_count: 到職至今的升遷次數
+      resigned_at: 離職日期，NULL 表示仍在職
+      resign_reason: 離職原因
+      rehire_eligible: 是否列為可再任用
+      work_city: 主要工作城市
+      work_site: 辦公據點名稱
+      desk_no: 座位編號
+      remote_policy: 遠端安排：全實體／混合／全遠端
+      remote_days_per_week: 每週可遠端天數
+      timezone: 工作時區
+      education_level: 最高學歷
+      major: 主修科系
+      graduated_school: 畢業學校
+      graduated_year: 畢業年份
+      language_primary: 主要工作語言
+      language_secondary: 第二語言，無則為 NULL
+      english_level: 英語能力等級：A1~C2
+      certifications: 持有證照，以分號分隔
+      cert_expiry_nearest: 最近一張即將到期的證照日期
+      training_hours_ytd: 今年度累計受訓時數
+      training_required_hours: 今年度應完成的受訓時數
+      last_training_at: 最近一次受訓日期
+      onboarding_completed: 到職訓練是否完成
+      safety_training_expiry: 職安訓練效期到期日
+      review_grade_last: 最近一次年度考核等第：A／B／C／D
+      review_grade_prev: 前一年度考核等第
+      review_date_last: 最近一次考核日期
+      annual_leave_quota: 年度特休總時數
+      annual_leave_used: 已使用的特休時數
+      sick_leave_used: 已使用的病假時數
+      overtime_hours_ytd: 今年度累計加班時數
+      emergency_contact_name: 緊急聯絡人姓名
+      emergency_contact_phone: 緊急聯絡人電話
+      emergency_contact_relation: 與緊急聯絡人的關係
+      has_company_laptop: 是否配發公司筆電
+      badge_no: 門禁識別證號
+      created_at: 建檔時間
+    enums:
+      employment_type:
+        description: 雇用型態
+        values:
+          CONTRACT: 約聘
+          FULLTIME: 正職
+          PARTTIME: 兼職
+          INTERN: 實習
+      remote_policy:
+        description: 遠端安排
+        values:
+          HYBRID: 混合
+          ONSITE: 全實體
+          REMOTE: 全遠端
+      job_level:
+        description: 職級：J1~J8，數字越大越資深
+        arm: gap
+        values:
+          J2: ''
+          J3: ''
+          J4: ''
+          J5: ''
+          J6: ''
+          J7: ''
+          J8: ''
+      education_level:
+        description: 最高學歷
+        values:
+          BACHELOR: ''
+          HIGHSCHOOL: ''
+          MASTER: ''
+          PHD: ''
+      english_level:
+        description: 英語能力等級：A1~C2
+        arm: gap
+        values:
+          A2: ''
+          B1: ''
+          B2: ''
+          C1: ''
+          C2: ''
+      review_grade_last:
+        description: 最近一次年度考核等第
+        arm: dup
+        values:
+          A: ''
+          B: ''
+          C: ''
+          D: ''
+      review_grade_prev:
+        description: 前一年度考核等第
+        arm: gap
+        values:
+          A: ''
+          B: ''
+          C: ''
+          D: ''
+  employee_shifts:
+    clauses:
+    - kind: content
+      text: 員工班表：每位員工每天的班別與工時
+      sep: 。
+    - kind: facet
+      text: 這是排班不是出勤紀錄
+      sep: ''
+    columns:
+      id: 班表唯一ID
+      employee_id: 員工ID
+      shift_date: 班表日期
+      shift_type: 班別
+      hours: 排定工時
+    enums:
+      shift_type:
+        description: 班別
+        values:
+          AFTERNOON: ''
+          MORNING: ''
+          NIGHT: ''
+  employees:
+    clauses:
+    - kind: content
+      text: 員工主檔：公司內部人員的姓名、職稱與到職日
+      sep: 。
+    - kind: facet
+      text: 這是員工不是客戶
+      sep: ，
+    - kind: ptr
+      text: 客戶在 customers
+      sep: ''
+    columns:
+      id: 員工唯一ID
+      department_id: 所屬部門ID
+      name: 員工姓名
+      title: 職稱
+      hired_at: 到職日
+      is_active: 是否在職
+  error_reports:
+    clauses:
+    - kind: content
+      text: 錯誤回報：系統例外的類型、訊息與發生時間
+      sep: 。
+    - kind: content
+      text: 工程除錯用
+      sep: ，
+    - kind: bound
+      text: 不是業務資料
+      sep: ''
+    columns:
+      id: 錯誤唯一ID
+      error_type: 例外類型
+      message: 錯誤訊息
+      occurred_at: 發生時間
+  faq_articles:
+    clauses:
+    - kind: content
+      text: 常見問題文章：標題、分類與發布時間
+      sep: 。
+    - kind: facet
+      text: 這是自助說明文件
+      sep: ，
+    - kind: ptr
+      text: 客戶提出的工單在 support_tickets
+      sep: ''
+    columns:
+      id: 文章唯一ID
+      title: 文章標題
+      category: 文章分類
+      published_at: 發布日期
+  faq_votes:
+    clauses:
+    - kind: content
+      text: 常見問題投票：客戶對文章按有幫助或沒幫助
+      sep: 。
+    - kind: bound
+      text: 這不是商品評價
+      sep: ，
+    - kind: ptr
+      text: 商品評價在 reviews
+      sep: ''
+    columns:
+      id: 投票唯一ID
+      article_id: 文章ID
+      customer_id: 投票客戶ID，未登入為空
+      is_helpful: 是否有幫助
+      voted_at: 投票時間
+  feature_flags:
+    clauses:
+    - kind: content
+      text: 功能開關：每個功能旗標目前是否開啟
+      sep: 。
+    - kind: content
+      text: 工程團隊維護
+      sep: ，
+    - kind: bound
+      text: 不是業務資料
+      sep: ''
+    columns:
+      id: 旗標唯一ID
+      flag_key: 旗標名稱
+      is_enabled: 是否啟用
+      updated_at: 最後更新時間
+  gift_card_transactions:
+    clauses:
+    - kind: content
+      text: 禮物卡交易明細：每次儲值或扣款一筆
+      sep: 。
+    - kind: content
+      text: 正數是儲值、負數是消費
+      sep: ''
+    columns:
+      id: 交易唯一ID
+      gift_card_id: 禮物卡ID
+      order_id: 消費對應的訂單ID，儲值時為空
+      amount: 異動金額，正數儲值、負數消費
+      occurred_at: 異動時間
+  gift_cards:
+    clauses:
+    - kind: content
+      text: 禮物卡主檔：卡號、面額與目前餘額
+      sep: 。
+    - kind: content
+      text: 餘額是卡片的儲值餘額
+      sep: ，
+    - kind: bound
+      text: 不是客戶的信用額度
+      sep: ''
+    columns:
+      id: 禮物卡唯一ID
+      card_no: 禮物卡卡號
+      customer_id: 持卡客戶ID，未指定持有人為空
+      face_value: 面額
+      balance: 目前餘額
+      issued_at: 發卡日期
+  invoices:
+    clauses:
+    - kind: content
+      text: 發票開立紀錄：發票號碼、開立時間與載具
+      sep: 。
+    - kind: ptr
+      text: 實際收款金額在 payments
+      sep: ''
+    columns:
+      id: 發票唯一ID
+      order_id: 對應訂單ID
+      invoice_no: 發票號碼
+      carrier: 載具號碼
+      issued_at: 開立時間
+      is_voided: 是否已作廢
+  job_runs:
+    clauses:
+    - kind: content
+      text: 背景排程執行紀錄：每次批次工作的起訖與結果
+      sep: 。
+    - kind: content
+      text: 維運監控用
+      sep: ，
+    - kind: bound
+      text: 不是業務資料
+      sep: ''
+    columns:
+      id: 執行紀錄唯一ID
+      job_name: 工作名稱
+      started_at: 開始時間
+      finished_at: 結束時間
+      status: 執行結果
+    enums:
+      status:
+        description: 執行結果
+        values:
+          FAILED: ''
+          RUNNING: ''
+          SUCCESS: ''
+  loyalty_points:
+    clauses:
+    - kind: content
+      text: 會員點數異動：每次獲得或使用點數留一筆
+      sep: 。
+    - kind: bound
+      text: 點數不是金額，也不是任何評分
+      sep: ''
+    columns:
+      id: 點數異動唯一ID
+      customer_id: 客戶ID
+      order_id: 關聯訂單ID，非消費取得時為空
+      points: 異動點數，正數獲得、負數使用
+      reason: 異動原因
+      occurred_at: 異動時間
+    enums:
+      reason:
+        description: 異動原因
+        values:
+          BONUS: ''
+          EXPIRE: ''
+          PURCHASE: ''
+          REDEEM: ''
+  newsletter_subscriptions:
+    clauses:
+    - kind: content
+      text: 電子報訂閱：哪些客戶訂閱了電子報、是否已退訂
+      sep: 。
+    - kind: facet
+      text: 這是收信意願
+      sep: ，
+    - kind: ptr
+      text: 付費訂閱方案在 subscriptions
+      sep: ''
+    columns:
+      id: 訂閱唯一ID
+      customer_id: 客戶ID
+      subscribed_at: 訂閱時間
+      unsubscribed_at: 退訂時間，仍訂閱中為空
+  newsletters:
+    clauses:
+    - kind: content
+      text: 電子報主檔：每一期電子報的主旨與寄送時間
+      sep: 。
+    - kind: facet
+      text: 這是群發信
+      sep: ，
+    - kind: ptr
+      text: 購物車挽回信在 cart_recovery_emails
+      sep: ''
+    columns:
+      id: 電子報唯一ID
+      subject: 電子報主旨
+      sent_at: 寄送時間
+  order_assignments:
+    clauses:
+    - kind: content
+      text: 訂單處理指派：哪位員工負責處理這張訂單
+      sep: 。
+    - kind: content
+      text: 一張訂單可能轉手多次，最後一筆才是現任負責人
+      sep: ''
+    columns:
+      id: 指派紀錄唯一ID
+      order_id: 被指派的訂單ID
+      employee_id: 負責的員工ID
+      assigned_at: 指派時間
+  order_cancellations:
+    clauses:
+    - kind: content
+      text: 訂單取消紀錄：取消的原因與時間
+      sep: 。
+    - kind: ptr
+      text: 訂單是否已取消請看 orders 的訂單狀態
+      sep: ''
+    columns:
+      id: 取消紀錄唯一ID
+      order_id: 被取消的訂單ID
+      reason: 取消原因
+      cancelled_by: 取消發起方
+      cancelled_at: 取消時間
+    enums:
+      cancelled_by:
+        description: 取消發起方
+        values:
+          CUSTOMER: ''
+          STAFF: ''
+          SYSTEM: ''
+  order_items:
+    clauses:
+    - kind: content
+      text: 訂單明細表：一張訂單買了哪些商品、各買幾件、成交單價多少
+      sep: 。
+    - kind: usage
+      text: 商品銷量、商品或類別的營收、熱賣排行、銷售佔比都要用這張表計算
+      sep: ''
+    columns:
+      id: 明細唯一ID
+      order_id: 所屬訂單ID
+      product_id: 購買商品ID
+      quantity: 購買數量
+      unit_price: 購買時的單價
+  order_notes:
+    clauses:
+    - kind: content
+      text: 訂單備註：客服或客戶在訂單上留的文字備註
+      sep: ，
+    - kind: bound
+      text: 與商品評論無關
+      sep: ''
+    columns:
+      id: 備註唯一ID
+      order_id: 所屬訂單ID
+      note: 備註內容
+      is_internal: 是否為內部備註，客戶看不到
+      created_at: 備註時間
+  order_profiles:
+    clauses:
+    - kind: content
+      text: 訂單情境檔案寬表：下單的通路與裝置、流量來源與行銷歸因、 結帳過程與付款情境、收件偏好與包裝指示、客服接觸與風控人工覆核
+      sep: 。
+    - kind: facet
+      text: ' 這是「這張訂單是怎麼來的」'
+      sep: ，
+    - kind: ptr
+      text: 訂單金額與狀態在 orders
+      sep: 。
+    columns:
+      id: 流水號
+      order_id: 對應的訂單
+      channel: 下單通路：官網／行動應用／電話／門市
+      device_type: 裝置類型
+      os_name: 作業系統名稱
+      browser_name: 瀏覽器名稱
+      app_version: 行動應用版本，網頁下單為 NULL
+      screen_size: 螢幕解析度
+      ip_country: 下單時的 IP 所在國別
+      utm_source: 歸因到的流量來源
+      utm_medium: 流量媒介：付費點擊／自然／電子報／推薦連結
+      utm_campaign: 歸因到的行銷活動代號，格式 CMP-NN，NN 是 campaigns.id 補零成兩位
+      referrer_domain: 導流來源網域
+      landing_page: 進站的第一個頁面
+      is_first_order: 是否為該客戶的首張訂單
+      is_guest_checkout: 是否以訪客身分結帳，未登入
+      session_minutes: 本次造訪從進站到送出訂單的分鐘數
+      pages_viewed: 本次造訪瀏覽的頁面數
+      cart_edit_count: 送出前修改購物車的次數
+      checkout_seconds: 結帳頁停留到送出的秒數
+      checkout_attempts: 結帳送出的嘗試次數，含失敗
+      coupon_tried_count: 嘗試輸入優惠券碼的次數
+      is_split_payment: 是否分多筆付款完成
+      installment_periods: 分期期數，0 表示一次付清
+      currency_code: 結帳幣別
+      exchange_rate: 結帳當下的匯率
+      invoice_type: 發票類型：個人／公司／捐贈
+      invoice_carrier: 電子發票載具號碼
+      tax_id_used: 開立公司發票時使用的統一編號
+      delivery_preference: 配送偏好：宅配／門市取貨／智取櫃
+      preferred_time_slot: 希望送達時段
+      delivery_note: 客戶填寫的配送備註
+      is_gift_wrap: 是否加購禮物包裝
+      gift_message: 禮物卡片留言
+      hide_price_on_slip: 是否隱藏出貨單上的金額
+      signature_required: 是否必須本人簽收
+      contact_before_delivery: 是否要求送達前先電聯
+      support_contact_count: 這張訂單客戶聯繫客服的次數
+      first_support_at: 首次聯繫客服的時間
+      has_complaint: 是否留下客訴紀錄
+      satisfaction_survey_sent: 是否已寄出滿意度問卷
+      survey_responded_at: 客戶回覆問卷的時間
+      fraud_review_required: 是否被系統標記需人工覆核
+      fraud_review_result: 覆核結果：放行／暫扣／婉拒
+      reviewed_by: 執行覆核的人員
+      reviewed_at: 覆核完成時間
+      created_at: 建檔時間
+    enums:
+      channel:
+        description: 下單通路
+        values:
+          APP: 行動應用
+          PHONE: 電話
+          STORE: 門市
+          WEB: 官網
+      utm_source:
+        description: 歸因到的流量來源
+        values:
+          direct: ''
+          facebook: ''
+          google: ''
+          instagram: ''
+          line: ''
+      utm_medium:
+        description: 流量媒介
+        values:
+          cpc: 付費點擊
+          email: 電子報
+          organic: 自然
+          referral: ''
+      invoice_type:
+        description: 發票類型
+        values:
+          COMPANY: 公司
+          DONATE: 捐贈
+          PERSONAL: 個人
+      delivery_preference:
+        description: 配送偏好
+        values:
+          HOME: 宅配
+          LOCKER: 智取櫃
+          STORE: 門市取貨
+      fraud_review_result:
+        description: 覆核結果
+        values:
+          HOLD: 暫扣
+          PASS: 放行
+          REJECT: 婉拒
+      device_type:
+        description: 裝置類型
+        values:
+          DESKTOP: ''
+          MOBILE: ''
+          TABLET: ''
+      ip_country:
+        description: 下單時的 IP 所在國別
+        arm: gap
+        values:
+          HK: ''
+          JP: ''
+          TW: ''
+      currency_code:
+        description: 結帳幣別
+        arm: gap
+        values:
+          TWD: ''
+          USD: ''
+      preferred_time_slot:
+        description: 希望送達時段
+        values:
+          AFTERNOON: ''
+          ANY: ''
+          EVENING: ''
+          MORNING: ''
+  order_promotions:
+    clauses:
+    - kind: content
+      text: 訂單與促銷活動的套用紀錄：哪張訂單用了哪檔活動、實際折抵多少錢
+      sep: 。
+    - kind: usage
+      text: 折抵金額、活動使用次數看這張表
+      sep: ''
+    columns:
+      id: 唯一ID
+      order_id: 訂單ID
+      promotion_id: 套用的促銷活動ID
+      discount_amount: 此活動實際折抵的金額
+  order_returns:
+    clauses:
+    - kind: content
+      text: 退貨申請單：客戶寄回商品的申請與處理狀態
+      sep: 。
+    - kind: ptr
+      text: 退款金額在 refunds
+      sep: ，
+    - kind: content
+      text: 這裡只管實體退貨
+      sep: ''
+    columns:
+      id: 退貨單唯一ID
+      order_id: 對應訂單ID
+      product_id: 退回的商品ID
+      quantity: 退回數量
+      status: 退貨狀態
+      requested_at: 申請時間
+    enums:
+      status:
+        description: 退貨狀態
+        values:
+          RECEIVED: ''
+          REJECTED: ''
+          REQUESTED: ''
+  order_status_history:
+    clauses:
+    - kind: content
+      text: 訂單狀態異動歷程：每次狀態變更留一筆，記錄前後狀態與異動時間
+      sep: 。
+    - kind: content
+      text: 想看訂單「現在」的狀態請用 orders.status
+      sep: ''
+    columns:
+      id: 異動紀錄唯一ID
+      order_id: 所屬訂單ID
+      from_status: 異動前狀態
+      to_status: 異動後狀態
+      changed_at: 狀態變更時間
+      changed_by: 異動者帳號，非業務欄位
+    enums:
+      from_status:
+        description: 異動前狀態
+        arm: gap
+        values:
+          PAID: ''
+          PENDING: ''
+          SHIPPED: ''
+      to_status:
+        description: 異動後狀態
+        arm: gap
+        values:
+          CANCELLED: ''
+          COMPLETED: ''
+          PAID: ''
+          PENDING: ''
+          SHIPPED: ''
+  orders:
+    clauses:
+    - kind: content
+      text: 訂單主表：一張訂單一列，記錄下單客戶、下單時間、訂單狀態與整張訂單的總金額
+      sep: 。
+    - kind: enum
+      text: '訂單狀態 PENDING/PAID/SHIPPED/COMPLETED/CANCELLED '
+      sep: ——
+    - kind: usage
+      text: ' 查待處理、已付款、已出貨、已完成、已取消的訂單都用這張表'
+      sep: 。
+    - kind: usage
+      text: 訂單張數、客單價、期間營收等訂單層級的統計用這張表
+      sep: ''
+    columns:
+      id: 訂單唯一ID
+      customer_id: 購買客戶ID
+      order_date: 訂單建立時間
+      total_amount: 訂單總金額
+      status: 訂單狀態
+    enums:
+      status:
+        description: 訂單處理狀態
+        values:
+          PENDING: 待付款（尚未處理）
+          PAID: 已付款
+          SHIPPED: 已出貨
+          COMPLETED: 已完成（收貨確認）
+          CANCELLED: 已取消
+  payment_attempts:
+    clauses:
+    - kind: content
+      text: 付款嘗試紀錄：每次刷卡嘗試都留一筆，含失敗的
+      sep: 。
+    - kind: ptr
+      text: 成功的付款結果在 payments
+      sep: ''
+    columns:
+      id: 嘗試紀錄唯一ID
+      order_id: 對應訂單ID
+      method_id: 嘗試使用的付款方式ID
+      result: 嘗試結果：成功／銀行拒絕／逾時未回應，後兩者都算失敗
+      attempted_at: 嘗試時間
+    enums:
+      result:
+        description: 嘗試結果
+        values:
+          DECLINED: 銀行拒絕
+          OK: 成功
+          TIMEOUT: 逾時未回應
+  payment_methods:
+    clauses:
+    - kind: content
+      text: 付款方式表：信用卡、貨到付款等付款管道，含各自的手續費率
+      sep: ''
+    columns:
+      id: 付款方式唯一ID
+      name: 付款方式名稱，例如信用卡、貨到付款
+      channel: 金流管道代碼
+      fee_rate: 手續費率（0.0250 表示 2.5%）
+      is_active: 是否開放使用
+  payment_profiles:
+    clauses:
+    - kind: content
+      text: 付款授權檔案寬表：金流閘道的授權與回應碼、卡片與電子錢包資訊、 分期與點數禮物卡折抵、對帳結算與退刷爭議
+      sep: 。
+    - kind: facet
+      text: ' 這是單筆付款在金流端的細節'
+      sep: ，
+    - kind: ptr
+      text: 付了多少與付款時間在 payments， 每次刷卡嘗試在 payment_attempts，下單當時的結帳情境在 order_profiles
+      sep: 。
+    columns:
+      id: 流水號
+      payment_id: 對應的付款紀錄
+      gateway_name: 金流閘道名稱
+      gateway_reference: 閘道端的交易參考號
+      acquirer_name: 收單機構名稱
+      authorization_code: 授權碼
+      authorized_at: 授權成功時間
+      captured_at: 請款時間，NULL 表示只授權未請款
+      response_code: 閘道回應碼，00 表示成功
+      response_message: 閘道回應訊息
+      is_3ds_verified: 是否通過 3D 驗證
+      threeds_version: 3D 驗證版本
+      avs_result: 帳單地址比對結果代碼
+      card_brand: 卡別
+      card_bin: 卡號前六碼
+      card_last4: 卡號末四碼
+      card_country: 發卡國別代碼
+      card_issuer: 發卡銀行名稱
+      is_foreign_card: 是否為國外發卡
+      card_expiry_month: 卡片到期月
+      card_expiry_year: 卡片到期年
+      is_tokenized: 是否以代碼化方式儲存卡號
+      wallet_type: 電子錢包：未使用錢包
+      is_installment: 是否分期付款
+      installment_periods: 分期期數，未分期為 0
+      is_zero_interest: 是否為零利率分期
+      first_payment_date: 第一期扣款日
+      bonus_points_used: 這筆付款折抵掉的會員點數，點數異動明細在 loyalty_points
+      gift_card_applied: 折抵使用的禮物卡卡號，未使用為 NULL，卡片主檔在 gift_cards
+      coupon_code_applied: 結帳時輸入的券碼，券主檔在 coupons
+      is_reconciled: 是否已與金流對帳單勾稽
+      reconciled_at: 對帳完成時間
+      statement_batch: 對帳批次編號
+      settlement_date: 款項實際入帳日
+      currency_code: 交易幣別
+      exchange_rate: 外幣交易的匯率，台幣交易為 1
+      original_currency_amount: 以原幣別計價的金額
+      is_chargeback: 是否遭到退刷
+      chargeback_at: 退刷發生時間
+      chargeback_reason: 退刷事由
+      dispute_status: 爭議處理狀態：無爭議／處理中／勝訴／敗訴
+      dispute_closed_at: 爭議結案時間
+      void_at: 授權取消時間，NULL 表示沒取消過
+      created_at: 建檔時間
+    enums:
+      wallet_type:
+        description: 電子錢包
+        values:
+          APPLE: ''
+          GOOGLE: ''
+          LINE: ''
+          NONE: 未使用錢包
+      dispute_status:
+        description: 爭議處理狀態
+        values:
+          LOST: 敗訴
+          NONE: 無爭議
+          WON: 勝訴
+          OPEN: 處理中
+      avs_result:
+        description: 帳單地址比對結果代碼
+        arm: gap
+        values:
+          A: ''
+          N: ''
+          U: ''
+          Y: ''
+      card_brand:
+        description: 卡別
+        values:
+          AMEX: ''
+          JCB: ''
+          MASTER: ''
+          VISA: ''
+      card_country:
+        description: 發卡國別代碼
+        arm: gap
+        values:
+          JP: ''
+          TW: ''
+          US: ''
+      coupon_code_applied:
+        description: 結帳時輸入的券碼，券主檔在 coupons
+        arm: gap
+        values:
+          SUMMER20: ''
+          VIP500: ''
+          WELCOME100: ''
+      currency_code:
+        description: 交易幣別
+        arm: gap
+        values:
+          TWD: ''
+          USD: ''
+  payments:
+    clauses:
+    - kind: content
+      text: 付款紀錄表：一筆付款一列，記錄對應訂單、付款方式、金額與付款完成時間
+      sep: 。
+    - kind: usage
+      text: 何時付款、用什麼付、付了多少看這張表
+      sep: 。
+    - kind: enum
+      text: '付款狀態 SUCCESS/FAILED/REFUNDED '
+      sep: ——
+    - kind: usage
+      text: ' 查付款成功、付款失敗、已退款的紀錄都用這張表'
+      sep: ；
+    - kind: bound
+      text: 付款狀態與訂單狀態意義不同
+      sep: ''
+    columns:
+      id: 付款紀錄唯一ID
+      order_id: 對應訂單ID
+      method_id: 使用的付款方式ID
+      amount: 實際付款金額（可能因促銷低於 orders.total_amount）
+      status: 付款狀態，與訂單狀態不同意義
+      paid_at: 付款完成時間，必定晚於訂單建立時間
+      transaction_no: 金流商交易序號
+      sync_version: 內部同步版本號，非業務欄位
+      created_at: 此筆紀錄寫入時間
+    enums:
+      status:
+        description: 付款狀態（不是訂單狀態）
+        values:
+          SUCCESS: 付款成功
+          FAILED: 付款失敗
+          REFUNDED: 已退款
+  product_bundles:
+    clauses:
+    - kind: content
+      text: 商品組合包：一個組合包由多個商品構成，例如超值三入組
+      sep: ''
+    columns:
+      id: 組合關係唯一ID
+      bundle_product_id: 組合包本身的商品ID
+      item_product_id: 包含的單品商品ID
+      quantity: 包含幾件
+  product_categories:
+    clauses:
+    - kind: content
+      text: 商品與分類的多對多關聯
+      sep: ''
+    columns:
+      id: 唯一ID
+      product_id: 商品ID
+      category_id: 分類ID
+      is_primary: 是否為主要分類
+  product_images:
+    clauses:
+    - kind: content
+      text: 商品圖片：主圖與附圖的檔案路徑與排序
+      sep: ''
+    columns:
+      id: 圖片唯一ID
+      product_id: 商品ID
+      url: 圖片路徑
+      is_primary: 是否為主圖
+      sort_order: 顯示順序
+  product_price_history:
+    clauses:
+    - kind: content
+      text: 商品售價異動歷程：每次調價留一筆
+      sep: 。
+    - kind: ptr
+      text: 商品「現在」的售價在 products.price
+      sep: ''
+    columns:
+      id: 調價紀錄唯一ID
+      product_id: 商品ID
+      old_price: 調整前售價
+      new_price: 調整後售價
+      changed_at: 調價時間
+  product_profiles:
+    clauses:
+    - kind: content
+      text: 商品內容檔案寬表：商品的上架狀態與生命週期、多語系名稱與行銷文案、 SEO 與圖片內容完整度、包裝與運送限制、法規合規與認證
+      sep: 。
+    - kind: facet
+      text: ' 這是內容與合規面'
+      sep: ，
+    - kind: ptr
+      text: 商品的品名售價在 products，實體規格在 product_specs
+      sep: 。
+    columns:
+      id: 流水號
+      product_id: 對應的商品
+      lifecycle_stage: 生命週期：新品／成長／成熟／停產
+      listed_at: 首次上架時間
+      delisted_at: 下架時間，NULL 表示仍在架上
+      is_published: 是否對外顯示，0 表示隱藏中
+      is_searchable: 是否允許站內搜尋找到
+      is_giftable: 是否可指定為禮物贈送
+      is_preorder: 是否為預購商品
+      preorder_ship_date: 預購商品的預計出貨日
+      name_en: 英文品名
+      name_ja: 日文品名
+      short_copy: 一句話行銷短文案
+      long_copy: 完整商品介紹文案
+      selling_points: 賣點條列，以分號分隔
+      target_audience: 目標客群描述，例如：學生族／通勤族
+      usage_scenario: 建議使用情境
+      care_instructions: 保養與清潔說明
+      seo_title: SEO 標題
+      seo_description: SEO 描述
+      seo_keywords: SEO 關鍵字，以逗號分隔
+      canonical_url: 正規化網址
+      image_count: 商品頁圖片張數，內容維護登記的快照，與 product_images 的實際列數可能不同
+      has_video: 是否有商品影片
+      has_size_chart: 是否附尺寸對照表
+      has_manual_pdf: 是否附電子說明書
+      content_completeness: 內容完整度百分比，由必填欄位填寫比例計算
+      content_updated_at: 內容最後更新時間
+      content_owner: 內容維護負責人
+      translation_status: 翻譯狀態：未翻／部分／完成
+      package_type: 包裝型式：紙盒／軟袋／棧板
+      package_length_cm: 外包裝長度（公分）
+      package_width_cm: 外包裝寬度（公分）
+      package_height_cm: 外包裝高度（公分）
+      package_weight_g: 含包裝的總重量（公克）
+      is_fragile: 是否易碎品
+      needs_cold_chain: 是否需要冷鏈配送
+      is_air_restricted: 是否禁止空運
+      is_oversized: 是否為大型件，需特殊配送安排
+      hazard_class: 危險品分類
+      origin_certified: 是否有產地證明
+      safety_cert_no: 安全認證字號
+      safety_cert_expiry: 安全認證到期日
+      energy_label: 能源效率標示等級：1~5 級
+      recyclable_code: 回收材質代碼
+      is_restricted_age: 是否有年齡購買限制
+      compliance_note: 法規備註
+      compliance_checked_at: 最近一次合規檢核日期
+      warranty_policy: 保固政策說明文字
+      return_policy_days: 可退貨天數
+      is_return_exempt: 是否屬於不可退換的品項
+      created_at: 建檔時間
+    enums:
+      lifecycle_stage:
+        description: 生命週期
+        values:
+          EOL: 停產
+          GROWTH: 成長
+          MATURE: 成熟
+          NEW: 新品
+      translation_status:
+        description: 翻譯狀態
+        values:
+          DONE: 完成
+          NONE: 未翻
+          PARTIAL: 部分
+      package_type:
+        description: 包裝型式
+        values:
+          BAG: 軟袋
+          BOX: 紙盒
+          PALLET: 棧板
+      hazard_class:
+        description: 危險品分類，NONE 表示非危險品
+        arm: gap
+        values:
+          AEROSOL: ''
+          BATTERY: ''
+          FLAMMABLE: ''
+          NONE: 表示非危險品
+      recyclable_code:
+        description: 回收材質代碼
+        arm: gap
+        values:
+          ALU: ''
+          PAPER: ''
+          PE: ''
+          PET: ''
+          PP: ''
+  product_qna:
+    clauses:
+    - kind: content
+      text: 商品問答：客戶對商品提出的問題與客服回覆
+      sep: 。
+    - kind: facet
+      text: 這是購買前的提問
+      sep: ，
+    - kind: bound
+      text: 與商品評價 reviews、客服工單 support_tickets 都不同
+      sep: ''
+    columns:
+      id: 問答唯一ID
+      product_id: 被提問的商品ID
+      customer_id: 提問的客戶ID
+      question: 問題內容
+      answer: 回覆內容，尚未回覆為空
+      answered_by: 回覆的員工ID
+      asked_at: 提問時間
+  product_recommendations:
+    clauses:
+    - kind: content
+      text: 商品推薦關聯：系統為某商品推薦的其他商品
+      sep: 。
+    - kind: facet
+      text: 這是演算法推薦
+      sep: ，
+    - kind: bound
+      text: 不是實際的共同購買紀錄
+      sep: ''
+    columns:
+      id: 推薦唯一ID
+      product_id: 來源商品ID
+      recommended_product_id: 被推薦的商品ID
+      rank_no: 推薦排序，1 為最前
+  product_specs:
+    clauses:
+    - kind: content
+      text: 商品細部規格表：重量、尺寸、顏色、材質、原產地、保固月數、型號與上市年份等
+      sep: 。
+    - kind: content
+      text: 寬表，多數欄位對多數商品為 NULL
+      sep: ''
+    columns:
+      product_id: 商品ID
+      weight_g: 重量（公克）
+      length_mm: 長度（公釐）
+      width_mm: 寬度（公釐）
+      height_mm: 高度（公釐）
+      color: 顏色
+      material: 材質
+      origin_country: 原產地
+      warranty_months: 保固月數
+      power_watt: 功率（瓦），僅電器類有值
+      voltage: 電壓規格，僅電器類有值
+      battery_mah: 電池容量（mAh），僅 3C 類有值
+      screen_inch: 螢幕尺寸（吋），僅 3C 類有值
+      storage_gb: 儲存容量（GB），僅 3C 類有值
+      ram_gb: 記憶體（GB），僅 3C 類有值
+      connectivity: 連線規格
+      waterproof_rating: 防水等級
+      energy_label: 能源效率標示
+      certification: 通過的認證
+      package_contents: 包裝內容物
+      model_no: 型號
+      release_year: 上市年份
+      is_discontinued: 是否已停產
+      updated_by: 最後修改者帳號，非業務欄位
+      updated_at: 最後修改時間
+    enums:
+      waterproof_rating:
+        description: 防水等級
+        arm: gap
+        values:
+          IP67: ''
+          IPX4: ''
+  product_stock_snapshots:
+    clauses:
+    - kind: content
+      text: 商品庫存每日快照：每天結算一次的庫存數
+      sep: 。
+    - kind: ptr
+      text: 即時庫存在 products.stock
+      sep: ''
+    columns:
+      id: 快照唯一ID
+      product_id: 商品ID
+      snapshot_date: 快照日期
+      stock_qty: 該日結算的庫存數
+  product_suppliers:
+    clauses:
+    - kind: content
+      text: 商品供貨關係表：一項商品由哪家供應商供貨，含進貨價與備貨天數
+      sep: 。
+    - kind: usage
+      text: 進貨成本、毛利、備貨/交期天數看這張表
+      sep: ''
+    columns:
+      id: 唯一ID
+      product_id: 商品ID
+      supplier_id: 供應商ID
+      supply_price: 進貨價（非售價，售價在 products.price）
+      lead_time_days: 備貨天數
+  product_tags:
+    clauses:
+    - kind: content
+      text: 商品標籤：行銷用的自由標籤，例如「熱銷」「新品」
+      sep: 。
+    - kind: bound
+      text: 與 products.category 主分類、product_categories 關聯表都不同
+      sep: ''
+    columns:
+      id: 標籤紀錄唯一ID
+      product_id: 商品ID
+      tag: 標籤文字
+      tagged_at: 標記時間
+  product_variants:
+    clauses:
+    - kind: content
+      text: 商品規格變體：同一款商品的顏色與尺寸組合
+      sep: 。
+    - kind: ptr
+      text: 商品主檔在 products，規格說明在 product_specs
+      sep: ''
+    columns:
+      id: 變體唯一ID
+      product_id: 所屬商品ID
+      color: 顏色
+      size: 尺寸
+      is_default: 是否為預設變體
+  products:
+    clauses:
+    - kind: content
+      text: 商品資訊表：一項商品一列，記錄品名、售價、庫存與分類
+      sep: 。
+    - kind: content
+      text: category 是反正規化的字串欄位
+      sep: ，
+    - kind: bound
+      text: 與 categories 關聯表並存
+      sep: ''
+    columns:
+      id: 商品唯一ID
+      name: 商品名稱
+      category: 商品分類
+      price: 商品價格
+      stock: 庫存數量
+      description: 商品描述
+  promotion_profiles:
+    clauses:
+    - kind: content
+      text: 促銷檔期檔案寬表：適用範圍與排除條件、與其他優惠的疊加規則、 預算與使用次數上限、站上呈現的版位與文案
+      sep: 。
+    - kind: facet
+      text: ' 這是檔期怎麼設定的'
+      sep: ，
+    - kind: ptr
+      text: 折扣型態與數值在 promotions， 門檻金額等適用條件在 promotion_rules，可輸入的券碼在 coupons
+      sep: 。
+    columns:
+      id: 流水號
+      promotion_id: 對應的促銷活動
+      applies_to_scope: 適用範圍：全站／指定分類／指定商品／指定品牌
+      included_category: 適用的商品分類，全站適用時為 NULL
+      excluded_category: 排除的商品分類
+      included_brand: 適用的品牌
+      excluded_sku_list: 排除的商品編號清單，以逗號分隔
+      min_quantity: 最低購買件數門檻
+      min_order_amount: 最低訂單金額門檻
+      max_discount_amount: 單筆最高折抵上限
+      first_order_only: 是否限首購
+      member_tier_required: 需要的會員等級
+      new_customer_only: 是否限新客
+      region_limit: 限定的配送地區，NULL 表示不限
+      is_stackable: 是否可與其他檔期疊加
+      stack_priority: 疊加時的套用優先序，數字小的先算
+      conflicts_with: 不可同時使用的其他檔期名稱
+      excludes_coupon: 是否不可再輸入折價券碼
+      excludes_gift_card: 是否不可用禮物卡折抵
+      is_exclusive: 是否為獨佔檔期，套用後其他一律不生效
+      budget_amount: 這檔活動的折抵預算上限
+      budget_used: 已折抵掉的金額
+      usage_limit_total: 全站可使用次數上限
+      usage_limit_per_customer: 每位客戶可使用次數上限
+      used_count: 已被使用幾次
+      is_budget_exhausted: 預算是否已用罄
+      exhausted_at: 預算用罄的時間
+      banner_headline: 活動主標文案
+      banner_subtext: 活動副標文案
+      display_slot: 呈現版位：首頁橫幅／分類頁／購物車／結帳頁
+      show_countdown: 是否顯示倒數計時
+      badge_text: 商品上顯示的角標文字
+      landing_url: 活動頁網址
+      is_auto_applied: 是否結帳時自動套用，不需要客戶操作
+      requires_code: 是否需要輸入代碼才生效
+      created_by: 建立這檔活動的人
+      approved_by: 核准人
+      approved_at: 核准時間，NULL 表示尚未核准
+      approval_note: 核准意見
+      is_paused: 是否已暫停這檔活動
+      paused_at: 暫停時間
+      pause_reason: 暫停原因
+      review_cycle: 成效檢討頻率：每日／每週／結檔後
+      created_at: 建檔時間
+    enums:
+      applies_to_scope:
+        description: 適用範圍
+        values:
+          ALL: 全站
+          BRAND: 指定品牌
+          CATEGORY: 指定分類
+      display_slot:
+        description: 呈現版位
+        values:
+          CART: 購物車
+          CATEGORY: 分類頁
+          CHECKOUT: 結帳頁
+          HOME_TOP: 首頁橫幅
+      review_cycle:
+        description: 成效檢討頻率
+        values:
+          DAILY: 每日
+          END: 結檔後
+          WEEKLY: 每週
+      member_tier_required:
+        description: 需要的會員等級；以下只列哨兵值，其餘是會員等級名稱
+        values:
+          NONE: 不限會員等級
+  promotion_rules:
+    clauses:
+    - kind: content
+      text: 促銷活動的適用條件：門檻金額、可疊加與否等
+      sep: 。
+    - kind: ptr
+      text: 折扣數值本身在 promotions
+      sep: ''
+    columns:
+      id: 規則唯一ID
+      promotion_id: 所屬促銷活動ID
+      min_amount: 最低消費門檻
+      stackable: 是否可與其他活動疊加
+      applies_to: 適用範圍
+    enums:
+      applies_to:
+        description: 適用範圍
+        values:
+          ALL: ''
+          BRAND: ''
+          CATEGORY: ''
+  promotions:
+    clauses:
+    - kind: content
+      text: 促銷活動表：一檔活動一列，記錄折扣型態（百分比或固定金額）、折扣數值與活動起訖時間
+      sep: ''
+    columns:
+      id: 促銷活動唯一ID
+      name: 活動名稱
+      discount_type: 折扣型態
+      discount_value: 折扣數值，是百分比還是折抵金額由 discount_type 決定
+      starts_at: 活動開始時間
+      ends_at: 活動結束時間
+      is_active: 是否啟用
+    enums:
+      discount_type:
+        description: 折扣型態，決定 discount_value 的意義
+        values:
+          PERCENT: 百分比折扣，discount_value 是百分比數字
+          FIXED: 定額折抵，discount_value 是折抵金額
+  refunds:
+    clauses:
+    - kind: content
+      text: 退款紀錄表：一筆退款申請一列，記錄退多少錢、退款原因與是否已實際退成功
+      sep: 。
+    - kind: usage
+      text: 退款金額、原因分布、未退成件數看這張表
+      sep: ''
+    columns:
+      id: 退款紀錄唯一ID
+      payment_id: 對應的付款紀錄ID
+      amount: 退款金額，可能是部分退款
+      reason: 退款原因
+      status: 退款狀態
+      refunded_at: 實際退款時間，尚未完成時為 NULL
+      created_at: 退款申請時間
+    enums:
+      status:
+        description: 退款申請的處理狀態
+        values:
+          REQUESTED: 已申請，尚未審核
+          APPROVED: 已核准，尚未撥款
+          REJECTED: 已駁回
+          DONE: 已完成退款
+  return_profiles:
+    clauses:
+    - kind: content
+      text: 退貨處理檔案寬表：退貨原因與責任歸屬、到倉檢驗結果與後續處置、 退回物流與收件、換貨與補償方式
+      sep: 。
+    - kind: facet
+      text: ' 這是退貨怎麼被處理的'
+      sep: ，
+    - kind: ptr
+      text: 退貨申請與狀態在 order_returns， 退回的物流單號在 return_shipments，退款金額在 refunds
+      sep: 。
+    columns:
+      id: 流水號
+      return_id: 對應的退貨申請單
+      reason_l1: 退貨主因：品質瑕疵／出錯貨／與說明不符／不想要了／運送損壞
+      reason_l2: 退貨細因
+      customer_note: 客戶填寫的退貨說明
+      is_customer_fault: 是否歸責於客戶
+      is_seller_fault: 是否歸責於賣方
+      is_carrier_fault: 是否歸責於物流商
+      fault_note: 責任歸屬的判定說明
+      is_quality_issue: 是否認定為品質問題
+      defect_code: 瑕疵代碼
+      inspected_at: 到倉檢驗時間，NULL 表示尚未檢驗
+      inspector: 檢驗人員
+      inspection_result: 檢驗結果：符合退貨條件／不符合／部分符合
+      is_resellable: 檢驗後判定是否可以再次販售
+      disposition_decision: 後續處置：重新上架／整新／報廢／退回供應商
+      package_condition: 包裝狀況：完整／已拆封／破損／遺失
+      missing_accessories: 缺少的配件清單
+      has_original_box: 是否附回原廠盒
+      photo_count: 客戶上傳的佐證照片張數
+      pickup_method: 退回方式：到府收件／門市寄回／自行寄回
+      pickup_scheduled_at: 排定的收件時間
+      carrier_name: 退回使用的物流商
+      received_at: 倉庫收到退回商品的時間
+      received_warehouse: 收件的倉庫名稱
+      transit_days: 從寄回到收到經過幾天
+      is_exchange: 是否為換貨而非退貨
+      exchange_product_id: 換成哪一項商品，非換貨為 NULL
+      exchange_shipped_at: 換貨商品寄出的時間
+      compensation_type: 補償方式：無／折價券／點數／禮物卡
+      compensation_note: 補償說明
+      is_goodwill: 是否為專案通融處理
+      requested_at: 客戶提出申請的時間
+      approved_at: 審核通過的時間，NULL 表示尚未通過
+      approval_days: 從申請到審核通過經過幾天
+      completed_at: 整個退貨流程結案的時間
+      total_days: 從申請到結案的總天數
+      is_over_policy_window: 申請時是否已超過可退貨期限
+      policy_window_days: 當時適用的可退貨天數，商品層級的政策在 product_profiles.return_policy_days
+      escalated: 是否曾升級為爭議案件
+      handled_by: 承辦人員
+      handling_note: 承辦過程的備註
+      created_at: 建檔時間
+    enums:
+      reason_l1:
+        description: 退貨主因
+        values:
+          CHANGE_MIND: 不想要了
+          DAMAGED: 運送損壞
+          NOT_AS_DESCRIBED: 與說明不符
+          QUALITY: 品質瑕疵
+          WRONG_ITEM: 出錯貨
+      inspection_result:
+        description: 檢驗結果
+        values:
+          FAIL: 不符合
+          PASS: 符合退貨條件
+          PARTIAL: 部分符合
+      disposition_decision:
+        description: 後續處置
+        values:
+          REFURBISH: 整新
+          RESHELF: 重新上架
+          RETURN_SUPPLIER: 退回供應商
+          SCRAP: 報廢
+      package_condition:
+        description: 包裝狀況
+        values:
+          BROKEN: 破損
+          INTACT: 完整
+          OPENED: 已拆封
+          MISSING: 遺失
+      pickup_method:
+        description: 退回方式
+        values:
+          HOME_PICKUP: 到府收件
+          SELF_SEND: 自行寄回
+          STORE_DROP: 門市寄回
+      compensation_type:
+        description: 補償方式
+        values:
+          COUPON: 折價券
+          NONE: 無
+          POINTS: 點數
+          GIFT_CARD: 禮物卡
+      defect_code:
+        description: 瑕疵代碼；以下只列哨兵值，其餘是 DF-NN 格式的瑕疵代碼
+        values:
+          NONE: 非品質問題，沒有瑕疵代碼
+  return_shipments:
+    clauses:
+    - kind: content
+      text: 退貨物流：客戶把商品寄回時的物流單號與收件時間
+      sep: 。
+    - kind: ptr
+      text: 退貨申請在 order_returns，退款在 refunds
+      sep: ''
+    columns:
+      id: 退貨物流唯一ID
+      return_id: 對應退貨申請ID
+      tracking_no: 物流單號
+      shipped_at: 客戶寄出時間
+      received_at: 倉庫收到時間，尚未收到為空
+  review_profiles:
+    clauses:
+    - kind: content
+      text: 評價內容檔案寬表：評價文字與附圖影片、購買驗證與可信度、 有幫助票數與檢舉、上架審核與隱藏處理
+      sep: 。
+    - kind: facet
+      text: ' 這是評價本身的內容面與處理面'
+      sep: ，
+    - kind: ptr
+      text: 星等與評價文字在 reviews， 商家的回覆內容在 review_replies
+      sep: 。
+    columns:
+      id: 流水號
+      review_id: 對應的商品評價
+      title: 評價標題
+      body_length: 評價內文字數
+      has_photo: 是否附照片
+      photo_count: 附了幾張照片
+      has_video: 是否附影片
+      is_edited: 張貼後是否編輯過
+      edit_count: 編輯次數
+      first_posted_at: 首次張貼時間
+      last_edited_at: 最後一次編輯時間，沒編輯過為 NULL
+      device_type: 張貼裝置：手機／電腦／平板
+      input_channel: 張貼來源：邀評信
+      is_verified_purchase: 是否已驗證為實際購買者所寫
+      days_after_delivery: 收到貨之後隔幾天才寫評價
+      reviewer_review_count: 這位客戶累計寫過幾則評價
+      is_first_review_by_user: 是否為這位客戶的第一則評價
+      is_incentivized: 是否為有給予回饋才寫的評價
+      incentive_type: 回饋型式：點數／折價券／無
+      helpful_votes: 被按有幫助的次數，與 faq_votes 的投票是不同對象（那是說明文章）
+      unhelpful_votes: 被按沒幫助的次數
+      reply_count: 這則評價底下有幾則回覆
+      has_merchant_reply: 商家是否回覆過
+      merchant_reply_at: 商家第一次回覆的時間
+      report_count: 被檢舉次數
+      report_reason: 主要檢舉事由：廣告／辱罵／離題／造假／未被檢舉
+      moderation_status: 審核狀態：待審／通過／退回
+      moderated_at: 審核完成時間
+      moderator: 審核人員
+      is_hidden: 是否已從商品頁隱藏
+      hidden_reason: 隱藏原因
+      is_pinned: 是否置頂
+      is_featured: 是否選為精選評價
+      language_code: 評價語言：zh-TW／en／ja
+      is_translated: 是否提供機器翻譯版本
+      translated_from: 翻譯來源語言
+      sentiment_label: 情緒標記：正面／中性／負面
+      topic_tags: 自動抽出的主題標籤，以分號分隔
+      mentions_speed: 評價內容是否提到到貨快慢
+      mentions_packaging: 評價內容是否提到包裝
+      mentions_service: 評價內容是否提到客服態度
+      created_at: 建檔時間
+    enums:
+      device_type:
+        description: 張貼裝置
+        values:
+          DESKTOP: 電腦
+          MOBILE: 手機
+          TABLET: 平板
+      input_channel:
+        description: 張貼來源
+        values:
+          APP: ''
+          EMAIL: 邀評信
+          WEB: ''
+      incentive_type:
+        description: 回饋型式
+        values:
+          COUPON: 折價券
+          NONE: 無
+          POINTS: 點數
+      report_reason:
+        description: 主要檢舉事由
+        values:
+          ABUSE: 辱罵
+          FAKE: 造假
+          NONE: 未被檢舉
+          OFFTOPIC: 離題
+          SPAM: 廣告
+      moderation_status:
+        description: 審核狀態
+        values:
+          APPROVED: 通過
+          PENDING: 待審
+          REJECTED: 退回
+      sentiment_label:
+        description: 情緒標記
+        values:
+          NEGATIVE: 負面
+          NEUTRAL: 中性
+          POSITIVE: 正面
+  review_replies:
+    clauses:
+    - kind: content
+      text: 評論回覆：商家對客戶評論的回應內容
+      sep: ''
+    columns:
+      id: 回覆唯一ID
+      review_id: 被回覆的評論ID
+      reply_text: 回覆內容
+      replied_at: 回覆時間
+  reviews:
+    clauses:
+    - kind: content
+      text: 商品評價表（只有買過該商品的客戶才會有評價）
+      sep: ''
+    columns:
+      id: 評價唯一ID
+      customer_id: 評價者客戶ID
+      product_id: 被評價的商品ID
+      rating: 評分 1 到 5 分
+      comment: 評價文字內容
+      is_deleted: 軟刪除標記，1 表示已被刪除不應顯示
+      created_at: 評價時間，必定晚於購買時間
+  schema_migrations:
+    clauses:
+    - kind: content
+      text: 資料庫版本遷移紀錄：每次 schema 變更執行過哪一個版本
+      sep: 。
+    - kind: content
+      text: 部署工具寫入
+      sep: ，
+    - kind: bound
+      text: 不是業務資料
+      sep: ''
+    columns:
+      id: 遷移紀錄唯一ID
+      version: 版本編號
+      applied_at: 套用時間
+      checksum: 腳本雜湊值
+  search_logs:
+    clauses:
+    - kind: content
+      text: 站內搜尋紀錄：客戶輸入的關鍵字與命中筆數
+      sep: 。
+    - kind: bound
+      text: 搜尋不是瀏覽也不是購買
+      sep: ，
+    - kind: ptr
+      text: 瀏覽在 browse_logs
+      sep: ''
+    columns:
+      id: 搜尋紀錄唯一ID
+      customer_id: 客戶ID，未登入為空
+      keyword: 搜尋關鍵字
+      result_count: 命中筆數
+      searched_at: 搜尋時間
+  service_appointments:
+    clauses:
+    - kind: content
+      text: 到店服務預約：客戶預約到哪間門市、什麼時間、做什麼服務
+      sep: 。
+    - kind: facet
+      text: 這是預約不是取貨
+      sep: ，
+    - kind: ptr
+      text: 取貨在 store_pickups
+      sep: ''
+    columns:
+      id: 預約唯一ID
+      customer_id: 預約客戶ID
+      store_id: 預約門市ID
+      service_type: 服務類型
+      scheduled_at: 預約時間
+      attended: 是否實際到場
+    enums:
+      service_type:
+        description: 服務類型
+        values:
+          CONSULT: ''
+          INSTALL: ''
+          REPAIR: ''
+  shipment_profiles:
+    clauses:
+    - kind: content
+      text: 出貨作業檔案寬表：外箱與材積、轉運路徑與最後掃描站、 簽收方式與交付情境、派送異常與重新投遞
+      sep: 。
+    - kind: facet
+      text: ' 這是單次出貨的作業細節'
+      sep: ，
+    - kind: ptr
+      text: 出貨倉庫與到貨時間在 shipments， 每一次上門派送在 delivery_attempts
+      sep: 。
+    columns:
+      id: 流水號
+      shipment_id: 對應的出貨紀錄
+      carton_type: 外箱型式：紙箱／破壞袋／圓筒／棧板
+      carton_count: 這次出貨拆成幾箱
+      box_length_cm: 外箱長度（公分）
+      box_width_cm: 外箱寬度（公分）
+      box_height_cm: 外箱高度（公分）
+      volumetric_weight_g: 材積重（公克），由長寬高換算
+      actual_weight_g: 出貨前秤得的實際重量（公克）
+      is_repacked: 出貨前是否重新包裝過
+      packing_material: 緩衝材質：氣泡柱／泡棉／紙屑／無
+      has_fragile_label: 外箱是否貼易碎標籤
+      seal_type: 封箱方式：膠帶／打包帶／安全封條
+      origin_hub: 起運集貨站名稱
+      transit_hub_1: 第一個轉運站，NULL 表示直送
+      transit_hub_2: 第二個轉運站，NULL 表示沒有
+      hub_count: 總共經過幾個站點
+      route_code: 路線代碼
+      last_scan_location: 最後一次條碼掃描的地點
+      last_scan_at: 最後一次條碼掃描的時間
+      is_cross_city: 是否跨縣市配送
+      distance_band: 距離級距：同市／鄰縣／跨區／離島偏鄉
+      delivery_window: 指定送達時段：上午／下午／晚間／不指定
+      recipient_relation: 實際簽收人與收件人的關係：本人／家人／鄰居／管理員／同事
+      signature_type: 簽收方式：親簽／蓋章／拍照／免簽
+      signed_by_name: 簽收人姓名，免簽時為 NULL
+      id_check_required: 是否需要查驗證件才能領取
+      is_contactless: 是否為無接觸放置交付
+      photo_proof_count: 交付證明照片張數
+      delivered_floor: 送達樓層
+      needs_elevator: 是否需要電梯搬運
+      attempt_count: 這次出貨總共上門幾次，與 delivery_attempts 的列數為同一件事的登記值
+      exception_code: 異常代碼：無／地址不明／收件人不在／拒收／貨損／天候延誤
+      exception_note: 異常情形的文字說明
+      is_redirected: 是否中途改過送件地址
+      redirect_reason: 改址原因
+      returned_to_hub_at: 退回集貨站的時間，NULL 表示沒退回過
+      damage_reported: 是否有回報貨品受損
+      damage_note: 貨損情形描述
+      temperature_zone: 溫層：常溫／冷藏／冷凍
+      needs_cold_chain: 這次出貨是否走冷鏈，與 product_profiles 的同名欄位不同層級（那是商品屬性，這是實際出貨方式）
+      dry_ice_used: 是否使用乾冰
+      is_dangerous_goods_declared: 是否申報為危險品運送
+      handling_note: 給司機的特殊處理指示
+      created_at: 建檔時間
+    enums:
+      carton_type:
+        description: 外箱型式
+        values:
+          BAG: 破壞袋
+          BOX: 紙箱
+          PALLET: 棧板
+          TUBE: 圓筒
+      packing_material:
+        description: 緩衝材質
+        values:
+          AIR: 氣泡柱
+          FOAM: 泡棉
+          NONE: 無
+          PAPER: 紙屑
+      seal_type:
+        description: 封箱方式
+        values:
+          SEAL: 安全封條
+          STRAP: 打包帶
+          TAPE: 膠帶
+      distance_band:
+        description: 距離級距
+        values:
+          LONG: 跨區
+          MID: 鄰縣
+          REMOTE: 離島偏鄉
+          SHORT: 同市
+      delivery_window:
+        description: 指定送達時段
+        values:
+          AFTERNOON: 下午
+          ANY: 不指定
+          MORNING: 上午
+          NIGHT: 晚間
+      recipient_relation:
+        description: 實際簽收人與收件人的關係
+        values:
+          COWORKER: 同事
+          FAMILY: 家人
+          GUARD: 管理員
+          NEIGHBOR: 鄰居
+          SELF: 本人
+      signature_type:
+        description: 簽收方式
+        values:
+          NONE: 免簽
+          PHOTO: 拍照
+          SIGN: 親簽
+          STAMP: 蓋章
+      exception_code:
+        description: 異常代碼
+        values:
+          ABSENT: 收件人不在
+          ADDR: 地址不明
+          DAMAGE: 貨損
+          DELAY: 天候延誤
+          NONE: 無
+          REFUSE: 拒收
+      temperature_zone:
+        description: 溫層
+        values:
+          AMBIENT: 常溫
+          CHILL: 冷藏
+          FROZEN: 冷凍
+  shipments:
+    clauses:
+    - kind: content
+      text: 出貨紀錄表：一張訂單的出貨一列，記錄從哪個倉庫出貨、物流追蹤號碼、何時出貨與何時送達
+      sep: 。
+    - kind: usage
+      text: 到貨天數、運送中、已送達看這張表
+      sep: ；
+    - kind: bound
+      text: 物流狀態與訂單狀態意義不同
+      sep: ''
+    columns:
+      id: 出貨紀錄唯一ID
+      order_id: 對應訂單ID
+      warehouse_id: 出貨倉庫ID
+      tracking_no: 物流追蹤號碼
+      status: 物流狀態，與訂單狀態不同意義
+      shipped_at: 實際出貨時間，尚未出貨時為 NULL
+      delivered_at: 實際送達時間，尚未送達時為 NULL
+      created_at: 出貨單建立時間
+    enums:
+      status:
+        description: 物流狀態（不是訂單狀態）
+        values:
+          PREPARING: 備貨中
+          IN_TRANSIT: 運送中
+          DELIVERED: 已送達
+          RETURNED: 已退回
+  store_pickups:
+    clauses:
+    - kind: content
+      text: 門市取貨紀錄：訂單選擇到店取貨時，在哪間門市、什麼時候取走
+      sep: 。
+    - kind: ptr
+      text: 宅配出貨在 shipments
+      sep: ''
+    columns:
+      id: 取貨紀錄唯一ID
+      order_id: 對應訂單ID
+      store_id: 取貨門市ID
+      picked_up_at: 實際取貨時間，未取貨為空
+  store_profiles:
+    clauses:
+    - kind: content
+      text: 門市營運檔案寬表：門市地址與交通停車、每週各日營業時間、 提供哪些到店服務、店面設施與無障礙、裝修與稽核紀錄
+      sep: 。
+    - kind: facet
+      text: ' 這是實體門市的營運面'
+      sep: ，
+    - kind: ptr
+      text: 店名與所在城市在 stores
+      sep: 。
+    columns:
+      id: 流水號
+      store_id: 對應的門市
+      address_line: 門市完整地址
+      district: 行政區
+      postal_code: 郵遞區號
+      floor_no: 所在樓層
+      floor_area_ping: 店面坪數
+      nearest_mrt: 最近的捷運站
+      walk_minutes_from_mrt: 從捷運站步行分鐘數
+      parking_spaces: 附設停車位數量，0 表示無
+      has_bike_parking: 是否有機車停車位
+      district_type: 商圈類型：百貨／街邊／車站／郊區
+      phone: 門市電話
+      email: 門市聯絡信箱
+      mon_open: 週一營業時間
+      tue_open: 週二營業時間
+      wed_open: 週三營業時間
+      thu_open: 週四營業時間
+      fri_open: 週五營業時間
+      sat_open: 週六營業時間
+      sun_open: 週日營業時間
+      weekly_open_hours: 每週總營業時數
+      is_24h: 是否 24 小時營業
+      holiday_policy: 國定假日營業規則說明
+      offers_pickup: 是否提供線上購買門市取貨
+      offers_return: 是否受理退貨
+      offers_repair: 是否提供維修送修服務
+      offers_installation: 是否提供安裝服務
+      offers_trade_in: 是否提供舊機換購
+      offers_gift_wrap: 是否提供禮物包裝
+      offers_consultation: 是否提供專人諮詢預約
+      service_counter_count: 服務櫃檯數量
+      fitting_room_count: 試衣間數量
+      has_wifi: 是否提供免費無線網路
+      has_restroom: 是否有洗手間供顧客使用
+      has_nursing_room: 是否設有哺乳室
+      wheelchair_accessible: 是否無障礙通行
+      has_elevator: 是否有電梯直達
+      has_braille_signage: 是否設有點字標示
+      pet_friendly: 是否允許攜帶寵物
+      last_renovated_at: 最近一次裝修完成日
+      renovation_budget_level: 裝修規模等級：S／M／L
+      last_audit_at: 最近一次營運稽核日期
+      audit_result: 稽核結果：通過／有條件通過／未通過
+      fire_cert_expiry: 消防安檢合格證到期日
+      lease_end_date: 租約到期日
+      created_at: 建檔時間
+    enums:
+      audit_result:
+        description: 稽核結果
+        values:
+          CONDITIONAL: 有條件通過
+          PASS: 通過
+          FAIL: 未通過
+      district_type:
+        description: 商圈類型
+        values:
+          MALL: 百貨
+          STATION: 車站
+          STREET: 街邊
+          SUBURB: 郊區
+      mon_open:
+        description: 週一營業時間；以下只列哨兵值，其餘是「10:00-20:00」這種時段字串
+        values:
+          CLOSED: 當日公休
+  store_staff:
+    clauses:
+    - kind: content
+      text: 門市人員配置：哪位員工在哪間門市服務
+      sep: 。
+    - kind: facet
+      text: 這是實體門市的人力
+      sep: ，
+    - kind: ptr
+      text: 倉庫人力在 warehouse_staff
+      sep: ''
+    columns:
+      id: 配置唯一ID
+      store_id: 門市ID
+      employee_id: 員工ID
+      assigned_at: 派駐起始日
+  stores:
+    clauses:
+    - kind: content
+      text: 實體門市主檔：店名、所在城市與開幕日
+      sep: 。
+    - kind: facet
+      text: 這是實體店面
+      sep: ，
+    - kind: bound
+      text: 不是倉庫
+      sep: ''
+    - kind: ptr
+      text: （倉庫在 warehouses）
+      sep: ''
+    columns:
+      id: 門市唯一ID
+      name: 門市名稱
+      city: 門市所在城市
+      opened_at: 開幕日期
+      is_active: 是否仍在營業
+  subscription_profiles:
+    clauses:
+    - kind: content
+      text: 訂閱方案檔案寬表：計費週期與扣款結果、試用與轉換、 暫停與復訂、方案升降級異動
+      sep: 。
+    - kind: facet
+      text: ' 這是訂閱的合約與帳務面'
+      sep: ，
+    - kind: ptr
+      text: 方案名稱與起訖日在 subscriptions， 電子報收信意願在 newsletter_subscriptions
+      sep: 。
+    columns:
+      id: 流水號
+      subscription_id: 對應的訂閱方案
+      billing_cycle: 計費週期：月繳／季繳／年繳
+      billing_day: 每期扣款日（每月幾號）
+      next_billing_date: 下一次扣款日
+      last_billed_at: 最近一次扣款成功時間
+      billed_count: 累計成功扣款幾期
+      monthly_amount: 換算成每月的訂閱金額
+      total_billed_amount: 這個訂閱累計已扣款總額
+      payment_method_name: 綁定的扣款方式名稱
+      is_auto_renew: 是否自動續訂
+      auto_renew_changed_at: 最後一次變更自動續訂設定的時間
+      failed_billing_count: 扣款失敗次數
+      last_failure_reason: 最近一次扣款失敗的原因
+      grace_period_days: 扣款失敗後保留服務的寬限天數
+      had_trial: 是否經過試用期
+      trial_days: 試用天數，沒試用為 0
+      trial_started_at: 試用開始日
+      trial_ended_at: 試用結束日
+      converted_from_trial: 試用結束後是否轉為付費
+      conversion_source: 轉換來源：提醒信／推播／客服致電／自行升級
+      is_paused: 目前是否處於暫停中
+      paused_at: 最近一次暫停的時間
+      resume_scheduled_at: 排定的復訂日
+      pause_count: 累計暫停過幾次
+      pause_reason: 暫停原因
+      max_pause_days: 這個方案允許的單次暫停天數上限
+      plan_changed_count: 方案異動次數
+      previous_plan_name: 上一個方案名稱，沒換過為 NULL
+      plan_changed_at: 最近一次換方案的時間
+      upgrade_count: 升級次數
+      downgrade_count: 降級次數
+      is_annual_prepaid: 是否為年繳一次付清
+      contract_end_date: 合約到期日
+      early_termination_note: 提前解約的說明
+      renewal_reminder_days: 續訂前幾天寄提醒
+      notify_by_email: 是否以 Email 通知續訂與異動
+      notify_by_sms: 是否以簡訊通知
+      notify_by_push: 是否以 App 推播通知
+      last_reminder_sent_at: 最近一次寄出提醒的時間
+      opt_out_marketing: 是否已表示不接收訂閱相關的行銷推廣，與 customer_profiles 的整體行銷同意是不同層級
+      cancel_requested_at: 提出取消的時間
+      cancel_reason: 取消原因
+      cancel_feedback: 取消時填寫的意見
+      is_win_back_targeted: 是否已列入招回名單
+      created_at: 建檔時間
+    enums:
+      billing_cycle:
+        description: 計費週期
+        values:
+          ANNUAL: 年繳
+          MONTHLY: 月繳
+          QUARTERLY: 季繳
+      conversion_source:
+        description: 轉換來源
+        values:
+          AGENT: 客服致電
+          APP: 推播
+          EMAIL: 提醒信
+          SELF: 自行升級
+  subscriptions:
+    clauses:
+    - kind: content
+      text: 訂閱方案：客戶訂閱的方案名稱、狀態與起訖日
+      sep: 。
+    - kind: facet
+      text: 這是定期訂閱
+      sep: ，
+    - kind: bound
+      text: 與單次訂單 orders 不同
+      sep: ''
+    columns:
+      id: 訂閱唯一ID
+      customer_id: 訂閱的客戶ID
+      plan_name: 方案名稱
+      status: 訂閱狀態
+      started_at: 訂閱起始日
+      ended_at: 訂閱結束日，仍在訂閱中為空
+    enums:
+      status:
+        description: 訂閱狀態
+        values:
+          ACTIVE: ''
+          CANCELLED: ''
+          PAUSED: ''
+  supplier_contracts:
+    clauses:
+    - kind: content
+      text: 供應商合約：合約期間與付款條件
+      sep: 。
+    - kind: ptr
+      text: 單一商品的進貨價在 product_suppliers
+      sep: ''
+    columns:
+      id: 合約唯一ID
+      supplier_id: 供應商ID
+      contract_no: 合約編號
+      starts_at: 合約起始日
+      ends_at: 合約到期日
+      payment_terms: 付款條件，例如月結30天
+  supplier_profiles:
+    clauses:
+    - kind: content
+      text: 供應商資格檔案寬表：公司登記與銀行帳戶、對接窗口與往來語言時區、 品質認證與稽核結果、交期承諾與配合條件
+      sep: 。
+    - kind: facet
+      text: ' 這是供應商的資格與往來條件'
+      sep: ，
+    - kind: ptr
+      text: 單一商品的供貨關係在 product_suppliers
+      sep: 。
+    columns:
+      id: 流水號
+      supplier_id: 對應的供應商
+      legal_name: 公司法定全名
+      tax_id: 統一編號
+      registered_country: 公司登記國別
+      registered_address: 登記地址
+      established_year: 公司成立年份
+      employee_scale: 員工規模級距：1-50／51-200／201-1000／1000+
+      bank_name: 往來銀行名稱
+      bank_account_last4: 匯款帳號末四碼
+      payment_terms: 付款條件：月結30天／月結60天／預付／貨到付款
+      invoice_method: 請款方式：電子／紙本
+      contact_sales_name: 業務窗口姓名
+      contact_sales_phone: 業務窗口電話
+      contact_sales_email: 業務窗口信箱
+      contact_qa_name: 品保窗口姓名
+      contact_qa_email: 品保窗口信箱
+      contact_logistics_name: 物流窗口姓名
+      contact_logistics_email: 物流窗口信箱
+      escalation_contact: 爭議升級聯絡人
+      business_language: 往來使用語言
+      timezone: 對方所在時區
+      response_sla_hours: 承諾回覆時數
+      iso9001_certified: 是否通過 ISO 9001 品質管理認證
+      iso14001_certified: 是否通過 ISO 14001 環境管理認證
+      cert_expiry_nearest: 最近一張即將到期的認證日期
+      last_audit_at: 最近一次現場稽核日期
+      audit_result: 稽核結果：通過／有條件通過／未通過
+      audit_findings_open: 尚未結案的稽核缺失項數
+      quality_grade: 品質等第：A／B／C
+      defect_rate_ppm: 不良品率，單位 ppm
+      on_time_delivery_pct: 準時交貨百分比
+      lead_time_committed_days: 合約承諾的交期天數
+      min_order_qty: 最小訂購量
+      is_exclusive: 是否為獨家供應商
+      is_backup_supplier: 是否為備援供應商
+      accepts_dropship: 是否接受直送客戶
+      accepts_returns: 是否接受退回瑕疵品
+      nda_signed_at: 保密協議簽署日
+      onboarded_at: 供應商建立往來的日期
+      suspended_at: 暫停往來日期，NULL 表示正常往來
+      suspend_reason: 暫停往來原因
+      created_at: 建檔時間
+    enums:
+      invoice_method:
+        description: 請款方式
+        values:
+          EINVOICE: 電子
+          PAPER: 紙本
+      audit_result:
+        description: 稽核結果
+        values:
+          CONDITIONAL: 有條件通過
+          PASS: 通過
+          FAIL: 未通過
+      registered_country:
+        description: 公司登記國別
+        arm: gap
+        values:
+          TW: ''
+          VN: ''
+      payment_terms:
+        description: 付款條件
+        values:
+          COD: 貨到付款
+          NET30: 月結30天
+          NET60: 月結60天
+          PREPAID: 預付
+  suppliers:
+    clauses:
+    - kind: content
+      text: 供應商表：一家供應商一列，記錄名稱、聯絡方式與所在城市
+      sep: 。
+    - kind: content
+      text: 此處的 city 是供應商所在地
+      sep: ，
+    - kind: bound
+      text: 不是客戶居住地
+      sep: ''
+    columns:
+      id: 供應商唯一ID
+      name: 供應商名稱（非客戶姓名）
+      contact_email: 供應商聯絡信箱
+      phone: 供應商電話（非客戶電話）
+      city: 供應商所在城市（非客戶居住城市）
+      created_at: 建檔時間
+  support_ticket_profiles:
+    clauses:
+    - kind: content
+      text: 客服工單處理檔案寬表：受理管道與自動分類、回應時效與逾時、 指派轉手與升級層級、結案方式與滿意度調查
+      sep: 。
+    - kind: facet
+      text: ' 這是工單怎麼被處理的'
+      sep: ，
+    - kind: ptr
+      text: 客戶問了什麼與工單狀態在 support_tickets， 訂單上的文字備註在 order_notes
+      sep: 。
+    columns:
+      id: 流水號
+      ticket_id: 對應的客服工單
+      intake_channel: 受理管道：電話／信箱／線上客服／門市
+      intake_language: 受理時使用的語言
+      category_l1: 一級分類
+      category_l2: 二級分類
+      subject_line: 工單主旨
+      is_auto_classified: 分類是否由系統自動判定
+      related_order_id: 關聯的訂單，沒關聯為 NULL
+      related_product_id: 關聯的商品，沒關聯為 NULL
+      is_order_related: 是否與某張訂單有關
+      first_response_at: 第一次回覆客戶的時間
+      first_response_minutes: 從受理到第一次回覆經過幾分鐘
+      resolution_minutes: 從受理到結案經過幾分鐘
+      sla_target_minutes: 這個分類承諾的回應時間上限（分鐘）
+      is_sla_breached: 是否超過承諾的回應時間
+      breach_reason: 逾時原因
+      business_hours_only: 這個分類是否只在營業時間受理
+      reopened_count: 結案後又被重新開啟幾次
+      last_reopened_at: 最後一次重開的時間
+      assigned_team: 承辦團隊
+      assigned_agent: 承辦客服人員
+      transfer_count: 轉手幾次
+      escalation_level: 升級層級，0 表示沒升級
+      escalated_at: 升級時間
+      escalated_to: 升級給誰
+      is_supervisor_involved: 主管是否介入處理
+      customer_tier_at_intake: 受理當下這位客戶的會員等級快照，現在的等級在 customer_profiles
+      is_repeat_issue: 是否為同一問題再次來電
+      prior_ticket_count: 這位客戶先前開過幾張工單
+      sentiment_at_intake: 受理當下的客戶情緒標記：平和／不滿／憤怒
+      is_vip_flagged: 是否被標記為需優先處理
+      contact_attempts: 客服主動聯繫客戶幾次
+      preferred_callback_window: 客戶希望的回電時段
+      resolution_type: 結案方式：說明解決／退款／換貨／轉其他部門／客戶未回覆
+      resolution_note: 結案說明
+      closed_at: 結案時間
+      closed_by: 結案人員
+      survey_sent_at: 滿意度調查寄出時間
+      survey_responded: 客戶是否回覆滿意度調查
+      satisfaction_label: 滿意度選項：非常滿意／滿意／普通／不滿意
+      knowledge_article_id: 處理時引用的說明文章，文章主檔在 faq_articles
+      is_knowledge_gap: 是否標記為說明文件不足
+      created_at: 建檔時間
+    enums:
+      intake_channel:
+        description: 受理管道
+        values:
+          APP: ''
+          CHAT: 線上客服
+          EMAIL: 信箱
+          PHONE: 電話
+          STORE: 門市
+      sentiment_at_intake:
+        description: 受理當下的客戶情緒標記
+        values:
+          ANGRY: 憤怒
+          CALM: 平和
+          UPSET: 不滿
+      resolution_type:
+        description: 結案方式
+        values:
+          ANSWERED: 說明解決
+          ESCALATED: 轉其他部門
+          NO_RESPONSE: 客戶未回覆
+          REFUND: 退款
+          REPLACE: 換貨
+      satisfaction_label:
+        description: 滿意度選項
+        values:
+          DISSATISFIED: 不滿意
+          NEUTRAL: 普通
+          VERY_SATISFIED: 非常滿意
+          SATISFIED: 滿意
+      preferred_callback_window:
+        description: 客戶希望的回電時段
+        values:
+          AFTERNOON: ''
+          ANY: ''
+          MORNING: ''
+          NIGHT: ''
+  support_tickets:
+    clauses:
+    - kind: content
+      text: 客服工單：客戶提出的問題與處理狀態
+      sep: ，
+    - kind: bound
+      text: 與商品評價無關
+      sep: ''
+    columns:
+      id: 工單唯一ID
+      customer_id: 提出的客戶ID
+      order_id: 相關訂單ID，可為空
+      subject: 問題主旨
+      status: 工單狀態
+      created_at: 建立時間
+    enums:
+      status:
+        description: 工單狀態
+        values:
+          CLOSED: ''
+          OPEN: ''
+          PENDING: ''
+  user_sessions:
+    clauses:
+    - kind: content
+      text: 登入工作階段：網站 session 的建立與到期
+      sep: 。
+    - kind: content
+      text: 框架自動維護
+      sep: ，
+    - kind: bound
+      text: 不是業務資料
+      sep: 。
+    - kind: content
+      text: 客戶登入事件請看 customer_login_logs
+      sep: ''
+    columns:
+      id: Session 唯一ID
+      session_key: Session 金鑰
+      customer_id: 對應客戶ID，未登入為空
+      created_at: 建立時間
+      expires_at: 到期時間
+  variant_barcodes:
+    clauses:
+    - kind: content
+      text: 變體條碼：每個規格變體對應的國際條碼
+      sep: 。
+    - kind: content
+      text: 一個變體可能有多組條碼（改版）
+      sep: ''
+    columns:
+      id: 條碼唯一ID
+      variant_id: 變體ID
+      barcode: 條碼字串
+      registered_at: 登錄日期
+  warehouse_staff:
+    clauses:
+    - kind: content
+      text: 倉庫人員配置：哪位員工被派駐在哪個倉庫
+      sep: 。
+    - kind: ptr
+      text: 員工主檔在 employees，倉庫主檔在 warehouses
+      sep: ''
+    columns:
+      id: 配置唯一ID
+      warehouse_id: 倉庫ID
+      employee_id: 員工ID
+      assigned_at: 派駐起始日
+  warehouse_transfers:
+    clauses:
+    - kind: content
+      text: 倉庫調撥單：商品在兩個倉庫之間移動的紀錄
+      sep: ，
+    - kind: bound
+      text: 不是出貨給客戶
+      sep: ''
+    columns:
+      id: 調撥單唯一ID
+      from_warehouse_id: 來源倉庫ID
+      to_warehouse_id: 目的倉庫ID
+      product_id: 調撥商品ID
+      quantity: 調撥數量
+      transferred_at: 調撥時間
+  warehouses:
+    clauses:
+    - kind: content
+      text: 倉庫表：一座倉庫一列，記錄名稱、所在城市與容量
+      sep: 。
+    - kind: usage
+      text: 出貨從哪個倉庫發出、各倉出貨量的統計會用到
+      sep: ''
+    columns:
+      id: 倉庫唯一ID
+      name: 倉庫名稱
+      city: 倉庫所在城市
+      capacity: 倉儲容量（單位：箱）
+      is_active: 是否營運中
+  warranty_claims:
+    clauses:
+    - kind: content
+      text: 保固申請：客戶對已購商品提出的保固維修申請與處理狀態
+      sep: 。
+    - kind: bound
+      text: 這不是退貨
+      sep: ，
+    - kind: ptr
+      text: 退貨在 order_returns
+      sep: ''
+    columns:
+      id: 保固申請唯一ID
+      order_id: 購買時的訂單ID
+      product_id: 申請保固的商品ID
+      status: 處理狀態
+      claimed_at: 申請時間
+    enums:
+      status:
+        description: 處理狀態
+        values:
+          APPROVED: ''
+          DONE: ''
+          REJECTED: ''
+          SUBMITTED: ''
+  wishlist_items:
+    clauses:
+    - kind: content
+      text: 願望清單品項：清單裡收藏了哪些商品
+      sep: 。
+    - kind: bound
+      text: 收藏 ≠ 購買
+      sep: ，
+    - kind: content
+      text: 銷售請看 order_items
+      sep: ''
+    columns:
+      id: 品項唯一ID
+      wishlist_id: 所屬清單ID
+      product_id: 收藏的商品ID
+      added_at: 加入時間
+  wishlists:
+    clauses:
+    - kind: content
+      text: 願望清單主檔：客戶建立的收藏清單
+      sep: 。
+    - kind: bound
+      text: 加入願望清單不是購買，也不是加入購物車
+      sep: ''
+    columns:
+      id: 清單唯一ID
+      customer_id: 建立清單的客戶ID
+      name: 清單名稱
+      created_at: 建立時間

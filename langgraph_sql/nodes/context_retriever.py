@@ -68,7 +68,13 @@ def context_retriever(state: AgentState) -> dict:
         if hints:
             ddl += f"\n-- 這些表之間的外鍵關聯:\n{hints}"
 
-    enum_text = parser.get_enum_text(scoped)
+    # 值域改由 table_semantics.yaml 宣告（與表註解、欄位註解同一份）。
+    # 舊路徑 parser.get_enum_text() 讀 semantic_layer.yaml 的 enum_fields，
+    # 而那份是 gen_enum_fields.py 從「資料 + 欄位註解措辭」推導出來的 ——
+    # 值域因此變成散文的函數，改一句註解的寫法就會靜默改變模型拿不拿得到值域。
+    # 兩條路的輸出逐字相同（全量與多表 scoped 都驗過），這裡只換來源。
+    from langgraph_sql.utils.table_semantics import enum_text as _enum_text
+    enum_text = _enum_text(scoped)
     rules_text = parser.get_rules_text()
     few_shot = parser.get_few_shot_text()
 

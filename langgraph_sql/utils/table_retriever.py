@@ -183,9 +183,16 @@ def build_table_documents() -> dict[str, str]:
             return _docs
         synth = _load_synthesized_docs()
         # synth 預設不存在；保留只為記錄那個負面結果
+        #
+        # 走 `retrieval` 投影，不走 get_table_briefs()（那是 `catalog` 投影）——
+        # 兩個消費端在這裡分家。§2.5 曾刻意讓它們讀相同文字，理由是「誤差獨立
+        # 來自機制不同，不是輸入不同」。那個論證證明的是**相同輸入不會害到誤差
+        # 獨立**，不是相同輸入最佳。指路標那一格證明它們的最佳輸入確實不同：
+        # 餘弦不懂否定，LLM 懂。預設兩個投影仍然全收，所以今天的行為不變。
+        from langgraph_sql.utils.table_semantics import briefs_for
         _docs = {t: (f'{synth[t]}\n\n表 {t}：{brief}' if t in synth
                      else f'表 {t}：{brief}')
-                 for t, brief in get_table_briefs().items()}
+                 for t, brief in briefs_for("retrieval").items()}
         return _docs
 
 
@@ -245,9 +252,21 @@ def rank_tables(query: str) -> list[tuple[str, float]]:
     # 嵌入不知道「iPhone 15」是商品，但 products.name 裡就有這個值。
     # VALUE_BETA 2026-09-04 起預設 0.05；設成 0 時這整段是 no-op，位元還原。
     # 這條通道失敗只降級成「沒有這個加分」，不讓它變成新的單點故障。
+    #
+    # VALUE_MODE=union（2026-09-09 加，預設仍是 beta）：**餘弦一個位元都不動**，
+    # 值命中的表改在 select_tables 用聯集併進候選。理由是 β 實際做得到的事
+    # 比看起來少 —— `format_catalog(candidates, shuffle_seed, query)` 會把候選
+    # 順序打散，所以 β 在候選集合內部的排序根本沒送到 LLM 面前。它只剩：
+    #   ① 有沒有跨進 ranked[:CANDIDATE_N]  ← 純二元，聯集可以直接表達
+    #   ② 誰是 ranked[0]                   ← ∪Top-1 那道保險的錨點
+    # 而 ② 正是問題：∪Top-1 的設計理由是**誤差獨立**（餘弦 vs LLM 推理），
+    # β 把純餘弦的錨點變成「餘弦＋值」的混合訊號。實測 β=0.05 換掉 3 題的
+    # Top-1，union 換掉 0 題，而候選召回@40 兩者都是 100.0%、union 只多帶
+    # 0.01 張候選。少一個綁在今天嵌入模型餘弦分佈（0.29~0.42）上的尺度常數，
+    # 換模型時就少一個會無聲過期的東西（§8② 靜默失敗）。
     try:
-        from langgraph_sql.utils.value_index import VALUE_BETA, value_hits
-        if VALUE_BETA:
+        from langgraph_sql.utils.value_index import VALUE_BETA, VALUE_MODE, value_hits
+        if VALUE_MODE == "beta" and VALUE_BETA:
             for t, n in value_hits(query).items():
                 if t in scores:
                     scores[t] += VALUE_BETA * min(n, 3)
@@ -323,6 +342,21 @@ def select_tables(
     # 實測嵌入端點會偶發 502，那時候直接丟 21 張表進 Prompt 太浪費。
     top_n = get_candidate_n(len(all_tables))
     candidates = [t for t, _ in ranked[:top_n]] if ranked else all_tables
+
+    # VALUE_MODE=union：值命中的表用**聯集**併進候選，餘弦排序完全不動。
+    # 候選因此不再是固定 top_n，會變成 top_n + k —— 實測 k 平均 0.01 張
+    # （值命中的表本來就幾乎都在前 40 名），這個天花板破口小到可以接受，
+    # 而換到的是 ∪Top-1 錨點不被值訊號污染。破口本身要記錄，不要假裝沒有。
+    try:
+        from langgraph_sql.utils.value_index import VALUE_MODE, value_hits
+        if VALUE_MODE == "union" and ranked:
+            known = set(all_tables)
+            extra = [t for t in value_hits(query) if t in known and t not in candidates]
+            if extra:
+                log.debug(f"[Retriever] 值索引聯集補進 {len(extra)} 張候選：{extra}")
+                candidates = candidates + extra
+    except Exception as e:
+        log.warning(f"[Retriever] 值索引聯集失敗（{type(e).__name__}），只用餘弦候選")
     anchors = pick_anchors(ranked, ratio=ratio, top_k=top_k) if ranked else []
 
     source = "相似度" if ranked else "無"

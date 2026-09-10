@@ -61,6 +61,34 @@ from langgraph_sql.utils.db_manager import get_db_manager
 #
 # 0.05 是 §2.7 掃出來的曲線上的點（β=0.02/0.05/0.10 三點，0.05 與 0.10 同分），
 # **不是調出來的旋鈕**。要動它請重掃整條曲線，不要單點微調（§10「停止調常數」）。
+# 值訊號怎麼進到 dense 這一層。兩個臂放在同一個 commit 裡，一位元可逆。
+#   beta （預設，現行）  餘弦 + β·min(命中數, 3)，然後取 top-N
+#   union（提議）        餘弦不動取 top-N，再把值命中的表聯集進去
+#
+# 為什麼 union 值得考慮：`format_catalog` 會把候選順序打散，所以 β 在候選
+# 集合內部的排序資訊根本沒送到 LLM 面前 —— 它只剩「有沒有進候選」（二元，
+# 聯集直接表達）與「誰是 ranked[0]」。而後者正是 ∪Top-1 那道保險的錨點，
+# 它的設計理由是**誤差獨立**（餘弦 vs LLM 推理，機制不同），β 把它變成
+# 混合訊號。實測（305 題、零 LLM）：
+#
+#     臂                 候選召回@40   Top-1 被值命中換掉   多帶候選
+#     純餘弦（無值索引）      99.0%            0 題          0.00 張
+#     beta β=0.05          100.0%            3 題          0.00 張
+#     union                100.0%            0 題          0.01 張
+#
+# 硬指標打平，union 少污染 3 題錨點、少一個綁在今天嵌入模型餘弦分佈
+# （Top-1 落在 0.29~0.42）上的尺度常數 —— 換嵌入模型時它會無聲過期。
+# 2026-09-09 翻預設為 union。事前登記的三條判準在 305 題上全達標，
+# 而且用 production 的程式路徑（不是探針的複製品）複驗過：
+#     候選召回@40  100.0%（不低於 beta）｜多帶候選 0.01 張｜兩組保留組完全相同
+# ⚠️ e2e 沒量 —— 兩臂在 13 題的候選集合與 3 題的錨點上不同。
+#    這個改動的目的是**拆掉一個會無聲過期的常數**，不是換分數；
+#    讓它跟著下一輪排定的六輪一起量，不要為它單獨觸發一輪。
+#    一位元可逆：VALUE_MODE=beta。
+VALUE_MODE = os.environ.get("VALUE_MODE", "union").lower()
+if VALUE_MODE not in ("beta", "union"):
+    raise ValueError(f"VALUE_MODE 只能是 beta 或 union，收到 {VALUE_MODE!r}")
+
 VALUE_BETA = float(os.environ.get("VALUE_BETA", "0.05"))
 
 # 候選目錄要不要附「這個值住在哪」。**2026-09-04 起預設 1 = 開啟**。
@@ -72,7 +100,13 @@ VALUE_EVIDENCE = int(os.environ.get("VALUE_EVIDENCE", "1"))
 # suppliers/warehouses），報出來只是噪音 —— 那是鑑別力問題，不是門檻問題
 # （同 [[discriminative-not-just-nonempty]]）。實測：≤2 時 13 題有證據、
 # 不限時 22 題但多出來的九題全是跨表通用詞。
-VALUE_MAX_TABLES = int(os.environ.get("VALUE_MAX_TABLES", "2"))
+#
+# 2 → 3：當初在「2 與不限」之間二選一，沒有量中間值。3 的實測是
+#   撈到 GT 表的題 12 → 16（`#24`/`#55`/`#95`/`#98`，「3C數位」「家電」
+#   這類值住在 categories＋products＋customer_profiles 三張表），**零題失去**；
+#   代價是證據總字元 373 → 698（每題平均 1.2 → 2.3 字元，候選目錄本身約 2,880）。
+# 這一格量的是值索引這一層；e2e 跟著下一輪多輪跑順帶收（同 VALUE_MODE=union）。
+VALUE_MAX_TABLES = int(os.environ.get("VALUE_MAX_TABLES", "3"))
 
 # 值至少要幾個字。長度 1 的值（性別 'M'、等級 '一'）會在任何句子裡誤中。
 _MIN_LEN = 2
@@ -183,8 +217,15 @@ def matches(question: str) -> list[tuple[str, frozenset[tuple[str, str]]]]:
     if not idx:
         return []
     q = question.lower()
+    # 上限數的是**表**，不是 (表, 欄位) 對 —— 名字與上面的理由都是這樣寫的，
+    # 但原本寫成 `len(tc)`。差別出在一張表有兩個同型欄位的情況：
+    # `order_status_history` 有 `from_status` 與 `to_status`，於是每個訂單狀態值
+    # 光在這張表就佔 2 格，加 `orders.status` 就是 3 > 2 而整個被丟掉。
+    # 同一張表的兩個欄位不構成跨表歧義 —— 那正是 `get_value_index` 要留住欄位的理由。
+    # 現況下這個修正是 0 行為變動（實測四種組合命中集合完全相同）；它要等代碼
+    # 離開註解、那些值真的進得了索引之後才生效。
     hit = [(v, tc) for v, tc in idx.items()
-           if v.lower() in q and len(tc) <= VALUE_MAX_TABLES]
+           if v.lower() in q and len({t for t, _ in tc}) <= VALUE_MAX_TABLES]
     return [(v, tc) for v, tc in hit
             if not any(v != other and v.lower() in other.lower()
                        for other, _ in hit)]

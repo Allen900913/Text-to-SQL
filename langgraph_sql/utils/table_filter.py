@@ -251,10 +251,21 @@ def _strip_relations(brief: str, known: set[str]) -> str:
 
 
 def get_table_briefs() -> dict[str, str]:
-    """{表名: 表註解}。給 LLM 看的候選清單，只有註解，不含欄位。
+    """{表名: 表註解}。給**選表 LLM** 看的候選清單，只有註解，不含欄位。
 
-    ⚠️ 回傳的**不是**原始 TABLE_COMMENT：寬表的「關係宣告」句已經被
-    `_strip_relations()` 拆掉（見該函式）。DDL 拿到的仍然是完整註解。
+    來源是 `utils/table_semantics.yaml` 的 `catalog` 投影，不是 TABLE_COMMENT。
+    註解在來源就按句型分開（content / enum / usage / facet / bound / ptr），
+    三個消費端各拿各的投影 —— 因為它們的**能力不同**：
+
+        ptr「星等與評價文字在 reviews」
+          → 檢索向量：有害。餘弦不懂否定，只看到文件裡有 `reviews`，
+            於是 review_profiles 在問 reviews 的題上排第一（8/8 逐題證據）。
+          → 選表目錄：有用。它在說「你還需要母表」，`#286`/`#287` 就靠它
+            （見 `_strip_relations` 的判決紀錄）。
+
+    投影表在 table_semantics.PROJECTIONS，預設三個角色全收，
+    所以這裡回傳的字串**與 TABLE_COMMENT 逐位元相同**（由
+    tools/check_table_semantics.py 驗）。
     """
     global _briefs
     if _briefs is not None:
@@ -262,10 +273,8 @@ def get_table_briefs() -> dict[str, str]:
     with _brief_lock:
         if _briefs is not None:
             return _briefs
-        db = get_db_manager(MYSQL_URI)
-        with db.engine.connect() as conn:
-            rows = conn.execute(text(_TABLE_BRIEF_SQL)).fetchall()
-        _briefs = {t.lower(): (c or "").strip() for t, c in rows}
+        from langgraph_sql.utils.table_semantics import briefs_for
+        _briefs = briefs_for("catalog")
         if _STRIP_RELATIONS:
             known = set(_briefs)
             _briefs = {t: (_strip_relations(b, known) if t.endswith(_REL_SCOPE) else b)

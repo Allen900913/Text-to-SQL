@@ -92,7 +92,26 @@ def _columns_of(body: str) -> dict[str, str]:
 
 
 def declared() -> tuple[dict[str, str], dict[tuple[str, str], str]]:
-    """回傳 ({表: 表註解}, {(表, 欄位): 欄位註解})。"""
+    """回傳 ({表: 表註解}, {(表, 欄位): 欄位註解})。
+
+    **來源是 `utils/table_semantics.yaml`，不再是那七支建表腳本。**
+
+    原本要靠 `SOURCES / TUPLE_SRCS / YAML_SRCS` 三份**手寫**清單把來源串起來，
+    而它已經漏過一次：`tools/wide_table_plan_2.yaml` 的 7 張表從沒被登記，
+    症狀是「改了註解不生效」，而閘門 [3] 照樣報 OK —— **沒登記的來源不可能
+    不一致，因為沒有人看它。** 手寫清單抓不到自己漏了什麼。
+
+    收斂成一份 YAML 之後就沒有登記表可漏了。建表腳本裡的註解字串變成
+    **死文字**（新的靜默失敗：改那裡不會生效），由
+    tools/check_table_semantics.py 的第 [4] 項掃磁碟盯著。
+    """
+    from langgraph_sql.utils.table_semantics import briefs_for
+    from langgraph_sql.utils.table_semantics import columns as ts_columns
+    return briefs_for("ddl"), ts_columns()
+
+
+def declared_from_scripts() -> tuple[dict[str, str], dict[tuple[str, str], str]]:
+    """舊路徑：從七支建表腳本解析。**只給閘門做漂移偵測用，不再是來源。**"""
     tables: dict[str, str] = {}
     columns: dict[tuple[str, str], str] = {}
 
@@ -129,6 +148,25 @@ def declared() -> tuple[dict[str, str], dict[tuple[str, str], str]]:
     return tables, columns
 
 
+# INFORMATION_SCHEMA.COLUMN_DEFAULT 回傳的是**沒有引號的字面值**：
+# `orders.status DEFAULT 'PENDING'` 讀出來是 `PENDING`。直接內插就會組出
+# `DEFAULT PENDING COMMENT '…'`，MySQL 報 1064。這個 bug 潛伏到今天才炸，
+# 是因為在此之前同步碰到的欄位剛好都沒有字串預設值 —— 又一次「沒觸發
+# 不等於沒有」。表示式預設（`CURRENT_TIMESTAMP`）在 MySQL 8 會把
+# EXTRA 標成 DEFAULT_GENERATED，那種**不能**加引號。
+_NUMERIC = ("int", "decimal", "numeric", "float", "double", "bit", "real")
+
+
+def _default_literal(row) -> str:
+    d = str(row.COLUMN_DEFAULT)
+    if "DEFAULT_GENERATED" in (row.EXTRA or "").upper():
+        return d                                  # 表示式，原樣輸出
+    t = row.COLUMN_TYPE.lower()
+    if t.startswith(_NUMERIC) or d.upper() in ("NULL", "CURRENT_TIMESTAMP"):
+        return d
+    return "'" + d.replace("\\", "\\\\").replace("'", "''") + "'"
+
+
 def _column_def(row) -> str:
     """從 INFORMATION_SCHEMA 現況重建欄位定義（註解除外）。
 
@@ -140,7 +178,7 @@ def _column_def(row) -> str:
     if row.IS_NULLABLE == "NO":
         parts.append("NOT NULL")
     if row.COLUMN_DEFAULT is not None:
-        parts.append(f"DEFAULT {row.COLUMN_DEFAULT}")
+        parts.append(f"DEFAULT {_default_literal(row)}")
     elif row.IS_NULLABLE == "YES":
         parts.append("DEFAULT NULL")
     extra = (row.EXTRA or "").strip()
