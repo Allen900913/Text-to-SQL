@@ -252,7 +252,6 @@ tables:
         description: A/B 測試分組
         values:
           A: A 組
-          B: B 組
           NONE: 未參加 A/B 測試
       placement:
         description: 投放版位
@@ -515,6 +514,8 @@ tables:
           NONE: 無風控標記
           WATCH: 觀察中
           HIGH: 高風險
+        dead_ok:
+          HIGH: '撐開發集 #159（expect: empty）—— 資料 0 筆是題目要的答案'
   customers:
     clauses:
     - kind: content
@@ -628,7 +629,6 @@ tables:
           CONTRACT: 約聘
           FULLTIME: 正職
           PARTTIME: 兼職
-          INTERN: 實習
       remote_policy:
         description: 遠端安排
         values:
@@ -1296,7 +1296,6 @@ tables:
           LOST: 敗訴
           NONE: 無爭議
           WON: 勝訴
-          OPEN: 處理中
       avs_result:
         description: 帳單地址比對結果代碼
         arm: gap
@@ -1365,7 +1364,8 @@ tables:
         values:
           SUCCESS: 付款成功
           FAILED: 付款失敗
-          REFUNDED: 已退款
+        dead_ok:
+          FAILED: '撐開發集 #104（expect: empty）—— 資料 0 筆是題目要的答案'
   product_bundles:
     clauses:
     - kind: content
@@ -1873,7 +1873,6 @@ tables:
         values:
           FAIL: 不符合
           PASS: 符合退貨條件
-          PARTIAL: 部分符合
       disposition_decision:
         description: 後續處置
         values:
@@ -1887,7 +1886,6 @@ tables:
           BROKEN: 破損
           INTACT: 完整
           OPENED: 已拆封
-          MISSING: 遺失
       pickup_method:
         description: 退回方式
         values:
@@ -1900,7 +1898,6 @@ tables:
           COUPON: 折價券
           NONE: 無
           POINTS: 點數
-          GIFT_CARD: 禮物卡
       defect_code:
         description: 瑕疵代碼；以下只列哨兵值，其餘是 DF-NN 格式的瑕疵代碼
         values:
@@ -2239,10 +2236,8 @@ tables:
       status:
         description: 物流狀態（不是訂單狀態）
         values:
-          PREPARING: 備貨中
           IN_TRANSIT: 運送中
           DELIVERED: 已送達
-          RETURNED: 已退回
   store_pickups:
     clauses:
     - kind: content
@@ -2321,7 +2316,6 @@ tables:
         values:
           CONDITIONAL: 有條件通過
           PASS: 通過
-          FAIL: 未通過
       district_type:
         description: 商圈類型
         values:
@@ -2547,7 +2541,6 @@ tables:
         values:
           CONDITIONAL: 有條件通過
           PASS: 通過
-          FAIL: 未通過
       registered_country:
         description: 公司登記國別
         arm: gap
@@ -2664,7 +2657,6 @@ tables:
           DISSATISFIED: 不滿意
           NEUTRAL: 普通
           VERY_SATISFIED: 非常滿意
-          SATISFIED: 滿意
       preferred_callback_window:
         description: 客戶希望的回電時段
         values:

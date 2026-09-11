@@ -161,7 +161,7 @@ def main() -> int:
     # 於是線上 52 欄與產生器今天重跑得到的 0 欄可以無聲地並存好幾個月。
     # 現在值域是宣告的，新鮮度就退化成一個直接的問題：**宣告的值，資料裡有嗎。**
     ec = ts_enums()
-    dead, unlisted, sentinel = [], [], []
+    dead, unlisted, sentinel, registered = [], [], [], []
     with db.engine.connect() as conn:
         for key, info in ec.items():
             t, _, col = key.partition(".")
@@ -171,8 +171,20 @@ def main() -> int:
             except Exception:
                 continue
             decl = set(map(str, (info.get("values") or {})))
+            # 死值要**登記**才放行。登記寫在宣告裡（`dead_ok: {值: 理由}`），
+            # 不寫成閘門內部的欄位清單 —— 同哨兵那條的理由。
+            #
+            # ⚠️ 2026-09-12：這一段以前只把 dead 算出來、印在摘要行裡，
+            # 紅綠燈只看 unlisted。於是 14 個死值以「一個沒有人會去讀的數字」
+            # 的形式公開存在了很久，其中 `payments.status='REFUNDED'` 讓
+            # 風格驗證集 #3046 拿到一個看起來完全合法的 0 列。
+            # **死值的代價不是多送幾個字，是把失敗變靜默。**
+            okv = set(map(str, (info.get("dead_ok") or {})))
             for v in sorted(decl - vals):
-                dead.append(f"{key} 宣告 '{v}'、資料 0 筆")
+                if v in okv:
+                    registered.append(f"{key} '{v}' —— {info['dead_ok'][v]}")
+                else:
+                    dead.append(f"{key} 宣告 '{v}'、資料 0 筆")
             # 哨兵欄位：值域**本來就不封閉**（`defect_code` 的 DF-NN、
             # `mon_open` 的時段字串、`member_tier_required` 的等級名稱），
             # 宣告只列哨兵是對的，不是漏列。認的是 description 裡的「只列哨兵」
@@ -188,16 +200,27 @@ def main() -> int:
                 continue
             for v in sorted(vals - decl):
                 unlisted.append(f"{key} 資料有 '{v}'、宣告沒列")
-    print(f"[4b] 值域新鮮度 {'OK' if not unlisted else 'WARN'}"
-          f"（{len(ec)} 個欄位；死代碼 {len(dead)}、漏列 {len(unlisted)}"
+    # 未登記的死值是 FAIL，不是 WARN。漏列仍是 WARN —— 那是「模型寫不出
+    # 這個條件」（少給），死值是「模型寫得出一個不存在的條件」（給錯）。
+    # 給錯比少給嚴重：少給會拿到空手，給錯會拿到一個看起來合法的答案。
+    if dead:
+        fails += 1
+    verdict = "FAIL" if dead else ("WARN" if unlisted else "OK")
+    print(f"[4b] 值域新鮮度 {verdict}"
+          f"（{len(ec)} 個欄位；未登記死代碼 {len(dead)}、漏列 {len(unlisted)}"
+          + (f"、已登記 {len(registered)}" if registered else "")
           + (f"、哨兵 {len(sentinel)}" if sentinel else "") + "）")
+    for m in dead:
+        print(f"    ✗ {m} —— 系統會告訴模型這個值存在，它不存在")
+    if dead:
+        print("      改法：清掉它；若是題庫刻意撐 expect: empty 的題，"
+              "在宣告裡加 `dead_ok: {值: 理由}` 登記（查 GT 的 expect 再動）。")
     for m in unlisted[:8]:
         print(f"    ⚠ {m} —— 模型寫不出這個條件")
+    for m in registered:
+        print(f"    · {m}")
     for m in sentinel:
         print(f"    · {m} —— 值域不封閉，只驗哨兵值還在不在")
-    if show_all:
-        for m in dead[:12]:
-            print(f"    · {m}（可能是題庫刻意撐空集合題，查 GT 的 expect 再動）")
 
     # ── [5] 生效投影 ────────────────────────────────────────────────
     # 「預設」是**原始碼裡登記的那組**，不是「三個角色全收」。
