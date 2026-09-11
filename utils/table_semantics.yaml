@@ -113,6 +113,14 @@ tables:
           DELETE: ''
           INSERT: ''
           UPDATE: ''
+      table_name:
+        description: 被異動的表名
+        values:
+          customers: ''
+          orders: ''
+          payments: ''
+          products: ''
+          shipments: ''
   browse_logs:
     clauses:
     - kind: bound
@@ -260,6 +268,10 @@ tables:
           FEED: 動態
           SEARCH: 搜尋
           STORY: 限動
+      currency_code:
+        description: 投放幣別
+        values:
+          TWD: ''
   campaigns:
     clauses:
     - kind: content
@@ -516,6 +528,18 @@ tables:
           HIGH: 高風險
         dead_ok:
           HIGH: '撐開發集 #159（expect: empty）—— 資料 0 筆是題目要的答案'
+      preferred_language:
+        description: 偏好語言
+        values:
+          en: ''
+          zh-TW: ''
+      preferred_delivery_window:
+        description: 偏好收貨時段
+        values:
+          上午: ''
+          下午: ''
+          不指定: ''
+          晚間: ''
   customers:
     clauses:
     - kind: content
@@ -1331,6 +1355,16 @@ tables:
         values:
           TWD: ''
           USD: ''
+      response_message:
+        description: 閘道回應訊息
+        values:
+          核准: ''
+      threeds_version:
+        description: 3D 驗證版本
+        values:
+          '1.0': ''
+          '2.1': ''
+          '2.2': ''
   payments:
     clauses:
     - kind: content
@@ -1588,6 +1622,14 @@ tables:
         values:
           IP67: ''
           IPX4: ''
+      color:
+        description: 顏色
+        values:
+          灰: ''
+          白: ''
+          藍: ''
+          銀: ''
+          黑: ''
   product_stock_snapshots:
     clauses:
     - kind: content
@@ -1642,6 +1684,15 @@ tables:
       color: 顏色
       size: 尺寸
       is_default: 是否為預設變體
+    enums:
+      color:
+        description: 顏色
+        values:
+          白: ''
+          粉: ''
+          藍: ''
+          銀: ''
+          黑: ''
   products:
     clauses:
     - kind: content
@@ -2009,6 +2060,11 @@ tables:
           NEGATIVE: 負面
           NEUTRAL: 中性
           POSITIVE: 正面
+      translated_from:
+        description: 翻譯來源語言
+        values:
+          en: ''
+          ja: ''
   review_replies:
     clauses:
     - kind: content
@@ -2327,6 +2383,24 @@ tables:
         description: 週一營業時間；以下只列哨兵值，其餘是「10:00-20:00」這種時段字串
         values:
           CLOSED: 當日公休
+      postal_code:
+        description: 郵遞區號
+        values:
+          '153': ''
+          '175': ''
+          '238': ''
+          '484': ''
+          '655': ''
+          '706': ''
+          '785': ''
+          '823': ''
+      floor_no:
+        description: 所在樓層
+        values:
+          1F: ''
+          2F: ''
+          3F: ''
+          B1: ''
   store_staff:
     clauses:
     - kind: content
@@ -2664,6 +2738,11 @@ tables:
           ANY: ''
           MORNING: ''
           NIGHT: ''
+      intake_language:
+        description: 受理時使用的語言
+        values:
+          en: ''
+          zh-TW: ''
   support_tickets:
     clauses:
     - kind: content
