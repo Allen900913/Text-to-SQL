@@ -45,12 +45,12 @@
   expect: rows
 
 - id: 3004
-  question: 保固被打回票的是哪些東西？
+  question: 保固被打回票的那幾筆，各是哪樣東西？
   sql: SELECT p.name FROM warranty_claims w JOIN products p ON p.id = w.product_id WHERE w.status = 'REJECTED'
   expect: rows
 
 - id: 3005
-  question: 客人拒收的那幾次，貨件編號跟時間給我。
+  question: 客人拒收的那幾次，出貨紀錄的 id 跟時間給我。
   sql: SELECT shipment_id, attempted_at FROM delivery_attempts WHERE result = 'REFUSED'
   expect: rows
 
@@ -76,7 +76,7 @@
   expect: rows
 
 - id: 3010
-  question: 最常被命中的五個快取鍵是哪些？各幾次？
+  question: 最常被命中的五個快取鍵是哪些？各幾次？同分的按鍵名排。
   sql: SELECT cache_key, hit_count FROM cache_entries ORDER BY hit_count DESC, cache_key LIMIT 5
   expect: rows
   ordered: true
@@ -87,7 +87,7 @@
   expect: rows
 
 - id: 3012
-  question: 還沒處理的客服案件是誰開的？主旨是什麼？
+  question: 還沒受理的客服案件是誰開的？主旨是什麼？處理中的不算。
   sql: SELECT c.name, t.subject FROM support_tickets t JOIN customers c ON c.id = t.customer_id WHERE t.status = 'OPEN'
   expect: rows
 
@@ -138,10 +138,9 @@
   expect: rows
 
 - id: 3022
-  question: 哪種錯誤最常出現？各幾次？
-  sql: SELECT error_type, COUNT(*) AS n FROM error_reports GROUP BY error_type ORDER BY n DESC, error_type
+  question: 每種錯誤各出現幾次？
+  sql: SELECT error_type, COUNT(*) AS n FROM error_reports GROUP BY error_type
   expect: rows
-  ordered: true
 
 - id: 3023
   question: 登入失敗總共幾次？
@@ -211,12 +210,12 @@
   expect: rows
 
 - id: 3036
-  question: 客人平均總共花了多少錢？
+  question: 客人檔案上的累計消費，平均是多少？
   sql: SELECT AVG(total_spent) AS v FROM customer_profiles
   expect: rows
 
 - id: 3037
-  question: 不同學歷的人平均花多少？
+  question: 不同學歷的人，檔案上的累計消費平均多少？
   sql: SELECT education, AVG(total_spent) AS v FROM customer_profiles GROUP BY education
   expect: rows
 
@@ -231,7 +230,7 @@
   expect: rows
 
 - id: 3040
-  question: 指定送達時段的分布是怎樣？
+  question: 訂單指定的送達時段各幾張？
   sql: SELECT preferred_time_slot, COUNT(*) AS n FROM order_profiles GROUP BY preferred_time_slot
   expect: rows
 
@@ -241,7 +240,7 @@
   expect: rows
 
 - id: 3042
-  question: 發票開哪幾種？各幾張？
+  question: 訂單上的發票種類各幾張？
   sql: SELECT invoice_type, COUNT(*) AS n FROM order_profiles GROUP BY invoice_type
   expect: rows
 
@@ -256,7 +255,7 @@
   expect: rows
 
 - id: 3045
-  question: 用哪些電子錢包付款？各幾筆？
+  question: 電子錢包的使用情形各幾筆？沒用錢包的也算一類。
   sql: SELECT wallet_type, COUNT(*) AS n FROM payment_profiles GROUP BY wallet_type
   expect: rows
 
@@ -266,7 +265,7 @@
   expect: rows
 
 - id: 3047
-  question: 哪五樣東西最常被申請保固？各幾次？
+  question: 哪五樣東西最常被申請保固？各幾次？同分的按品名排。
   sql: SELECT p.name, COUNT(*) AS n FROM warranty_claims w JOIN products p ON p.id = w.product_id GROUP BY p.id, p.name ORDER BY n DESC, p.name LIMIT 5
   expect: rows
   ordered: true
@@ -277,7 +276,7 @@
   expect: rows
 
 - id: 3049
-  question: 排班最多的三位同仁各排了幾班？在職離職都算。
+  question: 排班最多的三位同仁各排了幾班？在職離職都算，同分的按姓名排。
   sql: SELECT e.name, COUNT(*) AS n FROM employee_shifts s JOIN employees e ON e.id = s.employee_id GROUP BY e.id, e.name ORDER BY n DESC, e.name LIMIT 3
   expect: rows
   ordered: true
@@ -308,12 +307,12 @@
   expect: rows
 
 - id: 3055
-  question: 還沒人回的問答是問哪些東西？
+  question: 還沒人回的問答，是在問哪幾樣商品？
   sql: SELECT p.name FROM product_qna q JOIN products p ON p.id = q.product_id WHERE q.answer IS NULL
   expect: rows
 
 - id: 3056
-  question: 哪五樣東西被問最多？各幾則？
+  question: 哪五樣東西被問最多？各幾則？同分的按品名排。
   sql: SELECT p.name, COUNT(*) AS n FROM product_qna q JOIN products p ON p.id = q.product_id GROUP BY p.id, p.name ORDER BY n DESC, p.name LIMIT 5
   expect: rows
   ordered: true
@@ -345,7 +344,7 @@
   expect: rows
 
 - id: 3062
-  question: 有幾張單是到店取貨的？
+  question: 有幾張單真的到店取走了？
   sql: SELECT COUNT(*) AS n FROM store_pickups
   expect: rows
 
@@ -355,7 +354,7 @@
   expect: rows
 
 - id: 3065
-  question: 不同性別平均下幾張單？
+  question: 不同性別的客人，檔案上記的訂單數平均是多少？
   sql: SELECT gender, AVG(order_count) AS v FROM customer_profiles GROUP BY gender
   expect: rows
 
@@ -365,7 +364,7 @@
   expect: rows
 
 - id: 3067
-  question: 客人是從哪些站台連過來的？各幾張單？
+  question: 下單前是從哪些網站連過來的？各幾張單？
   sql: SELECT referrer_domain, COUNT(*) AS n FROM order_profiles GROUP BY referrer_domain
   expect: rows
 
@@ -375,7 +374,7 @@
   expect: rows
 
 - id: 3069
-  question: 分期付款的期數各有幾筆？
+  question: 分期期數各有幾筆？沒分期的算 0 期。
   sql: SELECT installment_periods, COUNT(*) AS n FROM payment_profiles GROUP BY installment_periods
   expect: rows
 
@@ -401,7 +400,7 @@
   expect: rows
 
 - id: 3074
-  question: 花得比平均多的客人編號給我。
+  question: 檔案上累計消費高於平均的客人編號給我。
   sql: SELECT customer_id FROM customer_profiles WHERE total_spent > (SELECT AVG(total_spent) FROM customer_profiles)
   expect: rows
 
@@ -441,7 +440,7 @@
   expect: rows
 
 - id: 3082
-  question: 失敗過的排程，平均跑幾分鐘？
+  question: 曾經失敗過的那幾支排程，它們所有的執行平均跑幾分鐘？
   sql: SELECT AVG(TIMESTAMPDIFF(MINUTE, started_at, finished_at)) AS v FROM job_runs WHERE job_name IN (SELECT job_name FROM job_runs WHERE status = 'FAILED')
   expect: rows
 
@@ -451,7 +450,7 @@
   expect: rows
 
 - id: 3084
-  question: 到店取的那些單，貨運單號是什麼？
+  question: 真的到店取走的那些單，貨運單號是什麼？
   sql: SELECT tracking_no FROM shipments WHERE order_id IN (SELECT order_id FROM store_pickups)
   expect: rows
 

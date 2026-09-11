@@ -10,8 +10,10 @@ GT 列數多 4.4 倍，跑出 97.3% —— 量不到東西。
     [1] GT 可執行；expect rows 要非空、expect empty 要真的空
     [2] 列數上限（太大就只是在測 LIMIT）
     [3] 不與開發集／驗收集／驗證集一重複（字元三元組 Jaccard）
-    [4] 閘門 [13] 問句決定得了 SELECT 清單      （tools/check_question_shape.py）
-    [5] 閘門 [6]  問句決定得了要算哪些列        （tools/check_flag_ambiguity.py）
+    [4] 題目可判定性五道軸                      （tools/check_question_gates.py）
+        [13] 哪幾欄 / [6] 算哪些列 / [10b] 快照還是現算 /
+        [14] 同分誰排前面 / [15] 怎麼算
+    [5]（併入 [4]）
     [6] **風格**：問句長度中位數要貼齊驗收集
     [7] **配額**：表數／形狀／寬窄／expect 的分布要貼齊驗收集（照題數比例縮放）
 
@@ -125,14 +127,16 @@ def main():
         if hi[0] > DUP_MAX:
             bad[3].append((qid, "與 #%s 相似 %.2f" % (hi[1], hi[0])))
 
-    ok13, out13 = gate("check_question_shape.py", PATH)
-    if not ok13:
-        bad[4].append(("-", out13.strip().split("\n")[-1][:200]))
-    ok6, out6 = gate("check_flag_ambiguity.py", PATH)
-    if not ok6:
-        for line in out6.split("\n"):
-            if line.strip().startswith("#"):
-                bad[5].append((line.split()[0].lstrip("#"), line.strip()[6:]))
+    # 五道軸走同一個入口 —— 單獨跑得起來的閘門很容易漏跑，而漏跑的代價
+    # 就是第一版這組題的 [14]／[10b] 共 9 題全部溜過去。
+    okg, outg = gate("check_question_gates.py", PATH)
+    if not okg:
+        for line in outg.split("\n"):
+            t = line.strip()
+            if t.startswith("[") and "✗" in t:
+                bad[4].append(("-", t))
+            elif t.startswith("#"):
+                bad[4].append((t.split()[0].lstrip("#"), t))
 
     # [6] 風格
     ql = sorted(len(e["question"]) for e in entries)
@@ -158,8 +162,8 @@ def main():
         1: "GT 可執行且 expect 相符",
         2: "列數 <= %d" % ROW_MAX,
         3: "不與既有三組題重複",
-        4: "閘門 [13] 問句決定得了 SELECT 清單",
-        5: "閘門 [6] 問句決定得了算哪些列",
+        4: "題目可判定性五道軸（[13][6][10b][14][15]）",
+        5: "（併入 [4]）",
         6: "風格：問句長度貼齊驗收集",
         7: "配額：表數／形狀／寬窄／expect",
     }
