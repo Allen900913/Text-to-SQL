@@ -1,0 +1,513 @@
+# 風格驗證集 —— 照驗收集的**問句風格**出題，不照它的 SQL 形狀出。
+#
+# 為什麼會有這一組
+# ================================================================
+# 第一組驗證集（validation_shapes.yaml）抄錯了屬性。我模仿的是驗收集
+# 錯題的 SQL 形狀（扇出、零列群組），結果拿 97.3% —— 那組題證明的是
+# 我猜錯了成因，不是架構很好。
+#
+# 量完三組題的統計，難的不是 SQL 是問句：
+#     問句長度中位　開發集 20　驗收集 18　驗證集一 37
+#     GT 列數中位　　開發集  2　驗收集  5　驗證集一 22
+#     WHERE 謂詞　　開發集 .79　驗收集 .44　驗證集一 .60
+# 驗證集一的 SQL 比驗收集難（列數 4.4 倍、謂詞更多），問句長一倍，
+# 分數高 17.6 個百分點。所以這一組要模仿的是**短、口語、用生活話講概念**，
+# 不是模仿 JOIN 結構。
+#
+# 出題只看 tools/make_data_cards.py 的資料卡（不含任何 schema 註解）——
+# 看註解出題等於量「抄得像不像」。
+#
+# 這組**不封存**，跑完就是要逐題看。界線：
+#     驗收集  跑完只看總分　→ eval/testset_run.py
+#     驗證集  跑完隨便看　　→ eval/validation_run.py
+#
+# 事前登記的驗收判準（寫在跑之前）
+# ================================================================
+# 這組的用途是「重現驗收集的難度、而且可以逐題看」。所以它必須夠難：
+#     總分落在驗收集的 95% 區間 72.6% – 86.8% 內 → 重現成功，可以拿來歸因
+#     顯著高於 86.8%                            → 沒重現，這組作廢重出
+# 分數不是越高越好。這一點跟開發集相反。
+
+# ── 單表・純投影/過濾 ────────────────────────────────────────────
+- id: 3001
+  question: 哪幾支排程跑掛了？給我名稱跟開始時間。
+  sql: SELECT job_name, started_at FROM job_runs WHERE status = 'FAILED' ORDER BY started_at
+  expect: rows
+
+- id: 3002
+  question: 連線出問題的錯誤訊息有哪些？
+  sql: SELECT message FROM error_reports WHERE error_type = 'ConnectionError'
+  expect: rows
+
+- id: 3003
+  question: 現在關著的功能開關有哪些？
+  sql: SELECT flag_key FROM feature_flags WHERE is_enabled = 0
+  expect: rows
+
+- id: 3004
+  question: 保固被打回票的是哪些東西？
+  sql: SELECT p.name FROM warranty_claims w JOIN products p ON p.id = w.product_id WHERE w.status = 'REJECTED'
+  expect: rows
+
+- id: 3005
+  question: 客人拒收的那幾次，貨件編號跟時間給我。
+  sql: SELECT shipment_id, attempted_at FROM delivery_attempts WHERE result = 'REFUSED'
+  expect: rows
+
+- id: 3006
+  question: 只給內部看的備註寫了什麼？
+  sql: SELECT note FROM order_notes WHERE is_internal = 1
+  expect: rows
+
+- id: 3007
+  question: 還沒給出去的禮物卡卡號是哪些？
+  sql: SELECT card_no FROM gift_cards WHERE customer_id IS NULL
+  expect: rows
+
+- id: 3008
+  question: 資料庫最早上的三個版本是哪些？
+  sql: SELECT version FROM schema_migrations ORDER BY applied_at LIMIT 3
+  expect: rows
+  ordered: true
+
+- id: 3009
+  question: 登入失敗的是哪些客人？給我姓名跟時間。
+  sql: SELECT c.name, l.logged_in_at FROM customer_login_logs l JOIN customers c ON c.id = l.customer_id WHERE l.success = 0
+  expect: rows
+
+- id: 3010
+  question: 最常被命中的五個快取鍵是哪些？各幾次？
+  sql: SELECT cache_key, hit_count FROM cache_entries ORDER BY hit_count DESC, cache_key LIMIT 5
+  expect: rows
+  ordered: true
+
+- id: 3011
+  question: 已經驗證過的 LINE 帳號是誰的？姓名跟帳號給我。
+  sql: SELECT c.name, k.contact_value FROM customer_contacts k JOIN customers c ON c.id = k.customer_id WHERE k.contact_type = 'LINE' AND k.is_verified = 1
+  expect: rows
+
+- id: 3012
+  question: 還沒處理的客服案件是誰開的？主旨是什麼？
+  sql: SELECT c.name, t.subject FROM support_tickets t JOIN customers c ON c.id = t.customer_id WHERE t.status = 'OPEN'
+  expect: rows
+
+- id: 3013
+  question: 跑超過兩秒的請求打在哪些路徑上？花了多久？
+  sql: SELECT path, duration_ms FROM api_request_logs WHERE duration_ms > 2000
+  expect: rows
+
+- id: 3014
+  question: 系統自己刪掉的，是哪張表、哪個列編號？
+  sql: SELECT table_name, row_id FROM audit_log WHERE action = 'DELETE' AND actor = 'system'
+  expect: rows
+
+- id: 3015
+  question: 漲價的是哪些東西？從多少變成多少？
+  sql: SELECT p.name, h.old_price, h.new_price FROM product_price_history h JOIN products p ON p.id = h.product_id WHERE h.new_price > h.old_price
+  expect: rows
+
+- id: 3016
+  question: 一次調超過 50 件的調撥，是哪樣貨、幾件？
+  sql: SELECT p.name, t.quantity FROM warehouse_transfers t JOIN products p ON p.id = t.product_id WHERE t.quantity > 50
+  expect: rows
+
+- id: 3017
+  question: 黑色款是哪些東西？什麼尺寸？
+  sql: SELECT p.name, v.size FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.color = '黑'
+  expect: rows
+
+- id: 3018
+  question: 取名叫生日禮物的清單裡放了哪些東西？
+  sql: SELECT p.name FROM wishlists w JOIN wishlist_items i ON i.wishlist_id = w.id JOIN products p ON p.id = i.product_id WHERE w.name = '生日禮物'
+  expect: rows
+
+- id: 3019
+  question: 到店取的單是在哪幾家店取的？單號跟店名給我。含已停業的店。
+  sql: SELECT k.order_id, s.name FROM store_pickups k JOIN stores s ON s.id = k.store_id
+  expect: rows
+
+- id: 3020
+  question: 銀色款的條碼有哪些？
+  sql: SELECT b.barcode FROM variant_barcodes b JOIN product_variants v ON v.id = b.variant_id WHERE v.color = '銀'
+  expect: rows
+
+# ── 聚合 ────────────────────────────────────────────────────────
+- id: 3021
+  question: 排程的執行結果各有幾次？
+  sql: SELECT status, COUNT(*) AS n FROM job_runs GROUP BY status
+  expect: rows
+
+- id: 3022
+  question: 哪種錯誤最常出現？各幾次？
+  sql: SELECT error_type, COUNT(*) AS n FROM error_reports GROUP BY error_type ORDER BY n DESC, error_type
+  expect: rows
+  ordered: true
+
+- id: 3023
+  question: 登入失敗總共幾次？
+  sql: SELECT COUNT(*) AS n FROM customer_login_logs WHERE success = 0
+  expect: rows
+
+- id: 3024
+  question: 出錯的請求打在哪些路徑上？各幾次？
+  sql: SELECT path, COUNT(*) AS n FROM api_request_logs WHERE status_code >= 400 GROUP BY path
+  expect: rows
+
+- id: 3025
+  question: 請求平均跑多久？
+  sql: SELECT AVG(duration_ms) AS v FROM api_request_logs
+  expect: rows
+
+- id: 3026
+  question: 早中晚班各排了幾班？
+  sql: SELECT shift_type, COUNT(*) AS n FROM employee_shifts GROUP BY shift_type
+  expect: rows
+
+- id: 3027
+  question: 班表總共排了幾個鐘頭？
+  sql: SELECT SUM(hours) AS v FROM employee_shifts
+  expect: rows
+
+- id: 3028
+  question: 送貨的結果各有幾次？
+  sql: SELECT result, COUNT(*) AS n FROM delivery_attempts GROUP BY result
+  expect: rows
+
+- id: 3029
+  question: 最常被搜的五個字是什麼？各幾次？
+  sql: SELECT keyword, COUNT(*) AS n FROM search_logs GROUP BY keyword ORDER BY n DESC, keyword LIMIT 5
+  expect: rows
+  ordered: true
+
+- id: 3030
+  question: 刪除的稽核紀錄有幾筆？
+  sql: SELECT COUNT(*) AS n FROM audit_log WHERE action = 'DELETE'
+  expect: rows
+
+- id: 3031
+  question: 各個操作者留下幾筆稽核紀錄？
+  sql: SELECT actor, COUNT(*) AS n FROM audit_log GROUP BY actor
+  expect: rows
+
+- id: 3032
+  question: 各家卡別各刷了幾筆？
+  sql: SELECT card_brand, COUNT(*) AS n FROM payment_profiles GROUP BY card_brand
+  expect: rows
+
+- id: 3033
+  question: 哪三家發卡行刷最多？各幾筆？
+  sql: SELECT card_issuer, COUNT(*) AS n FROM payment_profiles GROUP BY card_issuer ORDER BY n DESC, card_issuer LIMIT 3
+  expect: rows
+  ordered: true
+
+- id: 3034
+  question: 每個金流商各處理幾筆？
+  sql: SELECT gateway_name, COUNT(*) AS n FROM payment_profiles GROUP BY gateway_name
+  expect: rows
+
+- id: 3035
+  question: 客人的職業各有幾位？
+  sql: SELECT occupation, COUNT(*) AS n FROM customer_profiles GROUP BY occupation
+  expect: rows
+
+- id: 3036
+  question: 客人平均總共花了多少錢？
+  sql: SELECT AVG(total_spent) AS v FROM customer_profiles
+  expect: rows
+
+- id: 3037
+  question: 不同學歷的人平均花多少？
+  sql: SELECT education, AVG(total_spent) AS v FROM customer_profiles GROUP BY education
+  expect: rows
+
+- id: 3038
+  question: 有幾位客人是 VIP？
+  sql: SELECT COUNT(*) AS n FROM customer_profiles WHERE is_vip = 1
+  expect: rows
+
+- id: 3039
+  question: 大家偏好怎麼收貨？各幾張單？
+  sql: SELECT delivery_preference, COUNT(*) AS n FROM order_profiles GROUP BY delivery_preference
+  expect: rows
+
+- id: 3040
+  question: 指定送達時段的分布是怎樣？
+  sql: SELECT preferred_time_slot, COUNT(*) AS n FROM order_profiles GROUP BY preferred_time_slot
+  expect: rows
+
+- id: 3041
+  question: 有幾張單要包成禮物？
+  sql: SELECT COUNT(*) AS n FROM order_profiles WHERE is_gift_wrap = 1
+  expect: rows
+
+- id: 3042
+  question: 發票開哪幾種？各幾張？
+  sql: SELECT invoice_type, COUNT(*) AS n FROM order_profiles GROUP BY invoice_type
+  expect: rows
+
+- id: 3043
+  question: 要做風控審查的單，審完結果各幾張？
+  sql: SELECT fraud_review_result, COUNT(*) AS n FROM order_profiles WHERE fraud_review_required = 1 GROUP BY fraud_review_result
+  expect: rows
+
+- id: 3044
+  question: 結帳平均花幾秒？
+  sql: SELECT AVG(checkout_seconds) AS v FROM order_profiles
+  expect: rows
+
+- id: 3045
+  question: 用哪些電子錢包付款？各幾筆？
+  sql: SELECT wallet_type, COUNT(*) AS n FROM payment_profiles GROUP BY wallet_type
+  expect: rows
+
+- id: 3046
+  question: 有幾筆被銀行退單？
+  sql: SELECT COUNT(*) AS n FROM payment_profiles WHERE is_chargeback = 1
+  expect: rows
+
+- id: 3047
+  question: 哪五樣東西最常被申請保固？各幾次？
+  sql: SELECT p.name, COUNT(*) AS n FROM warranty_claims w JOIN products p ON p.id = w.product_id GROUP BY p.id, p.name ORDER BY n DESC, p.name LIMIT 5
+  expect: rows
+  ordered: true
+
+- id: 3048
+  question: 有搜尋過的客人，各搜了幾次？給我姓名。
+  sql: SELECT c.name, COUNT(*) AS n FROM search_logs s JOIN customers c ON c.id = s.customer_id GROUP BY c.id, c.name
+  expect: rows
+
+- id: 3049
+  question: 排班最多的三位同仁各排了幾班？在職離職都算。
+  sql: SELECT e.name, COUNT(*) AS n FROM employee_shifts s JOIN employees e ON e.id = s.employee_id GROUP BY e.id, e.name ORDER BY n DESC, e.name LIMIT 3
+  expect: rows
+  ordered: true
+
+- id: 3050
+  question: 從各倉調出去幾批？用倉庫名稱顯示。含已停用的倉。
+  sql: SELECT w.name, COUNT(*) AS n FROM warehouse_transfers t JOIN warehouses w ON w.id = t.from_warehouse_id GROUP BY w.id, w.name
+  expect: rows
+
+- id: 3051
+  question: 每樣東西這幾天的庫存平均是多少？給我品名。
+  sql: SELECT p.name, AVG(s.stock_qty) AS v FROM product_stock_snapshots s JOIN products p ON p.id = s.product_id GROUP BY p.id, p.name
+  expect: rows
+
+- id: 3052
+  question: 訂單狀態各被改成什麼？各幾次？
+  sql: SELECT to_status, COUNT(*) AS n FROM order_status_history GROUP BY to_status
+  expect: rows
+
+- id: 3053
+  question: 點數因為什麼進出？各加起來多少？
+  sql: SELECT reason, SUM(points) AS v FROM loyalty_points GROUP BY reason
+  expect: rows
+
+- id: 3054
+  question: 刷卡的結果各有幾次？
+  sql: SELECT result, COUNT(*) AS n FROM payment_attempts GROUP BY result
+  expect: rows
+
+- id: 3055
+  question: 還沒人回的問答是問哪些東西？
+  sql: SELECT p.name FROM product_qna q JOIN products p ON p.id = q.product_id WHERE q.answer IS NULL
+  expect: rows
+
+- id: 3056
+  question: 哪五樣東西被問最多？各幾則？
+  sql: SELECT p.name, COUNT(*) AS n FROM product_qna q JOIN products p ON p.id = q.product_id GROUP BY p.id, p.name ORDER BY n DESC, p.name LIMIT 5
+  expect: rows
+  ordered: true
+
+- id: 3057
+  question: 每個分類總共賣出幾件？
+  sql: SELECT p.category, SUM(i.quantity) AS v FROM order_items i JOIN products p ON p.id = i.product_id GROUP BY p.category
+  expect: rows
+
+- id: 3058
+  question: 哪五樣東西被看最久？平均幾秒？
+  sql: SELECT p.name, AVG(b.duration_sec) AS v FROM browse_logs b JOIN products p ON p.id = b.product_id GROUP BY p.id, p.name ORDER BY v DESC, p.name LIMIT 5
+  expect: rows
+  ordered: true
+
+- id: 3059
+  question: 客人從哪些地方點進商品頁？各幾次？
+  sql: SELECT source, COUNT(*) AS n FROM browse_logs GROUP BY source
+  expect: rows
+
+- id: 3060
+  question: 每檔行銷活動各被點幾次？用活動名稱。
+  sql: SELECT c.name, COUNT(*) AS n FROM campaign_clicks k JOIN campaigns c ON c.id = k.campaign_id GROUP BY c.id, c.name
+  expect: rows
+
+- id: 3061
+  question: 各個投放通路總共被點幾次？
+  sql: SELECT c.channel, COUNT(*) AS n FROM campaign_clicks k JOIN campaigns c ON c.id = k.campaign_id GROUP BY c.channel
+  expect: rows
+
+- id: 3062
+  question: 有幾張單是到店取貨的？
+  sql: SELECT COUNT(*) AS n FROM store_pickups
+  expect: rows
+
+- id: 3063
+  question: 每家門市各被預約幾次？沒到場的也算。
+  sql: SELECT s.name, COUNT(*) AS n FROM service_appointments a JOIN stores s ON s.id = a.store_id GROUP BY s.id, s.name
+  expect: rows
+
+- id: 3065
+  question: 不同性別平均下幾張單？
+  sql: SELECT gender, AVG(order_count) AS v FROM customer_profiles GROUP BY gender
+  expect: rows
+
+- id: 3066
+  question: 有幾位客人已經跑掉了？
+  sql: SELECT COUNT(*) AS n FROM customer_profiles WHERE churned_at IS NOT NULL
+  expect: rows
+
+- id: 3067
+  question: 客人是從哪些站台連過來的？各幾張單？
+  sql: SELECT referrer_domain, COUNT(*) AS n FROM order_profiles GROUP BY referrer_domain
+  expect: rows
+
+- id: 3068
+  question: 有客訴的單有幾張？
+  sql: SELECT COUNT(*) AS n FROM order_profiles WHERE has_complaint = 1
+  expect: rows
+
+- id: 3069
+  question: 分期付款的期數各有幾筆？
+  sql: SELECT installment_periods, COUNT(*) AS n FROM payment_profiles GROUP BY installment_periods
+  expect: rows
+
+# ── 聚合＋子查詢 ────────────────────────────────────────────────
+- id: 3070
+  question: 賣得比平均貴的東西有哪些？多少錢？
+  sql: SELECT name, price FROM products WHERE price > (SELECT AVG(price) FROM products)
+  expect: rows
+
+- id: 3071
+  question: 庫存少於平均的東西有哪些？剩幾件？
+  sql: SELECT name, stock FROM products WHERE stock < (SELECT AVG(stock) FROM products)
+  expect: rows
+
+- id: 3072
+  question: 下超過五張單的客人是誰？
+  sql: SELECT c.name FROM customers c WHERE (SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id) > 5
+  expect: rows
+
+- id: 3073
+  question: 結帳拖得比平均久的是哪幾張單？
+  sql: SELECT order_id FROM order_profiles WHERE checkout_seconds > (SELECT AVG(checkout_seconds) FROM order_profiles)
+  expect: rows
+
+- id: 3074
+  question: 花得比平均多的客人編號給我。
+  sql: SELECT customer_id FROM customer_profiles WHERE total_spent > (SELECT AVG(total_spent) FROM customer_profiles)
+  expect: rows
+
+- id: 3075
+  question: 刷得比平均大筆的那幾筆，訂單編號跟金額給我。
+  sql: SELECT order_id, amount FROM payments WHERE amount > (SELECT AVG(amount) FROM payments)
+  expect: rows
+
+- id: 3076
+  question: 被搜得比平均多的關鍵字有哪些？
+  sql: SELECT keyword FROM search_logs GROUP BY keyword HAVING COUNT(*) > (SELECT COUNT(*) / COUNT(DISTINCT keyword) FROM search_logs)
+  expect: rows
+
+- id: 3077
+  question: 被看得比平均多的東西是哪些？給我品名。
+  sql: SELECT p.name FROM products p WHERE (SELECT COUNT(*) FROM browse_logs b WHERE b.product_id = p.id) > (SELECT COUNT(*) / COUNT(DISTINCT product_id) FROM browse_logs)
+  expect: rows
+
+- id: 3078
+  question: VIP 下的單平均多少錢？
+  sql: SELECT AVG(total_amount) AS v FROM orders WHERE customer_id IN (SELECT customer_id FROM customer_profiles WHERE is_vip = 1)
+  expect: rows
+
+- id: 3079
+  question: 被調撥過的東西，庫存加起來多少？
+  sql: SELECT SUM(stock) AS v FROM products WHERE id IN (SELECT product_id FROM warehouse_transfers)
+  expect: rows
+
+- id: 3080
+  question: 開過客服案件的客人，訂單金額平均多少？
+  sql: SELECT AVG(total_amount) AS v FROM orders WHERE customer_id IN (SELECT customer_id FROM support_tickets)
+  expect: rows
+
+- id: 3081
+  question: 拒收過的那幾批貨，運費單號給我。
+  sql: SELECT tracking_no FROM shipments WHERE id IN (SELECT shipment_id FROM delivery_attempts WHERE result = 'REFUSED')
+  expect: rows
+
+- id: 3082
+  question: 失敗過的排程，平均跑幾分鐘？
+  sql: SELECT AVG(TIMESTAMPDIFF(MINUTE, started_at, finished_at)) AS v FROM job_runs WHERE job_name IN (SELECT job_name FROM job_runs WHERE status = 'FAILED')
+  expect: rows
+
+- id: 3083
+  question: 有人申請過保固的東西是哪些？
+  sql: SELECT name FROM products WHERE id IN (SELECT product_id FROM warranty_claims)
+  expect: rows
+
+- id: 3084
+  question: 到店取的那些單，貨運單號是什麼？
+  sql: SELECT tracking_no FROM shipments WHERE order_id IN (SELECT order_id FROM store_pickups)
+  expect: rows
+
+# ── 子查詢＋否定 ────────────────────────────────────────────────
+- id: 3085
+  question: 沒被任何人收進清單的東西是哪些？
+  sql: SELECT name FROM products WHERE id NOT IN (SELECT product_id FROM wishlist_items)
+  expect: rows
+
+- id: 3086
+  question: 沒有人問過問題的東西是哪些？
+  sql: SELECT name FROM products WHERE id NOT IN (SELECT product_id FROM product_qna)
+  expect: rows
+
+- id: 3087
+  question: 從來沒開過客服案件的客人是誰？
+  sql: SELECT name FROM customers WHERE id NOT IN (SELECT customer_id FROM support_tickets)
+  expect: rows
+
+# ── 空集合 ──────────────────────────────────────────────────────
+- id: 3088
+  question: 從來沒被人點開看過的東西是哪些？
+  sql: SELECT name FROM products WHERE id NOT IN (SELECT product_id FROM browse_logs)
+  expect: empty
+
+- id: 3089
+  question: 哪幾支排程跑成功卻沒有結束時間？
+  sql: SELECT job_name FROM job_runs WHERE status = 'SUCCESS' AND finished_at IS NULL
+  expect: empty
+
+# ── 防禦（schema 撐不住的概念，該拒答）──────────────────────────
+- id: 3090
+  question: 客人的信用評分大概落在哪個區間？
+  expect: schema_unsupported
+
+- id: 3091
+  question: 這些東西的毛利率算起來是多少？
+  expect: schema_unsupported
+
+# ── 三表以上 ────────────────────────────────────────────────────
+- id: 3092
+  question: 每個縣市的客人各買了幾件？
+  sql: SELECT c.city, SUM(i.quantity) AS v FROM order_items i JOIN orders o ON o.id = i.order_id JOIN customers c ON c.id = o.customer_id GROUP BY c.city
+  expect: rows
+
+- id: 3093
+  question: 哪些客人的單被風控擋下來？
+  sql: SELECT c.name FROM order_profiles f JOIN orders o ON o.id = f.order_id JOIN customers c ON c.id = o.customer_id WHERE f.fraud_review_result = 'REJECT'
+  expect: rows
+
+- id: 3094
+  question: 用電子錢包付的單是誰下的？用哪一種？
+  sql: SELECT c.name, f.wallet_type FROM payment_profiles f JOIN payments p ON p.id = f.payment_id JOIN orders o ON o.id = p.order_id JOIN customers c ON c.id = o.customer_id WHERE f.wallet_type <> 'NONE'
+  expect: rows
+
+- id: 3095
+  question: 錢退給哪些客人？各退多少？
+  sql: SELECT c.name, r.amount FROM refunds r JOIN payments p ON p.id = r.payment_id JOIN orders o ON o.id = p.order_id JOIN customers c ON c.id = o.customer_id
+  expect: rows

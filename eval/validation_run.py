@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""形狀驗證集的跑法 —— 跟驗收集相反，這組**就是要看逐題**。
+"""兩組驗證集的跑法 —— 跟驗收集相反，這些組**就是要看逐題**。
 
 驗收集用機制擋著不准看錯題；這組沒有那些機制，因為它的用途正是迭代。
 界線寫在檔名跟 eval/validation_shapes.yaml 的檔頭裡：
@@ -33,8 +33,15 @@ import yaml
 from eval_score import judge, match_ordered, match_unordered, to_rows
 from langgraph_sql.config import MYSQL_URI
 from langgraph_sql.utils.db_manager import get_db_manager
+from testset_verify import shape_of
 
-PATH = os.path.join(_ROOT, "eval", "validation_shapes.yaml")
+# 兩組驗證集共用這一支。差別只在題目怎麼出的：
+#   shapes  照「錯題的 SQL 形狀」出 —— 結果 97.3%，證明我猜錯了成因
+#   style   照「驗收集的問句風格」出 —— 短、口語、用生活話講概念
+SETS = {
+    "shapes": os.path.join(_ROOT, "eval", "validation_shapes.yaml"),
+    "style": os.path.join(_ROOT, "eval", "validation_style.yaml"),
+}
 RES = os.path.join(_ROOT, "eval", "results")
 QJSON = os.path.join(RES, "_validation_questions.json")
 API_RETRY_ROUNDS = int(os.environ.get("VALIDATION_API_RETRY", "3"))
@@ -51,26 +58,33 @@ def commit() -> str:
         return "?"
 
 
-def newest() -> str:
-    files = sorted(glob.glob(os.path.join(RES, "validation_result_*.json")))
+def newest(which: str) -> str:
+    """結果檔要照組別分開存 —— 不然 --score-only 會拿另一組的結果來判分。"""
+    files = sorted(glob.glob(os.path.join(RES, "validation_%s_result_*.json" % which)))
     return files[-1] if files else ""
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--family", default=None, help="只跑 zero_group / fanout / control")
+    ap.add_argument("--set", dest="which", default="shapes", choices=sorted(SETS),
+                    help="要跑哪一組驗證集")
+    ap.add_argument("--family", default=None, help="只跑某一族（shapes 專用）")
     ap.add_argument("--score-only", action="store_true", help="不重跑，拿最新結果重新判分")
     ap.add_argument("--result", default=None, help="指定要判分的結果檔")
     args = ap.parse_args()
 
-    entries = yaml.safe_load(io.open(PATH, encoding="utf-8"))
+    path_yaml = SETS[args.which]
+    entries = yaml.safe_load(io.open(path_yaml, encoding="utf-8"))
+    # 沒有 family 欄的（style 組）就用 SQL 形狀分組 —— 切片要跟驗收集同一套算法。
+    for e in entries:
+        e.setdefault("family", shape_of(e.get("sql") or "") if e.get("sql") else "防禦")
     if args.family:
         entries = [e for e in entries if e.get("family") == args.family]
     by_id = {e["id"]: e for e in entries}
-    print("形狀驗證集 %d 題　架構 commit %s\n" % (len(entries), commit()))
+    print("驗證集［%s］%d 題　架構 commit %s\n" % (args.which, len(entries), commit()))
 
     if args.score_only or args.result:
-        path = args.result or newest()
+        path = args.result or newest(args.which)
         if not path:
             print("找不到結果檔")
             return 1
@@ -99,7 +113,8 @@ def main() -> int:
             made = sorted(set(glob.glob(os.path.join(RES, "eval_result_*.json"))) - before)
             if made:
                 path = made[-1]
-        target = os.path.join(RES, "validation_result_%s.json" % os.path.basename(path)[13:-5])
+        target = os.path.join(RES, "validation_%s_result_%s.json"
+                              % (args.which, os.path.basename(path)[13:-5]))
         io.open(target, "w", encoding="utf-8").write(io.open(path, encoding="utf-8").read())
         path = target
 
