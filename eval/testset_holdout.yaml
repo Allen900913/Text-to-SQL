@@ -367,7 +367,7 @@
   expect: rows
 
 - id: 1073
-  question: 每樣商品的平均星等是多少？含已刪除的評價，排名前十給我。
+  question: 每樣商品的平均星等是多少？含已刪除的評價，排名前十給我，同分的按品名排。
   sql: SELECT p.name, AVG(r.rating) AS avg_rating FROM reviews r JOIN products p ON p.id = r.product_id GROUP BY p.name ORDER BY avg_rating DESC, p.name LIMIT 10
   expect: rows
 
@@ -513,7 +513,7 @@
   expect: rows
 
 - id: 1102
-  question: 星等最低的那五樣商品，各拿到幾則評價？含已刪除的評價。
+  question: 星等最低的那五樣商品，各拿到幾則評價？含已刪除的評價，同分的按品名排。
   sql: SELECT p.name, AVG(r.rating) AS avg_rating, COUNT(*) AS n FROM reviews r JOIN products p ON p.id = r.product_id GROUP BY p.id, p.name ORDER BY avg_rating, p.name LIMIT 5
   expect: rows
 
@@ -556,7 +556,7 @@
 
 # ── 多表・純聚合與投影 ──────────────────────────────────────────
 - id: 1110
-  question: 買了最多種不同商品的十張訂單，編號與種類數各是多少？
+  question: 買了最多種不同商品的十張訂單，編號與種類數各是多少？並列的按訂單編號排。
   sql: SELECT o.id, COUNT(DISTINCT oi.product_id) AS kinds FROM orders o JOIN order_items oi ON oi.order_id = o.id GROUP BY o.id ORDER BY kinds DESC, o.id LIMIT 10
   expect: rows
 

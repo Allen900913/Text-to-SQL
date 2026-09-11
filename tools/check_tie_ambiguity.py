@@ -52,7 +52,9 @@ from eval_score import match_ordered, match_unordered, to_rows
 from langgraph_sql.config import MYSQL_URI
 from langgraph_sql.utils.db_manager import get_db_manager
 
-# 問句自己講明白「並列隨便給一個」的字樣。
+# 問句自己講明白同分怎麼處理的字樣。
+# ⚠️ 豁免會被驗證：問句說了「同分的按品名排」而 GT 的 ORDER BY 只有一項，
+#    照樣報 —— 那句話是空的，排序依然沒有決定。豁免不能只憑問句說了就放行。
 SETTLED = ("並列", "同分", "任一", "任選", "隨便", "都可以", "其中一")
 
 # 逐題裁決：問句的**主題**就是那個排序，並列不影響答案。
@@ -70,6 +72,24 @@ def outer_order_by(sql: str) -> int:
         return -1
     tail = sql[i:]
     return i if tail.count(")") <= tail.count("(") + 1 else -1
+
+
+def n_order_terms(sql: str) -> int:
+    """最外層 ORDER BY 有幾個排序項 —— 用來驗「問句說的 tiebreak 有沒有實作」。"""
+    i = outer_order_by(sql)
+    if i < 0:
+        return 0
+    m = re.search(r"\bLIMIT\b", sql[i:], re.I)
+    cut = i + m.start() if m else len(sql)
+    depth, terms = 0, 1
+    for ch in sql[i + len("ORDER BY"):cut]:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            terms += 1
+    return terms
 
 
 def primary_key_only(sql: str, seed: int) -> str:
@@ -113,6 +133,10 @@ def scan(entries, db):
             continue
         ordered_n += 1
         if any(w in e["question"] for w in SETTLED):
+            # 豁免要驗，不能只憑問句說了就放行。問句寫「同分的按品名排」而
+            # GT 的 ORDER BY 只有一項，那句話是空的 —— 排序依然沒有決定。
+            if n_order_terms(sql) < 2:
+                hits.append((e["id"], 0, "問句說了同分怎麼排，GT 的 ORDER BY 卻只有一項"))
             continue
         # 種子要多。只有兩個並列項的時候，兩個種子有一半機率排出一樣的順序 ——
         # #3010（兩把 893 次的快取鍵）就是這樣從兩顆種子底下溜掉的。
@@ -152,7 +176,8 @@ def main() -> int:
         print("命中 %d 題（占有排序的 %.1f%%）—— 同分的時候問句決定不了誰排前面："
               % (len(hits), 100.0 * len(hits) / ordered_n if ordered_n else 0))
         for qid, rows, what in hits:
-            print("   #%-6s %d 列　換個種子%s就變" % (qid, rows, what))
+            print("   #%-6s %s" % (qid, what if not rows
+                                   else "%d 列　換個種子%s就變" % (rows, what)))
         print("\n改法：問句補上 tiebreak 的依據（「同分的按名稱排」），或改問不會並列的東西。")
         print("**在 GT 的 ORDER BY 補 tiebreak 不算修好** —— 那只是把偵測器弄瞎，")
         print("問句還是決定不了，系統還是會挑另一個。")
