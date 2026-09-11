@@ -1211,7 +1211,7 @@
 
     '
 - id: 117
-  question: 哪一個促銷活動累計折抵的金額最多？折了多少？
+  question: 哪一個促銷活動累計折抵的金額最多？折了多少？啟用停用都算。
   expect: rows
   sql: "WITH t AS (\n  SELECT pr.name AS pn, SUM(op.discount_amount) AS d\n  FROM order_promotions op\
     \ JOIN promotions pr ON op.promotion_id = pr.id\n  GROUP BY pr.id, pr.name)\nSELECT pn, d FROM t WHERE\
@@ -1227,7 +1227,7 @@
   - "SELECT AVG(d) AS avg_discount FROM (\n  SELECT order_id, SUM(discount_amount) AS d\n  FROM order_promotions\
     \ GROUP BY order_id) t\n"
 - id: 119
-  question: 百分比折扣和固定金額折抵的促銷活動，各有幾個？
+  question: 百分比折扣和固定金額折抵的促銷活動，各有幾個？啟用停用都算。
   expect: rows
   sql: 'SELECT discount_type, COUNT(*) AS n FROM promotions
 
@@ -1291,7 +1291,7 @@
 
     '
 - id: 125
-  question: 有哪些商品同時被歸在一個以上的分類底下？
+  question: 有哪些商品同時被歸在一個以上的分類底下？主分類副分類都算。
   expect: rows
   note: 分類的雙表示：products.category 是單值字串欄位， product_categories 才是能表達多對多的關聯表。 原本問「每個商品的主要分類是什麼」，但本資料集 products.category
     與 is_primary=1 的分類 100% 一致（0 筆不符），系統直接讀 products.category 就會答對 —— 那題實測零鑑別力。 改成問「一個以上的分類」，products.category
@@ -2189,7 +2189,7 @@
 
     '
 - id: 211
-  question: 目前訂閱狀態各有幾位客戶？
+  question: 目前訂閱狀態各有幾位客戶？含已結束的訂閱。
   expect: rows
   sql: 'SELECT status, COUNT(*) AS n FROM subscriptions GROUP BY status ORDER BY status
 
@@ -2257,13 +2257,13 @@
 
     '
 - id: 220
-  question: 員工的職稱各有幾人？
+  question: 員工的職稱各有幾人？在職離職都算。
   expect: rows
   sql: 'SELECT title, COUNT(*) AS n FROM employees GROUP BY title ORDER BY title
 
     '
 - id: 221
-  question: 列出有到店取貨紀錄的訂單編號與取貨門市名稱，只要已經取走的。
+  question: 列出有到店取貨紀錄的訂單編號與取貨門市名稱，只要已經取走的，含已停業的門市。
   expect: rows
   sql: 'SELECT p.order_id, s.name
 
@@ -2283,7 +2283,7 @@
 
     '
 - id: 223
-  question: 有哪些客戶同時建立過願望清單又訂閱過方案？列出姓名。
+  question: 有哪些客戶同時建立過願望清單又訂閱過方案？列出姓名。訂閱過就算，含已結束的。
   expect: rows
   sql: "SELECT c.name FROM customers c\nWHERE EXISTS (SELECT 1 FROM wishlists w WHERE w.customer_id =\
     \ c.id)\n  AND EXISTS (SELECT 1 FROM subscriptions s WHERE s.customer_id = c.id)\nGROUP BY c.id, c.name\n\
@@ -2327,7 +2327,7 @@
     '
   note: 問「幾位員工」要去重 —— 一位員工可能派駐多個倉庫。
 - id: 228
-  question: 每間門市各配置了幾位員工？
+  question: 每間門市各配置了幾位員工？含已停業的門市。
   expect: rows
   sql: 'SELECT s.name, COUNT(*) AS n
 
@@ -2338,7 +2338,7 @@
     '
   note: 門市人力是 store_staff，倉庫人力在 warehouse_staff，兩張表不可互換。
 - id: 229
-  question: 有哪些員工同時被派駐在倉庫和門市？列出姓名。
+  question: 有哪些員工同時被派駐在倉庫和門市？列出姓名。在職離職都算。
   expect: rows
   sql: "SELECT e.name FROM employees e\nWHERE EXISTS (SELECT 1 FROM warehouse_staff w WHERE w.employee_id\
     \ = e.id)\n  AND EXISTS (SELECT 1 FROM store_staff s WHERE s.employee_id = e.id)\nGROUP BY e.id, e.name\
@@ -2546,7 +2546,7 @@
 
     '
 - id: 253
-  question: 到店服務預約的各種服務類型各有幾筆？
+  question: 到店服務預約的各種服務類型各有幾筆？沒出席的也算。
   expect: rows
   sql: 'SELECT service_type, COUNT(*) AS n
 
@@ -2578,7 +2578,7 @@
 
     '
 - id: 256
-  question: 有哪些客戶既預約過到店服務，也建立過保固申請？列出姓名。
+  question: 有哪些客戶既預約過到店服務，也建立過保固申請？列出姓名。沒出席的預約也算。
   expect: rows
   sql: "SELECT c.name FROM customers c\nWHERE EXISTS (SELECT 1 FROM service_appointments a WHERE a.customer_id\
     \ = c.id)\n  AND EXISTS (SELECT 1 FROM warranty_claims w\n              JOIN orders o ON o.id = w.order_id\n\
@@ -2589,7 +2589,7 @@
 
     '
 - id: 257
-  question: 每間門市各有幾筆到店服務預約？
+  question: 每間門市各有幾筆到店服務預約？含已停業的門市，沒出席的預約也算。
   expect: rows
   sql: 'SELECT s.name, COUNT(*) AS n
 
@@ -2770,7 +2770,7 @@
 
     '
 - id: 269
-  question: 禮拜天不開的店有哪些？順便告訴我它們在哪一區、店多大、離最近的捷運站走路要幾分鐘。
+  question: 禮拜天不開的店有哪些？含已停業的。順便告訴我它們在哪一區、店多大、離最近的捷運站走路要幾分鐘。
   expect: rows
   sql: 'SELECT s.name, sp.district, sp.floor_area_ping, sp.walk_minutes_from_mrt
 
@@ -3327,7 +3327,7 @@
 
     '
 - id: 305
-  question: 掛在首頁橫幅、而且結帳時自動套用的檔期有哪幾檔？各自的最低訂單門檻與單筆折抵上限是多少？用到這些檔期的訂單，各自來自哪些流量來源、各有幾張？
+  question: 掛在首頁橫幅、而且結帳時自動套用的檔期有哪幾檔？啟用停用都算。各自的最低訂單門檻與單筆折抵上限是多少？用到這些檔期的訂單，各自來自哪些流量來源、各有幾張？
   expect: rows
   sql: "SELECT p.name, pp.min_order_amount, pp.max_discount_amount, op.utm_source,\n       COUNT(DISTINCT\
     \ o.id) AS order_count\nFROM promotion_profiles pp\nJOIN promotions p ON p.id = pp.promotion_id\n\

@@ -53,7 +53,13 @@ SETTLED_DISTINCT = ("不重複", "幾種", "個不同", "位不同", "樣不同"
 SETTLED_NULL = ("算 0", "算0", "當 0", "當0", "沒填的", "空白的", "沒有填",
                 "含空值", "不含空值", "都算")
 
-ADJUDICATED: dict[int, str] = {}
+ADJUDICATED: dict[int, str] = {
+    # COUNT(answer)*100/COUNT(*) 是個比率，分子分母都是**筆數**。
+    # 去重成「幾種不同的回覆文字」在中文裡不是一個站得住的讀法 ——
+    # 這是 distinctify 無差別包住每一個 COUNT 造成的誤報，不是題目的缺陷。
+    # 不寫成規則（「比率就跳過」），因為分子是不是該去重要看題目在問什麼。
+    225: "「回覆率」的分子分母都是筆數，去重沒有意義",
+}
 
 
 def distinctify(sql: str) -> str:
