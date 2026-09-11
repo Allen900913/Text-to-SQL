@@ -160,10 +160,43 @@ def main() -> int:
     # 舊做法沒有：[2] 只重跑 gen_ddl.py 比對 DDL，enum_fields 沒有對應項，
     # 於是線上 52 欄與產生器今天重跑得到的 0 欄可以無聲地並存好幾個月。
     # 現在值域是宣告的，新鮮度就退化成一個直接的問題：**宣告的值，資料裡有嗎。**
-    ec = ts_enums()
+    # 這一整項的前提：**資料庫裡沒有任何 schema 層的值域宣告。**
+    #
+    # 為什麼前提重要（2026-09-12 查證）
+    #   · 欄位是 ENUM 型別  → 值域寫在 column specification 裡，宣告時決定，
+    #     與資料無關。MySQL 手冊要人用 `SHOW COLUMNS` 解析 Type 欄來取得
+    #     「所有可能值」，而不是 SELECT DISTINCT。這種情況下「宣告了、
+    #     資料 0 筆」是**完全正常的**，那個值是合法的，告訴模型它存在是真話。
+    #   · 欄位是 VARCHAR    → schema 沒有宣告任何值域（只有長度／字元集／
+    #     collation）。那 YAML 的 enums 就不是契約的副本，是**我們對資料的
+    #     描述** —— 描述裡寫一個資料 0 筆的值，就是一句假話。
+    #   · CHECK constraint（8.0.16+）是第三種 schema 層值域，獨立於型別。
+    #
+    # 今天全庫 0 個 ENUM／0 個 SET／0 個 CHECK，所以判準是「資料裡有嗎」。
+    # 只要有一個出現，這個判準就得反過來（那時該驗的是「宣告涵不涵蓋 DDL
+    # 的值域」）。所以前提寫成會爆的檢查，不寫成註解 —— 沒觸發不等於沒有。
+    with db.engine.connect() as conn:
+        declared = conn.execute(text(
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND DATA_TYPE IN ('enum','set')")).scalar()
+        try:
+            checks = conn.execute(text(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS "
+                "WHERE CONSTRAINT_SCHEMA = DATABASE()")).scalar()
+        except Exception:
+            checks = 0
+    if declared or checks:
+        print(f"[4b] 值域新鮮度 FAIL —— 前提破了：資料庫出現了 schema 層的值域宣告"
+              f"（ENUM/SET {declared} 欄、CHECK {checks} 條）。")
+        print("      這一項的判準是「宣告的值資料裡有嗎」，那只在 VARCHAR 成立。")
+        print("      欄位一旦是 ENUM，宣告了而資料 0 筆是正常的 —— 判準要反過來寫。")
+        fails += 1
+        ec = None          # None = 前提破了，整項跳過（不是「掃過、沒東西」）
+    else:
+        ec = ts_enums()
     dead, unlisted, sentinel, registered = [], [], [], []
     with db.engine.connect() as conn:
-        for key, info in ec.items():
+        for key, info in (ec or {}).items():
             t, _, col = key.partition(".")
             try:
                 vals = {str(r[0]) for r in conn.execute(text(
@@ -205,11 +238,15 @@ def main() -> int:
     # 給錯比少給嚴重：少給會拿到空手，給錯會拿到一個看起來合法的答案。
     if dead:
         fails += 1
-    verdict = "FAIL" if dead else ("WARN" if unlisted else "OK")
-    print(f"[4b] 值域新鮮度 {verdict}"
-          f"（{len(ec)} 個欄位；未登記死代碼 {len(dead)}、漏列 {len(unlisted)}"
-          + (f"、已登記 {len(registered)}" if registered else "")
-          + (f"、哨兵 {len(sentinel)}" if sentinel else "") + "）")
+    # 前提破了（ec is None）就不要再印第二行摘要 —— 那行會寫
+    # 「OK（0 個欄位）」，把上面的 FAIL 蓋掉。**0 個欄位是「沒掃」，
+    # 不是「掃過沒事」**，而一個報假乾淨的閘門比沒有閘門更糟。
+    if ec is not None:
+        verdict = "FAIL" if dead else ("WARN" if unlisted else "OK")
+        print(f"[4b] 值域新鮮度 {verdict}"
+              f"（{len(ec)} 個欄位；未登記死代碼 {len(dead)}、漏列 {len(unlisted)}"
+              + (f"、已登記 {len(registered)}" if registered else "")
+              + (f"、哨兵 {len(sentinel)}" if sentinel else "") + "）")
     for m in dead:
         print(f"    ✗ {m} —— 系統會告訴模型這個值存在，它不存在")
     if dead:
