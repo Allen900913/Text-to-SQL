@@ -2,7 +2,27 @@
   "sealed_hash": "64199b1b0560b914",
   "sealed_on": "2026-09-11",
   "void": [],
-  "runs": [],
+  "runs": [
+    {
+      "date": "2026-09-12 19:02",
+      "commit": "d901667",
+      "score": 81.3,
+      "correct": 100,
+      "n": 123,
+      "verdicts": {
+        "correct": 100,
+        "wrong": 22,
+        "no_sql": 1
+      },
+      "result_file": "eval_result_1789202079.json",
+      "viewed_failures": false,
+      "testset_version": 4,
+      "no_sql_ids": [
+        1096
+      ],
+      "note": "v4 首跑：enum 死值清理 + 12 欄 enums 補宣告之後；開發集迴歸 307/309 已確認無回歸"
+    }
+  ],
   "n_questions": 123,
   "retired": [
     {
