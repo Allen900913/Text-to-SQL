@@ -259,6 +259,49 @@ def main() -> int:
     for m in sentinel:
         print(f"    · {m} —— 值域不封閉，只驗哨兵值還在不在")
 
+    # ── [4c] 散文裡的代碼 vs 真實資料 ───────────────────────────────
+    #
+    # [4b] 只驗 `enums:` 區塊。但代碼還住在**另一個地方**：表註解的
+    # `kind: enum` 子句（「付款狀態 SUCCESS/FAILED/REFUNDED」）。那一句
+    # 不進 ddl 投影（代碼離開資料庫註解是為了解鎖值索引），但**catalog 與
+    # retrieval 都收**，所以它會到達選表 LLM 與餘弦。
+    #
+    # ⚠️ 2026-09-12：清掉 `enums:` 區塊的 REFUNDED 之後，payments 的
+    # enum 子句還寫著 SUCCESS/FAILED/REFUNDED —— **同一個檔案裡兩個地方
+    # 互相矛盾**，而且沒有任何東西在看它（redundancy-ok-contradiction-not）。
+    # 冗餘可以，矛盾不行。
+    # 先把 [4b] 的登記按表分組，[4c] 要吃同一份豁免。
+    ts_by_table = {}
+    for _k, _v in ts_enums().items():
+        _t, _, _c = _k.partition(".")
+        ts_by_table.setdefault(_t, {})[_c] = _v
+    codes, stale = re.compile(r"\b[A-Z][A-Z0-9_]{2,}\b"), []
+    with db.engine.connect() as conn:
+        for t, clauses in data.items():
+            said = {c for cl in clauses if cl["kind"] == "enum"
+                    for c in codes.findall(cl["text"])}
+            if not said:
+                continue
+            live = set()
+            for (col,) in conn.execute(text(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t "
+                    "AND DATA_TYPE IN ('varchar','char')"), {"t": t}):
+                live |= {str(r[0]) for r in conn.execute(text(
+                    "SELECT DISTINCT `%s` FROM `%s` WHERE `%s` IS NOT NULL"
+                    % (col, t, col)))}
+            # 吃 [4b] 的同一份登記。承重的死值（撐 expect: empty 的題）
+            # 在散文裡也該留著 —— 生成器靠 enums 寫得出那個 WHERE，
+            # 選表 LLM 靠這句話知道該挑這張表。同一個理由，同一份豁免。
+            live |= {v for info in (ts_by_table.get(t) or {}).values()
+                     for v in (info.get("dead_ok") or {})}
+            stale += [(t, c) for c in sorted(said - live)]
+    print(f"[4c] 散文裡的代碼 {'OK' if not stale else 'FAIL'}"
+          f"（{sum(1 for cl in data.values() for c in cl if c['kind'] == 'enum')} 句 enum 子句）")
+    for t, c in stale:
+        print(f"    ✗ {t} 的註解寫了 '{c}'、資料 0 筆 —— 這句話會進 catalog 與 retrieval")
+    fails += 1 if stale else 0
+
     # ── [5] 生效投影 ────────────────────────────────────────────────
     # 「預設」是**原始碼裡登記的那組**，不是「三個角色全收」。
     # 2026-09-10 起 ddl 砍掉 enum 就是預設（代碼的家在 enum_fields，

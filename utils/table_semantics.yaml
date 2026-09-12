@@ -1374,7 +1374,7 @@ tables:
       text: 何時付款、用什麼付、付了多少看這張表
       sep: 。
     - kind: enum
-      text: '付款狀態 SUCCESS/FAILED/REFUNDED '
+      text: '付款狀態 SUCCESS/FAILED '
       sep: ——
     - kind: usage
       text: ' 查付款成功、付款失敗、已退款的紀錄都用這張表'
