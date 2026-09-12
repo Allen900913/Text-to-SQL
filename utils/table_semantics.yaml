@@ -107,12 +107,6 @@ tables:
       actor: 執行者帳號
       occurred_at: 發生時間
     enums:
-      action:
-        description: 動作
-        values:
-          DELETE: ''
-          INSERT: ''
-          UPDATE: ''
       table_name:
         description: 被異動的表名
         values:
@@ -133,14 +127,6 @@ tables:
       viewed_at: 瀏覽時間
       duration_sec: 停留秒數
       source: 流量來源
-    enums:
-      source:
-        description: 瀏覽的流量來源
-        values:
-          SEARCH: 站內搜尋
-          RECOMMEND: 推薦版位
-          CATEGORY: 分類瀏覽
-          AD: 廣告導入
   cache_entries:
     clauses:
     - kind: content
@@ -232,42 +218,6 @@ tables:
       paused_reason: 暫停原因
       created_at: 建檔時間
     enums:
-      bid_strategy:
-        description: 出價策略
-        values:
-          CPA: 單次行動
-          CPC: 單次點擊
-          CPM: 千次曝光
-      creative_type:
-        description: 素材型式
-        values:
-          CAROUSEL: 輪播
-          IMAGE: 圖片
-          VIDEO: 影片
-      target_gender:
-        description: 鎖定性別
-        values:
-          ALL: ''
-          F: ''
-          M: ''
-      device_target:
-        description: 鎖定裝置
-        values:
-          ALL: ''
-          DESKTOP: ''
-          MOBILE: ''
-      ab_test_group:
-        description: A/B 測試分組
-        values:
-          A: A 組
-          NONE: 未參加 A/B 測試
-      placement:
-        description: 投放版位
-        values:
-          DISPLAY: 聯播網
-          FEED: 動態
-          SEARCH: 搜尋
-          STORY: 限動
       currency_code:
         description: 投放幣別
         values:
@@ -289,14 +239,6 @@ tables:
       channel: 投放渠道
       started_at: 開始日期
       ended_at: 結束日期
-    enums:
-      channel:
-        description: 投放渠道
-        values:
-          DISPLAY: ''
-          EMAIL: ''
-          SEARCH: ''
-          SOCIAL: ''
   cart_items:
     clauses:
     - kind: bound
@@ -386,13 +328,6 @@ tables:
       contact_type: 類型
       contact_value: 聯絡內容
       is_verified: 是否已驗證
-    enums:
-      contact_type:
-        description: 類型
-        values:
-          EMAIL: ''
-          LINE: ''
-          PHONE: ''
   customer_login_logs:
     clauses:
     - kind: content
@@ -477,69 +412,11 @@ tables:
       risk_flag: 風控標記
       sync_version: 同步版本號，非業務欄位
     enums:
-      gender:
-        description: 性別
-        values:
-          F: ''
-          M: ''
-          OTHER: ''
-      marital_status:
-        description: 婚姻狀態
-        arm: gap
-        values:
-          DIVORCED: ''
-          MARRIED: ''
-          SINGLE: ''
-      referral_source:
-        description: 來源管道
-        values:
-          AD: ''
-          ORGANIC: ''
-          REFERRAL: ''
-          SOCIAL: ''
-      tier:
-        description: 會員等級
-        values:
-          BRONZE: ''
-          GOLD: ''
-          PLATINUM: ''
-          SILVER: ''
-      segment:
-        description: 行銷分群
-        values:
-          AT_RISK: ''
-          DORMANT: ''
-          GROWING: ''
-          LOYAL: ''
-          NEW: ''
-      lifecycle_stage:
-        description: 生命週期階段
-        arm: gap
-        values:
-          ACQUISITION: ''
-          ACTIVATION: ''
-          REACTIVATION: ''
-          RETENTION: ''
-      risk_flag:
-        description: 風控標記
-        values:
-          NONE: 無風控標記
-          WATCH: 觀察中
-          HIGH: 高風險
-        dead_ok:
-          HIGH: '撐開發集 #159（expect: empty）—— 資料 0 筆是題目要的答案'
       preferred_language:
         description: 偏好語言
         values:
           en: ''
           zh-TW: ''
-      preferred_delivery_window:
-        description: 偏好收貨時段
-        values:
-          上午: ''
-          下午: ''
-          不指定: ''
-          晚間: ''
   customers:
     clauses:
     - kind: content
@@ -569,13 +446,6 @@ tables:
       attempt_no: 第幾次嘗試
       result: 派送結果
       attempted_at: 派送時間
-    enums:
-      result:
-        description: 派送結果
-        values:
-          ABSENT: ''
-          DELIVERED: ''
-          REFUSED: ''
   departments:
     clauses:
     - kind: content
@@ -646,62 +516,6 @@ tables:
       has_company_laptop: 是否配發公司筆電
       badge_no: 門禁識別證號
       created_at: 建檔時間
-    enums:
-      employment_type:
-        description: 雇用型態
-        values:
-          CONTRACT: 約聘
-          FULLTIME: 正職
-          PARTTIME: 兼職
-      remote_policy:
-        description: 遠端安排
-        values:
-          HYBRID: 混合
-          ONSITE: 全實體
-          REMOTE: 全遠端
-      job_level:
-        description: 職級：J1~J8，數字越大越資深
-        arm: gap
-        values:
-          J2: ''
-          J3: ''
-          J4: ''
-          J5: ''
-          J6: ''
-          J7: ''
-          J8: ''
-      education_level:
-        description: 最高學歷
-        values:
-          BACHELOR: ''
-          HIGHSCHOOL: ''
-          MASTER: ''
-          PHD: ''
-      english_level:
-        description: 英語能力等級：A1~C2
-        arm: gap
-        values:
-          A2: ''
-          B1: ''
-          B2: ''
-          C1: ''
-          C2: ''
-      review_grade_last:
-        description: 最近一次年度考核等第
-        arm: dup
-        values:
-          A: ''
-          B: ''
-          C: ''
-          D: ''
-      review_grade_prev:
-        description: 前一年度考核等第
-        arm: gap
-        values:
-          A: ''
-          B: ''
-          C: ''
-          D: ''
   employee_shifts:
     clauses:
     - kind: content
@@ -716,13 +530,6 @@ tables:
       shift_date: 班表日期
       shift_type: 班別
       hours: 排定工時
-    enums:
-      shift_type:
-        description: 班別
-        values:
-          AFTERNOON: ''
-          MORNING: ''
-          NIGHT: ''
   employees:
     clauses:
     - kind: content
@@ -870,13 +677,6 @@ tables:
       started_at: 開始時間
       finished_at: 結束時間
       status: 執行結果
-    enums:
-      status:
-        description: 執行結果
-        values:
-          FAILED: ''
-          RUNNING: ''
-          SUCCESS: ''
   loyalty_points:
     clauses:
     - kind: content
@@ -892,14 +692,6 @@ tables:
       points: 異動點數，正數獲得、負數使用
       reason: 異動原因
       occurred_at: 異動時間
-    enums:
-      reason:
-        description: 異動原因
-        values:
-          BONUS: ''
-          EXPIRE: ''
-          PURCHASE: ''
-          REDEEM: ''
   newsletter_subscriptions:
     clauses:
     - kind: content
@@ -958,13 +750,6 @@ tables:
       reason: 取消原因
       cancelled_by: 取消發起方
       cancelled_at: 取消時間
-    enums:
-      cancelled_by:
-        description: 取消發起方
-        values:
-          CUSTOMER: ''
-          STAFF: ''
-          SYSTEM: ''
   order_items:
     clauses:
     - kind: content
@@ -1053,13 +838,6 @@ tables:
       reviewed_at: 覆核完成時間
       created_at: 建檔時間
     enums:
-      channel:
-        description: 下單通路
-        values:
-          APP: 行動應用
-          PHONE: 電話
-          STORE: 門市
-          WEB: 官網
       utm_source:
         description: 歸因到的流量來源
         values:
@@ -1075,30 +853,6 @@ tables:
           email: 電子報
           organic: 自然
           referral: ''
-      invoice_type:
-        description: 發票類型
-        values:
-          COMPANY: 公司
-          DONATE: 捐贈
-          PERSONAL: 個人
-      delivery_preference:
-        description: 配送偏好
-        values:
-          HOME: 宅配
-          LOCKER: 智取櫃
-          STORE: 門市取貨
-      fraud_review_result:
-        description: 覆核結果
-        values:
-          HOLD: 暫扣
-          PASS: 放行
-          REJECT: 婉拒
-      device_type:
-        description: 裝置類型
-        values:
-          DESKTOP: ''
-          MOBILE: ''
-          TABLET: ''
       ip_country:
         description: 下單時的 IP 所在國別
         arm: gap
@@ -1112,13 +866,6 @@ tables:
         values:
           TWD: ''
           USD: ''
-      preferred_time_slot:
-        description: 希望送達時段
-        values:
-          AFTERNOON: ''
-          ANY: ''
-          EVENING: ''
-          MORNING: ''
   order_promotions:
     clauses:
     - kind: content
@@ -1150,13 +897,6 @@ tables:
       quantity: 退回數量
       status: 退貨狀態
       requested_at: 申請時間
-    enums:
-      status:
-        description: 退貨狀態
-        values:
-          RECEIVED: ''
-          REJECTED: ''
-          REQUESTED: ''
   order_status_history:
     clauses:
     - kind: content
@@ -1172,23 +912,6 @@ tables:
       to_status: 異動後狀態
       changed_at: 狀態變更時間
       changed_by: 異動者帳號，非業務欄位
-    enums:
-      from_status:
-        description: 異動前狀態
-        arm: gap
-        values:
-          PAID: ''
-          PENDING: ''
-          SHIPPED: ''
-      to_status:
-        description: 異動後狀態
-        arm: gap
-        values:
-          CANCELLED: ''
-          COMPLETED: ''
-          PAID: ''
-          PENDING: ''
-          SHIPPED: ''
   orders:
     clauses:
     - kind: content
@@ -1209,15 +932,6 @@ tables:
       order_date: 訂單建立時間
       total_amount: 訂單總金額
       status: 訂單狀態
-    enums:
-      status:
-        description: 訂單處理狀態
-        values:
-          PENDING: 待付款（尚未處理）
-          PAID: 已付款
-          SHIPPED: 已出貨
-          COMPLETED: 已完成（收貨確認）
-          CANCELLED: 已取消
   payment_attempts:
     clauses:
     - kind: content
@@ -1232,13 +946,6 @@ tables:
       method_id: 嘗試使用的付款方式ID
       result: 嘗試結果：成功／銀行拒絕／逾時未回應，後兩者都算失敗
       attempted_at: 嘗試時間
-    enums:
-      result:
-        description: 嘗試結果
-        values:
-          DECLINED: 銀行拒絕
-          OK: 成功
-          TIMEOUT: 逾時未回應
   payment_methods:
     clauses:
     - kind: content
@@ -1307,19 +1014,6 @@ tables:
       void_at: 授權取消時間，NULL 表示沒取消過
       created_at: 建檔時間
     enums:
-      wallet_type:
-        description: 電子錢包
-        values:
-          APPLE: ''
-          GOOGLE: ''
-          LINE: ''
-          NONE: 未使用錢包
-      dispute_status:
-        description: 爭議處理狀態
-        values:
-          LOST: 敗訴
-          NONE: 無爭議
-          WON: 勝訴
       avs_result:
         description: 帳單地址比對結果代碼
         arm: gap
@@ -1328,13 +1022,6 @@ tables:
           N: ''
           U: ''
           Y: ''
-      card_brand:
-        description: 卡別
-        values:
-          AMEX: ''
-          JCB: ''
-          MASTER: ''
-          VISA: ''
       card_country:
         description: 發卡國別代碼
         arm: gap
@@ -1359,12 +1046,6 @@ tables:
         description: 閘道回應訊息
         values:
           核准: ''
-      threeds_version:
-        description: 3D 驗證版本
-        values:
-          '1.0': ''
-          '2.1': ''
-          '2.2': ''
   payments:
     clauses:
     - kind: content
@@ -1392,14 +1073,6 @@ tables:
       transaction_no: 金流商交易序號
       sync_version: 內部同步版本號，非業務欄位
       created_at: 此筆紀錄寫入時間
-    enums:
-      status:
-        description: 付款狀態（不是訂單狀態）
-        values:
-          SUCCESS: 付款成功
-          FAILED: 付款失敗
-        dead_ok:
-          FAILED: '撐開發集 #104（expect: empty）—— 資料 0 筆是題目要的答案'
   product_bundles:
     clauses:
     - kind: content
@@ -1509,43 +1182,6 @@ tables:
       return_policy_days: 可退貨天數
       is_return_exempt: 是否屬於不可退換的品項
       created_at: 建檔時間
-    enums:
-      lifecycle_stage:
-        description: 生命週期
-        values:
-          EOL: 停產
-          GROWTH: 成長
-          MATURE: 成熟
-          NEW: 新品
-      translation_status:
-        description: 翻譯狀態
-        values:
-          DONE: 完成
-          NONE: 未翻
-          PARTIAL: 部分
-      package_type:
-        description: 包裝型式
-        values:
-          BAG: 軟袋
-          BOX: 紙盒
-          PALLET: 棧板
-      hazard_class:
-        description: 危險品分類，NONE 表示非危險品
-        arm: gap
-        values:
-          AEROSOL: ''
-          BATTERY: ''
-          FLAMMABLE: ''
-          NONE: 表示非危險品
-      recyclable_code:
-        description: 回收材質代碼
-        arm: gap
-        values:
-          ALU: ''
-          PAPER: ''
-          PE: ''
-          PET: ''
-          PP: ''
   product_qna:
     clauses:
     - kind: content
@@ -1622,14 +1258,6 @@ tables:
         values:
           IP67: ''
           IPX4: ''
-      color:
-        description: 顏色
-        values:
-          灰: ''
-          白: ''
-          藍: ''
-          銀: ''
-          黑: ''
   product_stock_snapshots:
     clauses:
     - kind: content
@@ -1684,15 +1312,6 @@ tables:
       color: 顏色
       size: 尺寸
       is_default: 是否為預設變體
-    enums:
-      color:
-        description: 顏色
-        values:
-          白: ''
-          粉: ''
-          藍: ''
-          銀: ''
-          黑: ''
   products:
     clauses:
     - kind: content
@@ -1767,30 +1386,6 @@ tables:
       pause_reason: 暫停原因
       review_cycle: 成效檢討頻率：每日／每週／結檔後
       created_at: 建檔時間
-    enums:
-      applies_to_scope:
-        description: 適用範圍
-        values:
-          ALL: 全站
-          BRAND: 指定品牌
-          CATEGORY: 指定分類
-      display_slot:
-        description: 呈現版位
-        values:
-          CART: 購物車
-          CATEGORY: 分類頁
-          CHECKOUT: 結帳頁
-          HOME_TOP: 首頁橫幅
-      review_cycle:
-        description: 成效檢討頻率
-        values:
-          DAILY: 每日
-          END: 結檔後
-          WEEKLY: 每週
-      member_tier_required:
-        description: 需要的會員等級；以下只列哨兵值，其餘是會員等級名稱
-        values:
-          NONE: 不限會員等級
   promotion_rules:
     clauses:
     - kind: content
@@ -1805,13 +1400,6 @@ tables:
       min_amount: 最低消費門檻
       stackable: 是否可與其他活動疊加
       applies_to: 適用範圍
-    enums:
-      applies_to:
-        description: 適用範圍
-        values:
-          ALL: ''
-          BRAND: ''
-          CATEGORY: ''
   promotions:
     clauses:
     - kind: content
@@ -1825,12 +1413,6 @@ tables:
       starts_at: 活動開始時間
       ends_at: 活動結束時間
       is_active: 是否啟用
-    enums:
-      discount_type:
-        description: 折扣型態，決定 discount_value 的意義
-        values:
-          PERCENT: 百分比折扣，discount_value 是百分比數字
-          FIXED: 定額折抵，discount_value 是折抵金額
   refunds:
     clauses:
     - kind: content
@@ -1847,14 +1429,6 @@ tables:
       status: 退款狀態
       refunded_at: 實際退款時間，尚未完成時為 NULL
       created_at: 退款申請時間
-    enums:
-      status:
-        description: 退款申請的處理狀態
-        values:
-          REQUESTED: 已申請，尚未審核
-          APPROVED: 已核准，尚未撥款
-          REJECTED: 已駁回
-          DONE: 已完成退款
   return_profiles:
     clauses:
     - kind: content
@@ -1911,44 +1485,6 @@ tables:
       handling_note: 承辦過程的備註
       created_at: 建檔時間
     enums:
-      reason_l1:
-        description: 退貨主因
-        values:
-          CHANGE_MIND: 不想要了
-          DAMAGED: 運送損壞
-          NOT_AS_DESCRIBED: 與說明不符
-          QUALITY: 品質瑕疵
-          WRONG_ITEM: 出錯貨
-      inspection_result:
-        description: 檢驗結果
-        values:
-          FAIL: 不符合
-          PASS: 符合退貨條件
-      disposition_decision:
-        description: 後續處置
-        values:
-          REFURBISH: 整新
-          RESHELF: 重新上架
-          RETURN_SUPPLIER: 退回供應商
-          SCRAP: 報廢
-      package_condition:
-        description: 包裝狀況
-        values:
-          BROKEN: 破損
-          INTACT: 完整
-          OPENED: 已拆封
-      pickup_method:
-        description: 退回方式
-        values:
-          HOME_PICKUP: 到府收件
-          SELF_SEND: 自行寄回
-          STORE_DROP: 門市寄回
-      compensation_type:
-        description: 補償方式
-        values:
-          COUPON: 折價券
-          NONE: 無
-          POINTS: 點數
       defect_code:
         description: 瑕疵代碼；以下只列哨兵值，其餘是 DF-NN 格式的瑕疵代碼
         values:
@@ -2022,44 +1558,6 @@ tables:
       mentions_service: 評價內容是否提到客服態度
       created_at: 建檔時間
     enums:
-      device_type:
-        description: 張貼裝置
-        values:
-          DESKTOP: 電腦
-          MOBILE: 手機
-          TABLET: 平板
-      input_channel:
-        description: 張貼來源
-        values:
-          APP: ''
-          EMAIL: 邀評信
-          WEB: ''
-      incentive_type:
-        description: 回饋型式
-        values:
-          COUPON: 折價券
-          NONE: 無
-          POINTS: 點數
-      report_reason:
-        description: 主要檢舉事由
-        values:
-          ABUSE: 辱罵
-          FAKE: 造假
-          NONE: 未被檢舉
-          OFFTOPIC: 離題
-          SPAM: 廣告
-      moderation_status:
-        description: 審核狀態
-        values:
-          APPROVED: 通過
-          PENDING: 待審
-          REJECTED: 退回
-      sentiment_label:
-        description: 情緒標記
-        values:
-          NEGATIVE: 負面
-          NEUTRAL: 中性
-          POSITIVE: 正面
       translated_from:
         description: 翻譯來源語言
         values:
@@ -2139,13 +1637,6 @@ tables:
       service_type: 服務類型
       scheduled_at: 預約時間
       attended: 是否實際到場
-    enums:
-      service_type:
-        description: 服務類型
-        values:
-          CONSULT: ''
-          INSTALL: ''
-          REPAIR: ''
   shipment_profiles:
     clauses:
     - kind: content
@@ -2203,71 +1694,6 @@ tables:
       is_dangerous_goods_declared: 是否申報為危險品運送
       handling_note: 給司機的特殊處理指示
       created_at: 建檔時間
-    enums:
-      carton_type:
-        description: 外箱型式
-        values:
-          BAG: 破壞袋
-          BOX: 紙箱
-          PALLET: 棧板
-          TUBE: 圓筒
-      packing_material:
-        description: 緩衝材質
-        values:
-          AIR: 氣泡柱
-          FOAM: 泡棉
-          NONE: 無
-          PAPER: 紙屑
-      seal_type:
-        description: 封箱方式
-        values:
-          SEAL: 安全封條
-          STRAP: 打包帶
-          TAPE: 膠帶
-      distance_band:
-        description: 距離級距
-        values:
-          LONG: 跨區
-          MID: 鄰縣
-          REMOTE: 離島偏鄉
-          SHORT: 同市
-      delivery_window:
-        description: 指定送達時段
-        values:
-          AFTERNOON: 下午
-          ANY: 不指定
-          MORNING: 上午
-          NIGHT: 晚間
-      recipient_relation:
-        description: 實際簽收人與收件人的關係
-        values:
-          COWORKER: 同事
-          FAMILY: 家人
-          GUARD: 管理員
-          NEIGHBOR: 鄰居
-          SELF: 本人
-      signature_type:
-        description: 簽收方式
-        values:
-          NONE: 免簽
-          PHOTO: 拍照
-          SIGN: 親簽
-          STAMP: 蓋章
-      exception_code:
-        description: 異常代碼
-        values:
-          ABSENT: 收件人不在
-          ADDR: 地址不明
-          DAMAGE: 貨損
-          DELAY: 天候延誤
-          NONE: 無
-          REFUSE: 拒收
-      temperature_zone:
-        description: 溫層
-        values:
-          AMBIENT: 常溫
-          CHILL: 冷藏
-          FROZEN: 冷凍
   shipments:
     clauses:
     - kind: content
@@ -2288,12 +1714,6 @@ tables:
       shipped_at: 實際出貨時間，尚未出貨時為 NULL
       delivered_at: 實際送達時間，尚未送達時為 NULL
       created_at: 出貨單建立時間
-    enums:
-      status:
-        description: 物流狀態（不是訂單狀態）
-        values:
-          IN_TRANSIT: 運送中
-          DELIVERED: 已送達
   store_pickups:
     clauses:
     - kind: content
@@ -2367,18 +1787,6 @@ tables:
       lease_end_date: 租約到期日
       created_at: 建檔時間
     enums:
-      audit_result:
-        description: 稽核結果
-        values:
-          CONDITIONAL: 有條件通過
-          PASS: 通過
-      district_type:
-        description: 商圈類型
-        values:
-          MALL: 百貨
-          STATION: 車站
-          STREET: 街邊
-          SUBURB: 郊區
       mon_open:
         description: 週一營業時間；以下只列哨兵值，其餘是「10:00-20:00」這種時段字串
         values:
@@ -2495,20 +1903,6 @@ tables:
       cancel_feedback: 取消時填寫的意見
       is_win_back_targeted: 是否已列入招回名單
       created_at: 建檔時間
-    enums:
-      billing_cycle:
-        description: 計費週期
-        values:
-          ANNUAL: 年繳
-          MONTHLY: 月繳
-          QUARTERLY: 季繳
-      conversion_source:
-        description: 轉換來源
-        values:
-          AGENT: 客服致電
-          APP: 推播
-          EMAIL: 提醒信
-          SELF: 自行升級
   subscriptions:
     clauses:
     - kind: content
@@ -2527,13 +1921,6 @@ tables:
       status: 訂閱狀態
       started_at: 訂閱起始日
       ended_at: 訂閱結束日，仍在訂閱中為空
-    enums:
-      status:
-        description: 訂閱狀態
-        values:
-          ACTIVE: ''
-          CANCELLED: ''
-          PAUSED: ''
   supplier_contracts:
     clauses:
     - kind: content
@@ -2605,29 +1992,12 @@ tables:
       suspend_reason: 暫停往來原因
       created_at: 建檔時間
     enums:
-      invoice_method:
-        description: 請款方式
-        values:
-          EINVOICE: 電子
-          PAPER: 紙本
-      audit_result:
-        description: 稽核結果
-        values:
-          CONDITIONAL: 有條件通過
-          PASS: 通過
       registered_country:
         description: 公司登記國別
         arm: gap
         values:
           TW: ''
           VN: ''
-      payment_terms:
-        description: 付款條件
-        values:
-          COD: 貨到付款
-          NET30: 月結30天
-          NET60: 月結60天
-          PREPAID: 預付
   suppliers:
     clauses:
     - kind: content
@@ -2703,41 +2073,6 @@ tables:
       is_knowledge_gap: 是否標記為說明文件不足
       created_at: 建檔時間
     enums:
-      intake_channel:
-        description: 受理管道
-        values:
-          APP: ''
-          CHAT: 線上客服
-          EMAIL: 信箱
-          PHONE: 電話
-          STORE: 門市
-      sentiment_at_intake:
-        description: 受理當下的客戶情緒標記
-        values:
-          ANGRY: 憤怒
-          CALM: 平和
-          UPSET: 不滿
-      resolution_type:
-        description: 結案方式
-        values:
-          ANSWERED: 說明解決
-          ESCALATED: 轉其他部門
-          NO_RESPONSE: 客戶未回覆
-          REFUND: 退款
-          REPLACE: 換貨
-      satisfaction_label:
-        description: 滿意度選項
-        values:
-          DISSATISFIED: 不滿意
-          NEUTRAL: 普通
-          VERY_SATISFIED: 非常滿意
-      preferred_callback_window:
-        description: 客戶希望的回電時段
-        values:
-          AFTERNOON: ''
-          ANY: ''
-          MORNING: ''
-          NIGHT: ''
       intake_language:
         description: 受理時使用的語言
         values:
@@ -2758,13 +2093,6 @@ tables:
       subject: 問題主旨
       status: 工單狀態
       created_at: 建立時間
-    enums:
-      status:
-        description: 工單狀態
-        values:
-          CLOSED: ''
-          OPEN: ''
-          PENDING: ''
   user_sessions:
     clauses:
     - kind: content
@@ -2857,14 +2185,6 @@ tables:
       product_id: 申請保固的商品ID
       status: 處理狀態
       claimed_at: 申請時間
-    enums:
-      status:
-        description: 處理狀態
-        values:
-          APPROVED: ''
-          DONE: ''
-          REJECTED: ''
-          SUBMITTED: ''
   wishlist_items:
     clauses:
     - kind: content

@@ -185,15 +185,50 @@ def main() -> int:
                 "WHERE CONSTRAINT_SCHEMA = DATABASE()")).scalar()
         except Exception:
             checks = 0
-    if declared or checks:
-        print(f"[4b] 值域新鮮度 FAIL —— 前提破了：資料庫出現了 schema 層的值域宣告"
-              f"（ENUM/SET {declared} 欄、CHECK {checks} 條）。")
-        print("      這一項的判準是「宣告的值資料裡有嗎」，那只在 VARCHAR 成立。")
-        print("      欄位一旦是 ENUM，宣告了而資料 0 筆是正常的 —— 判準要反過來寫。")
+    # 2026-09-12 前提真的翻了：98 欄型別化成 ENUM。判準跟著反過來 ——
+    #
+    #   舊：宣告的值資料裡有嗎（VARCHAR 時代，YAML 是「我們對資料的描述」，
+    #       描述裡寫一個資料 0 筆的值就是假話）
+    #   新：**值域的權威是 COLUMN_TYPE**，宣告了而資料 0 筆是完全正常的
+    #       （enum-declares-domain-not-snapshot）。要驗的變成兩件事：
+    #         ① 同一欄不准在兩個地方各宣告一次 —— 會漂移，而且值會送兩遍
+    #         ② 型別上的值域要真的到得了模型 —— DDL 是生成的，
+    #            改了型別沒重跑 gen_ddl 就會靜默失血
+    #            （memory: schema-source-must-be-wired）
+    ec = ts_enums()
+    typed = {}
+    with db.engine.connect() as conn:
+        for tb, co, ct in conn.execute(text(
+                "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS "
+                "WHERE TABLE_SCHEMA = DATABASE() AND DATA_TYPE IN ('enum','set')")):
+            typed["%s.%s" % (tb, co)] = ct
+    both = sorted(set(typed) & set(ec))
+    try:
+        from langgraph_sql.utils.schema_parser import get_schema_parser
+        ddl_txt = get_schema_parser().get_ddl()
+    except Exception:
+        ddl_txt = ""
+    unwired = sorted(k for k, ct in typed.items()
+                     if ct.split("(")[0].upper() + "(" not in ddl_txt.upper()
+                     or k.split(".")[1] + " " not in ddl_txt.replace("\t", " "))
+    n_enum_ddl = ddl_txt.upper().count("ENUM(")
+    verdict4b = "FAIL" if (both or n_enum_ddl != len(typed)) else "OK"
+    print(f"[4b] 值域的家 {verdict4b}（型別上 {len(typed)} 欄、CHECK {checks} 條；"
+          f"DDL 裡 {n_enum_ddl} 行 ENUM(；YAML 還留 {len(ec)} 欄）")
+    if both:
         fails += 1
-        ec = None          # None = 前提破了，整項跳過（不是「掃過、沒東西」）
-    else:
-        ec = ts_enums()
+        print(f"    ✗ {len(both)} 欄同時宣告在型別與 YAML —— 值會送兩遍，而且兩份會漂移：")
+        for k in both[:8]:
+            print(f"       {k}")
+        print("      改法：型別是權威，把 YAML 的 enums 宣告刪掉。")
+    if n_enum_ddl != len(typed):
+        fails += 1
+        print(f"    ✗ 資料庫有 {len(typed)} 欄 ENUM，DDL 只有 {n_enum_ddl} 行 —— "
+              "改了型別沒重跑 `python tools/gen_ddl.py --write`，模型看到的還是舊的。")
+    if ec:
+        print(f"    · YAML 還留著 {len(ec)} 欄：那些是刻意不當值域的"
+              "（外部標準碼、會長大的登記簿），值走值索引不走型別。")
+    ec = {}            # 下面那段死值檢查整個退役 —— 判準已經翻掉了
     dead, unlisted, sentinel, registered = [], [], [], []
     with db.engine.connect() as conn:
         for key, info in (ec or {}).items():
@@ -241,7 +276,9 @@ def main() -> int:
     # 前提破了（ec is None）就不要再印第二行摘要 —— 那行會寫
     # 「OK（0 個欄位）」，把上面的 FAIL 蓋掉。**0 個欄位是「沒掃」，
     # 不是「掃過沒事」**，而一個報假乾淨的閘門比沒有閘門更糟。
-    if ec is not None:
+    # ec 被上面清成 {} —— 死值檢查退役之後這行摘要不該再印，
+    # 否則會在 [4b] 的判決底下再蓋一行「OK（0 個欄位）」。
+    if ec:
         verdict = "FAIL" if dead else ("WARN" if unlisted else "OK")
         print(f"[4b] 值域新鮮度 {verdict}"
               f"（{len(ec)} 個欄位；未登記死代碼 {len(dead)}、漏列 {len(unlisted)}"
@@ -282,11 +319,17 @@ def main() -> int:
                     for c in codes.findall(cl["text"])}
             if not said:
                 continue
+            # 「活」的定義：**型別上宣告過的值，或資料裡真的有的值**。
+            # 2026-09-12 型別化之後前者才是主要來源 —— 只看 varchar 的資料，
+            # `orders.status` 這種已經是 ENUM 的欄位會整串代碼被誤判成死的。
             live = set()
-            for (col,) in conn.execute(text(
-                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+            for col, dt, ct in conn.execute(text(
+                    "SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS "
                     "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t "
-                    "AND DATA_TYPE IN ('varchar','char')"), {"t": t}):
+                    "AND DATA_TYPE IN ('varchar','char','enum','set')"), {"t": t}):
+                if dt in ("enum", "set"):
+                    live |= set(re.findall(r"'((?:[^']|'')*)'", ct))
+                    continue
                 live |= {str(r[0]) for r in conn.execute(text(
                     "SELECT DISTINCT `%s` FROM `%s` WHERE `%s` IS NOT NULL"
                     % (col, t, col)))}
