@@ -10,7 +10,9 @@ Node 2: SQL Generator (精兵政策版)
   3. 透過 MySQL EXPLAIN 的原生錯誤進行 SQL 自我修復
 若有 db_error（來自 AST、EXPLAIN 或實際執行），會將錯誤注入 Prompt 進行修正。
 """
+import hashlib
 import re
+
 from loguru import logger as log
 from langchain_core.messages import SystemMessage, HumanMessage
 
@@ -25,7 +27,22 @@ from langgraph_sql.utils.llm_retry import invoke_with_retry
 # ===========================================================================
 
 def _build_system_prompt(state: AgentState) -> str:
-    """建構 System Prompt：包含 DDL、Enum、Business Rules。"""
+    """建構 System Prompt：包含 DDL、值命中位置、Enum、Business Rules。
+
+    值命中區塊放在 **DDL 之後、Enum Fields 之前**，而且只在有命中時出現。
+
+    位置照 `enum_text` 的先例 —— 它已經是一個「逐題 scoped 的事實區塊」，
+    就坐在那裡，不必為這件事發明新位置。放 System 不放 User 的理由：
+    User Prompt 裝的是「使用者要什麼」，這一段是「資料庫裡有什麼」，
+    擺在問題旁邊會被讀成請求的一部分。
+
+    ⚠️ 沒有值命中時 `value_hint_text` 是空字串，整段連標題一起消失 ——
+    開發集約九成的題目 Prompt 因此逐位元不變，那半是免費的雜訊地板。
+    """
+    hint = state.get("value_hint_text", "")
+    value_block = ("\n\n# Value Locations (facts from the database — the same literal "
+                   "may live in several places; you decide which one the question means):\n"
+                   + hint) if hint else ""
     return f"""You are an expert MySQL SQL developer. Generate a valid MySQL SELECT query to answer the user's question.
 
 Strictly follow these rules:
@@ -48,7 +65,7 @@ Strictly follow these rules:
    SELECT 'SCHEMA_UNSUPPORTED' AS system_error_flag;
 
 # Database Schema (DDL):
-{state.get("schema_ddl", "")}
+{state.get("schema_ddl", "")}{value_block}
 
 # Enum Fields (use exact English values):
 {state.get("enum_text", "")}
@@ -145,6 +162,11 @@ def sql_generator(state: AgentState) -> dict:
 
     system_prompt = _build_system_prompt(state)
     user_prompt = _build_user_prompt(state)
+    # 對照組的證據，不是假設（見 state.prompt_hash）。只記首次生成：
+    # 重試那一次會多帶 db_error，本來就該不同。
+    fingerprint = ({"prompt_hash": hashlib.md5(
+        (system_prompt + "\x00" + user_prompt).encode("utf-8")).hexdigest()[:16]}
+        if retry == 0 else {})
 
     messages = [
         SystemMessage(content=system_prompt),
@@ -159,13 +181,14 @@ def sql_generator(state: AgentState) -> dict:
             "candidate_sqls": [],
             "llm_error": llm_error,
             "error_message": f"SQL 生成失敗（LLM API 無回應）: {llm_error}",
+            **fingerprint,
         }
 
     # 解析 SQL
     sql = _parse_sql(raw)
     if sql:
         log.info(f"[Node 2] ✅ 成功生成 SQL: {sql[:100]}...")
-        return {"candidate_sqls": [sql], "llm_error": ""}
+        return {"candidate_sqls": [sql], "llm_error": "", **fingerprint}
     else:
         log.warning(f"[Node 2] ❌ SQL 解析失敗 (raw={raw[:150]}...)")
         return {
@@ -174,4 +197,5 @@ def sql_generator(state: AgentState) -> dict:
             # llm_error，否則評估會把模型的問題誤記成基礎設施故障。
             "llm_error": "",
             "error_message": "SQL 解析失敗：LLM 輸出不含有效的 SELECT 語句",
+            **fingerprint,
         }

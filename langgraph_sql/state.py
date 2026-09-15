@@ -19,9 +19,16 @@ class AgentState(TypedDict, total=False):
     retrieval_anchors: list[str]   # 語意檢索命中的錨點（KMB 補橋接表之前）
     rules_text: str                # 商業邏輯規則
     few_shot_examples: str         # Few-Shot 範例
+    value_hint_text: str           # 值命中位置（VALUE_HINT=1 才有；沒命中是空字串）
+    value_hint_single_sided: int   # 值的另一個歸屬被選表砍掉的次數（旗標，不進 Prompt）
 
     # --- Node 2: SQL Generator 填入 ---
     candidate_sqls: list[str]      # N 條候選 SQL
+    # 首次生成（retry=0）的 System+User Prompt 指紋。
+    # Prompt 級介入的對照組**不能靠假設** —— [[retrieval-is-nondeterministic]]
+    # 量過固定程式碼重跑 20.5% 的題會選到不同的表，DDL 一變 Prompt 就變。
+    # 記下來，事後才分得出「這題真的沒變」與「變了但不是因為我改的東西」。
+    prompt_hash: str
 
     # --- Node 3: AST Validator 填入 ---
     valid_sqls: list[str]          # 通過快篩的 SQL

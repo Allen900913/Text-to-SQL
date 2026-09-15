@@ -94,6 +94,24 @@ VALUE_BETA = float(os.environ.get("VALUE_BETA", "0.05"))
 # 候選目錄要不要附「這個值住在哪」。**2026-09-04 起預設 1 = 開啟**。
 VALUE_EVIDENCE = int(os.environ.get("VALUE_EVIDENCE", "1"))
 
+# 生成 SQL 的 LLM 要不要也看到「這個值住在哪」。**預設 0 = 關閉**，等 A/B 量完再翻。
+#
+# 這一格補的是一條斷線：`evidence_for()` 目前只送到候選目錄（選表 LLM），
+# 生成器從來沒看過。於是選表那一層知道「原子習慣」住在 `products.name`，
+# 而真正要把它寫進 WHERE 的那一層只能從 DDL 猜欄位。
+#
+# 為什麼**不**織進 DDL 或欄位註解：
+#   ① 註解寫的是「這一欄永遠裝什麼」，值命中是「你這一題剛好提到什麼」——
+#      兩種事實混在同一個形狀裡，而且例子 100% 來自題目字串
+#      （[[comment-examples-from-data-not-questions]]）。
+#   ② 貼在各表區塊上就看不見歧義了：「書籍」同時住 `categories.name` 與
+#      `products.category`，分散成兩則獨立提示等於只報單邊 —— 那是 §2.7f
+#      量過的 F 臂（誘餌題 0/32）。集中成一行才逼得出選擇。
+#   ③ DDL 是靜態產物。逐題改它，以後 diff DDL 會混進題目資訊，而且沒有
+#      值命中的那 9 成題目就失去了「Prompt 逐位元相同」的免費對照組
+#      （[[single-layer-interventions-make-their-own-control]]）。
+VALUE_HINT = int(os.environ.get("VALUE_HINT", "0"))
+
 # 一個值最多跨幾張表才算有鑑別力。
 #
 # 「新北市」跨 6 張表（addresses/customers/employee_profiles/stores/
@@ -269,3 +287,42 @@ def evidence_for(question: str, tables: list[str]) -> dict[str, str]:
                 by_table.setdefault(t, []).append(f"「{v}」= {c}")
     return {t: "｜值命中：" + "、".join(dict.fromkeys(items))
             for t, items in by_table.items()}
+
+
+def value_locations(question: str, tables: list[str]) -> tuple[str, int]:
+    """給生成器的值命中區塊，**以值為主**分組；回 (區塊文字, 單邊化次數)。
+
+    跟 `evidence_for()` 的差別只有分組方向，事實本身一樣：
+
+        evidence_for    以表為主 —— 接在候選目錄那一行後面，回答「這張表憑什麼」
+        value_locations 以值為主 —— 獨立區塊，回答「這個字串該寫進哪個欄位」
+
+    方向不是風格問題。`「書籍」→ categories.name, products.category` 擺成一行，
+    歧義就在同一行上，模型非選不可；拆成兩張表各自的提示，它看到的是兩則
+    互不相干的建議，永遠看不出那是同一個值的兩個去處 —— 那正是 §2.7f 的 F 臂。
+
+    第二個回傳值是**單邊化次數**：某個值的另一個歸屬在選表階段就被砍掉了，
+    生成器只看得到單邊。這是 `evidence_for` 已經記在文件裡的邊界，到了生成器
+    這一層更危險（另一張表連 DDL 都不在，模型沒有反駁的材料）。
+
+    **刻意不把它寫進 Prompt。**「另有 N 處未列出」是一個沒量過的新提示元素，
+    而且很可能誤觸防禦暗號（規則 3）。它走結果 JSON 當旗標，零 Prompt 成本、
+    對存著的每一輪可回算（[[rescore-works-until-you-touch-the-question]]）。
+    """
+    if not VALUE_HINT:
+        return "", 0
+    try:
+        ms = matches(question)
+    except Exception as e:
+        log.warning(f"[ValueIndex] 取值位置失敗（{type(e).__name__}），這一題不附")
+        return "", 0
+    want = set(tables)
+    lines, single_sided = [], 0
+    for v, tc in ms:
+        inside = sorted(f"{t}.{c}" for t, c in tc if t in want)
+        if not inside:
+            continue
+        if {t for t, _ in tc} - want:
+            single_sided += 1
+        lines.append(f"「{v}」 → " + ", ".join(inside))
+    return "\n".join(lines), single_sided

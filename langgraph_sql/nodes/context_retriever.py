@@ -78,6 +78,13 @@ def context_retriever(state: AgentState) -> dict:
     rules_text = parser.get_rules_text()
     few_shot = parser.get_few_shot_text()
 
+    # 值命中位置也送進生成器（VALUE_HINT=0 時回空字串，Prompt 逐位元不變）。
+    # 選表 LLM 從 2026-09-04 起就看得到 `evidence_for()`，生成器一直沒有 ——
+    # 知道「原子習慣」住在 products.name 的那一層，不是要把它寫進 WHERE 的那一層。
+    from langgraph_sql.utils.value_index import value_locations
+    value_hint, single_sided = value_locations(
+        query, sorted(scoped) if scoped else sorted(all_tables))
+
     if scoped:
         log.info(f"[Node 1] 檢索: 錨點={anchors} → {len(scoped)}/{len(all_tables)} 張表, "
                  f"DDL {len(parser.get_ddl())} → {len(ddl)} 字元")
@@ -92,6 +99,8 @@ def context_retriever(state: AgentState) -> dict:
         "enum_text": enum_text,
         "rules_text": rules_text,
         "few_shot_examples": few_shot,
+        "value_hint_text": value_hint,
+        "value_hint_single_sided": single_sided,
         "retrieved_tables": sorted(scoped) if scoped else sorted(all_tables),
         "retrieval_anchors": anchors,
     }

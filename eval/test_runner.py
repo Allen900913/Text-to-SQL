@@ -29,6 +29,7 @@ import argparse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from langgraph_sql.graph import compiled_graph
 from langgraph_sql.nodes.ast_validator import SCOPE_MODE as _SCOPE_MODE
+from langgraph_sql.utils.value_index import VALUE_HINT as _VALUE_HINT
 
 # 最終回答中代表「誠實拒答」的標記（由 final_summarizer 攔截 SCHEMA_UNSUPPORTED 後產生）
 _UNSUPPORTED_HINT = "不在資料庫的 schema 與規則定義中"
@@ -91,6 +92,9 @@ def run_evaluation(file_path: str = _os.path.join(_ROOT, "eval_questions_v2.json
 
     print(f"載入 {total_q} 題；報告 → {report_file}；結構化結果 → {json_file}")
     print(f"[驗證器] 本行程實際生效 SCOPE_MODE = {_SCOPE_MODE}")
+    # 旗標存在腳本裡、模式存在行程裡，中間隔了一次 import。
+    # A/B 的臂要釘在行程內真的生效的那個值（[[ab-arms-pin-to-a-version]]）。
+    print(f"[值索引] 本行程實際生效 VALUE_HINT = {_VALUE_HINT}")
 
     report = open(report_file, "w", encoding="utf-8")
     report.write("=== Text-to-SQL 評估報告 ===\n")
@@ -135,6 +139,13 @@ def run_evaluation(file_path: str = _os.path.join(_ROOT, "eval_questions_v2.json
                     # 生效模式要跟著結果走。旗標存在腳本裡、模式存在行程裡，
                     # 中間隔了一次 import —— A/B 跨版本時兩者會不一致（§9.14 四之六）。
                     "scope_mode": _SCOPE_MODE,
+                    "value_hint_arm": _VALUE_HINT,
+                    # Prompt 級介入的對照組：沒有值命中的題兩臂應該逐位元相同。
+                    # 這不是可以假設的事 —— 檢索本身會抖（[[retrieval-is-nondeterministic]]）。
+                    "prompt_hash": state.get("prompt_hash") or "",
+                    "value_hint_text": state.get("value_hint_text") or "",
+                    # 值的另一個歸屬在選表階段被砍掉的次數。不進 Prompt，只當旗標。
+                    "value_hint_single_sided": state.get("value_hint_single_sided") or 0,
                     # 供稽核：是否用了並列安全的寫法 / 是否用了否定子查詢
                     "used_dense_rank": "DENSE_RANK" in champion_sql.upper(),
                     "used_not_in_exists": ("NOT IN" in champion_sql.upper()
