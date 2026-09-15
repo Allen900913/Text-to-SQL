@@ -43,7 +43,7 @@ Compress-Archive migrate\* C:\Users\$env:USERNAME\Desktop\t2s_bundle.zip -Force
 # 1. 抓程式碼
 git clone https://github.com/Allen900913/Text-to-SQL.git C:\Text-to-SQL
 cd C:\Text-to-SQL
-git checkout wide-tables-86
+# main 與 wide-tables-86 已於 2026-09-15 合併，兩者同為 172c3a7，clone 完就是最新的
 
 # 2. 解開 bundle
 Expand-Archive <你的路徑>\t2s_bundle.zip -DestinationPath .\migrate -Force
