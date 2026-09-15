@@ -44,3 +44,11 @@ eval_result_*.json
 # 探針的向量快取（12MB，可重生）
 tools/probes/.*_cache.json
 tools/probes/.pure_top1.json
+
+# 換機打包（migrate/MIGRATION.md）。倉庫是公開的：
+# 資料庫 dump 與金鑰只走隨身碟／雲端，不進版控。
+# 只有 MIGRATION.md、requirements.lock.txt、.env.example 例外，它們要進。
+migrate/*.sql
+migrate/.env
+migrate/*vectors.json
+migrate/eval_results/

@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 # Text-to-SQL 專案依賴套件
 # ============================================================
 
@@ -20,3 +20,10 @@ python-dotenv
 loguru
 pyyaml
 pandas
+
+# --- 嵌入與數值（直接 import，先前漏列）---
+# embedding.py 用 requests 打 NIM /v1/embeddings；table_retriever 用 numpy 算餘弦。
+requests
+numpy
+
+# 精確版本見 migrate/requirements.lock.txt（換機請用 lock 檔，不要用這一份）
